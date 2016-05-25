@@ -52,3 +52,24 @@ def AAMerge(Bsrc, aa_h, aa_v, mrad=0, power=1.0, show=0):
         return vmap
     else:
         return core.std.MaskedMerge(aa_h, aa_v, ldmap)
+
+def Compare(src, flt, power=1.5, chroma=True):
+    core = vs.get_core()
+    funcName = 'Compare'
+
+    if not (isinstance(src, vs.VideoNode) and isinstance(flt, vs.VideoNode)):
+        raise TypeError(funcName + ': This is not a clip')
+    if src.format.id != flt.format.id:
+        raise TypeError(funcName + ': Clips must have the same format')
+
+    isGray = src.format.color_family == vs.GRAY
+    bits = src.format.bits_per_sample 
+
+    expr = 'x y - abs {power} pow'.format(power=power)
+
+    chroma = chroma or isGray
+
+    if chroma:
+        return core.std.Expr([src, flt], expr)
+    else:
+        return core.std.Expr([src, flt], [expr, '{neutral}'.format(neutral=1 << (bits - 1))])
