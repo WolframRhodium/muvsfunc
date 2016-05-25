@@ -53,7 +53,7 @@ def AAMerge(Bsrc, aa_h, aa_v, mrad=0, power=1.0, show=0):
     else:
         return core.std.MaskedMerge(aa_h, aa_v, ldmap)
 
-def Compare(src, flt, power=1.5, chroma=True):
+def Compare(src, flt, power=1.5, chroma=False):
     core = vs.get_core()
     funcName = 'Compare'
 
