@@ -69,7 +69,4 @@ def Compare(src, flt, power=1.5, chroma=True):
 
     chroma = chroma or isGray
 
-    if chroma:
-        return core.std.Expr([src, flt], expr)
-    else:
-        return core.std.Expr([src, flt], [expr, '{neutral}'.format(neutral=1 << (bits - 1))])
+    return core.std.Expr([src, flt], [expr] if chroma else [expr, '{neutral}'.format(neutral=1 << (bits - 1))])
