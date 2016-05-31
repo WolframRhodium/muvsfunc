@@ -131,15 +131,15 @@ def MaskProcess(clip, mrad=0, msmooth=0, mode='rectangle', planes=[0, 1, 2]):
                 clip = ExInpand(clip, mode=mode[i], planes=planes, mrad=mrad[i])
             elif isinstance(mrad[i], list):
                 if len(mrad[i]) != 2:
-                    raise TypeError(funcName + ': \"mrad\" must be an int or a list of ints or a list of a list of two ints!')
+                    raise TypeError(funcName + ': \"mrad\" must be an int, a list of ints or a list of a list of two ints!')
                 for n in mrad[i]:
                     if not isinstance(n, int):
-                        raise TypeError(funcName + ': \"mrad\" must be an int or a list of ints or a list of a list of two ints!')
+                        raise TypeError(funcName + ': \"mrad\" must be an int, a list of ints or a list of a list of two ints!')
                 clip = ExInpand(clip, mode=mode[i], planes=planes, mrad=mrad[i])
             else:
-                raise TypeError(funcName + ': \"mrad\" must be an int or a list of ints or a list of a list of two ints!')
+                raise TypeError(funcName + ': \"mrad\" must be an int, a list of ints or a list of a list of two ints!')
     else:
-        raise TypeError(funcName + ': \"mrad\" must be an int or a list of ints or a list of a list of two ints!')
+        raise TypeError(funcName + ': \"mrad\" must be an int, a list of ints or a list of a list of two ints!')
 
     # InDeflate
     if isinstance(msmooth, int):
@@ -152,4 +152,25 @@ def MaskProcess(clip, mrad=0, msmooth=0, mode='rectangle', planes=[0, 1, 2]):
                 clip = InDeflate(clip, planes=planes, radius=m)
     else:
         raise TypeError(funcName + ': \"msmooth\" must be an int or a list of ints!')
+    return clip
+
+def MultiRemoveGrain(clip, mode=0, loop=1):
+    core = vs.get_core()
+    funcName = 'MultiRemoveGrain'
+    
+    if isinstance(mode, int):
+        mode = [mode]
+
+    if not isinstance(loop, int):
+        raise TypeError(funcName + ': \"loop\" must be an int!')
+    if loop < 0:
+        raise ValueError(funcName + ': \"loop\" must be positive value!')
+
+    if isinstance(mode, list):
+        for i in range(loop):
+            for m in mode:
+                clip = core.rgvs.RemoveGrain(clip, mode=m)
+    else:
+        raise TypeError(funcName + ': \"mode\" must be an int, a list of ints or a list of a list of two ints!')
+
     return clip
