@@ -70,3 +70,86 @@ def Compare(src, flt, power=1.5, chroma=False):
     chroma = chroma or isGray
 
     return core.std.Expr([src, flt], [expr] if chroma else [expr, '{neutral}'.format(neutral=1 << (bits - 1))])
+
+def MaskProcess(clip, mrad=0, msmooth=0, mode='rectangle', planes=[0, 1, 2]):
+    core = vs.get_core()
+    funcName = 'MaskProcess'
+    
+    # internel functions
+    def ExInpand(clip, mode=None, planes=None, mrad=None):
+        if isinstance(mode, int):
+            if mode == 0:
+                mode = 'rectangle'
+            elif mode == 1:
+                mode = 'losange'
+            elif mode == 2:
+                mode = 'ellipse'
+        if isinstance(mode, str):
+            if mode != 'rectangle' and mode != 'losange' and mode != 'ellipse':
+                raise ValueError(funcName + ': \"mode\" must be an int in [0, 2] or a specific string in [\"rectangle\", \"losange\", \"ellipse\"]!')
+        else:
+            raise TypeError(funcName + ': \"mode\" must be an int in [0, 2] or a specific string in [\"rectangle\", \"losange\", \"ellipse\"]!')
+        
+        if isinstance(mrad, int):
+            sw = mrad
+            sh = mrad
+        else:
+            sw = mrad[0]
+            sh = mrad[1]
+        
+        if sw * sh < 0:
+            raise TypeError(funcName + ': \"mrad\" at a time must be both positive or negative!')
+        
+        if sw > 0 or sh > 0:
+            return haf.mt_expand_multi(clip, mode=mode, planes=planes, sw=sw, sh=sh)
+        else:
+            return haf.mt_inpand_multi(clip, mode=mode, planes=planes, sw=-sw, sh=-sh)
+
+    def InDeflate(clip, planes=None, radius=None):
+        if radius > 0:
+            return haf.mt_inflate_multi(clip, planes=planes, radius=radius)
+        else:
+            return haf.mt_deflate_multi(clip, planes=planes, radius=-radius)
+
+    if not isinstance(clip, vs.VideoNode):
+        raise TypeError(funcName + ': \"clip\" must be a clip!')
+
+    if isinstance(mrad, int):
+        mrad = [mrad]
+    if isinstance(mode, str):
+        mode = [mode]
+                
+    # ExInpand
+    if isinstance(mrad, list):
+        if len(mode) < len(mrad):
+            mode_length = len(mode)
+            for i in range(mode_length, len(mrad)):
+                mode.append(mode[mode_length - 1])
+
+        for i in range(len(mrad)):
+            if isinstance(mrad[i], int):
+                clip = ExInpand(clip, mode=mode[i], planes=planes, mrad=mrad[i])
+            elif isinstance(mrad[i], list):
+                if len(mrad[i]) != 2:
+                    raise TypeError(funcName + ': \"mrad\" must be an int or a list of ints or a list of a list of two ints!')
+                for n in mrad[i]:
+                    if not isinstance(n, int):
+                        raise TypeError(funcName + ': \"mrad\" must be an int or a list of ints or a list of a list of two ints!')
+                clip = ExInpand(clip, mode=mode[i], planes=planes, mrad=mrad[i])
+            else:
+                raise TypeError(funcName + ': \"mrad\" must be an int or a list of ints or a list of a list of two ints!')
+    else:
+        raise TypeError(funcName + ': \"mrad\" must be an int or a list of ints or a list of a list of two ints!')
+
+    # InDeflate
+    if isinstance(msmooth, int):
+        clip = InDeflate(clip, planes=planes, radius=msmooth)
+    elif isinstance(msmooth, list):
+        for m in msmooth:
+            if not isinstance(m, int):
+                raise TypeError(funcName + ': \"msmooth\" must be an int or a list of ints!')
+            else:
+                clip = InDeflate(clip, planes=planes, radius=m)
+    else:
+        raise TypeError(funcName + ': \"msmooth\" must be an int or a list of ints!')
+    return clip
