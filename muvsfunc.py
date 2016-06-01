@@ -116,8 +116,11 @@ def MaskProcess(clip, mrad=0, msmooth=0, mode='rectangle', planes=[0, 1, 2]):
 
     if isinstance(mrad, int):
         mrad = [mrad]
-    if isinstance(mode, str):
+    if isinstance(mode, str) or isinstance(mode, int):
         mode = [mode]
+    
+    if not isinstance(mode, list):
+        raise TypeError(funcName + ': \"mode\" must be an int, a string, a list of ints, a list of strings or a list of mixing ints and strings!')
                 
     # ExInpand
     if isinstance(mrad, list):
@@ -127,9 +130,7 @@ def MaskProcess(clip, mrad=0, msmooth=0, mode='rectangle', planes=[0, 1, 2]):
                 mode.append(mode[mode_length - 1])
 
         for i in range(len(mrad)):
-            if isinstance(mrad[i], int):
-                clip = ExInpand(clip, mode=mode[i], planes=planes, mrad=mrad[i])
-            elif isinstance(mrad[i], list):
+            if isinstance(mrad[i], list):
                 if len(mrad[i]) != 1 and len(mrad[i]) != 2:
                     raise TypeError(funcName + ': \"mrad\" must be an int, a list of ints or a list of a list of two ints!')
                 for n in mrad[i]:
@@ -137,9 +138,9 @@ def MaskProcess(clip, mrad=0, msmooth=0, mode='rectangle', planes=[0, 1, 2]):
                         raise TypeError(funcName + ': \"mrad\" must be an int, a list of ints or a list of a list of two ints!')
                 if len(mrad[i]) == 1:
                     mrad[i].append(mrad[i][0])
-                clip = ExInpand(clip, mode=mode[i], planes=planes, mrad=mrad[i])
-            else:
+            elif not isinstance(mrad[i], int):
                 raise TypeError(funcName + ': \"mrad\" must be an int, a list of ints or a list of a list of two ints!')
+            clip = ExInpand(clip, mode=mode[i], planes=planes, mrad=mrad[i])
     else:
         raise TypeError(funcName + ': \"mrad\" must be an int, a list of ints or a list of a list of two ints!')
 
