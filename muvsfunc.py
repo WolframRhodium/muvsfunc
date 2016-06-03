@@ -71,7 +71,7 @@ def Compare(src, flt, power=1.5, chroma=False):
 
     return core.std.Expr([src, flt], [expr] if chroma else [expr, '{neutral}'.format(neutral=1 << (bits - 1))])
 
-def MaskProcess(clip, mrad=0, msmooth=0, mode='rectangle', planes=[0, 1, 2]):
+def MaskProcess(clip, mrad=0, msmooth=0, mblur=0, mode='rectangle', planes=[0, 1, 2]):
     core = vs.get_core()
     funcName = 'MaskProcess'
     
@@ -155,6 +155,9 @@ def MaskProcess(clip, mrad=0, msmooth=0, mode='rectangle', planes=[0, 1, 2]):
                 clip = InDeflate(clip, planes=planes, radius=m)
     else:
         raise TypeError(funcName + ': \"msmooth\" must be an int or a list of ints!')
+
+    clip = MultiRemoveGrain(clip, mode=mblur, loop=1)
+
     return clip
 
 def MultiRemoveGrain(clip, mode=0, loop=1):
@@ -174,6 +177,6 @@ def MultiRemoveGrain(clip, mode=0, loop=1):
             for m in mode:
                 clip = core.rgvs.RemoveGrain(clip, mode=m)
     else:
-        raise TypeError(funcName + ': \"mode\" must be an int, a list of ints or a list of a list of two ints!')
+        raise TypeError(funcName + ': \"mode\" must be an int, a list of ints or a list of a list of ints!')
 
     return clip
