@@ -65,7 +65,7 @@ def Compare(src, flt, power=1.5, chroma=False):
     isGray = src.format.color_family == vs.GRAY
     bits = src.format.bits_per_sample 
 
-    expr = 'x y - abs {power} pow'.format(power=power)
+    expr = 'x y - abs 1 + {power} pow 1 -'.format(power=power)
 
     chroma = chroma or isGray
 
