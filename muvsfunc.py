@@ -63,13 +63,21 @@ def Compare(src, flt, power=1.5, chroma=False):
         raise TypeError(funcName + ': Clips must have the same format')
 
     isGray = src.format.color_family == vs.GRAY
-    bits = src.format.bits_per_sample 
+    bits = src.format.bits_per_sample
 
     expr = 'x y - abs 1 + {power} pow 1 -'.format(power=power)
 
     chroma = chroma or isGray
 
-    return core.std.Expr([src, flt], [expr] if chroma else [expr, '{neutral}'.format(neutral=1 << (bits - 1))])
+    if bits < 16:
+        src = core.fmtc.bitdepth(src, bits=16)
+        flt = core.fmtc.bitdepth(flt, bits=16)
+        diff = core.std.Expr([src, flt], [expr] if chroma else [expr, '{neutral}'.format(neutral=1 << (bits - 1))])
+        diff = core.fmtc.bitdepth(diff, bits=bits, dmode=1)
+    else:
+        diff = core.std.Expr([src, flt], [expr] if chroma else [expr, '{neutral}'.format(neutral=1 << (bits - 1))])
+
+    return diff
 
 def MaskProcess(clip, mrad=0, msmooth=0, mblur=0, mode='rectangle', planes=[0, 1, 2]):
     core = vs.get_core()
