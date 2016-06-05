@@ -72,7 +72,7 @@ def Compare(src, flt, power=1.5, chroma=False):
     if bits < 16:
         src = core.fmtc.bitdepth(src, bits=16)
         flt = core.fmtc.bitdepth(flt, bits=16)
-        diff = core.std.Expr([src, flt], [expr] if chroma else [expr, '{neutral}'.format(neutral=1 << (bits - 1))])
+        diff = core.std.Expr([src, flt], [expr] if chroma else [expr, '{neutral}'.format(neutral=1 << (16 - 1))])
         diff = core.fmtc.bitdepth(diff, bits=bits, dmode=1)
     else:
         diff = core.std.Expr([src, flt], [expr] if chroma else [expr, '{neutral}'.format(neutral=1 << (bits - 1))])
