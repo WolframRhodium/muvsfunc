@@ -223,9 +223,13 @@ def AVS_Levels(clip, input_low, gamma, input_high, output_low, output_high, cori
 
     if coring:
         clip = core.std.Expr(clip, [luma_expr] if isGray else [luma_expr, chroma_expr])
-        clip = core.std.Levels(clip, 16, 235, 1, 0, 255)
+        clip = core.std.Levels(clip, 16, 235, 1, 0, 255, planes=[0])
+        if not isGRAY:
+            clip = core.std.Levels(clip, 16, 240, 1, 0, 255, planes=[1, 2])
         clip = core.std.Levels(clip, input_low, input_high, gamma, output_low, output_high)
-        clip = core.std.Levels(clip, 0, 255, 1, 16, 235)
+        clip = core.std.Levels(clip, 0, 255, 1, 16, 235, planes=[0])
+        if not isGRAY:
+            clip = core.std.Levels(clip, 16, 240, 1, 0, 255, planes=[1, 2])
     else:
         clip = core.std.Levels(clip, input_low, input_high, gamma, output_low, output_high)
     
