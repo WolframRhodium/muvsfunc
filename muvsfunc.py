@@ -188,3 +188,40 @@ def MultiRemoveGrain(clip, mode=0, loop=1):
         raise TypeError(funcName + ': \"mode\" must be an int, a list of ints or a list of a list of ints!')
 
     return clip
+
+def AVS_Levels(clip, input_low, gamma, input_high, output_low, output_high, coring=True, dither=False):
+    core = vs.get_core()
+    funcName = 'AVS_Levels'
+
+    if not isinstance(clip, vs.VideoNode):
+        raise TypeError(funcName + ': \"clip\" must be a clip!')
+    if not isinstance(clip.format.bits_per_sample, int) or clip.format.bits_per_sample != 8:
+        raise TypeError(funcName + ': \"clip\" must be a 8bits int precesion clip!')
+    
+    if not isinstance(input_low, int):
+        raise TypeError(funcName + ': \"input_low\" must be an int!')
+    if not isinstance(gamma, float):
+        raise TypeError(funcName + ': \"gamma\" must be a float!')
+    if not isinstance(input_high, int):
+        raise TypeError(funcName + ': \"input_high\" must be an int!')
+    if not isinstance(output_low, int):
+        raise TypeError(funcName + ': \"output_low\" must be an int!')
+    if not isinstance(output_high, int):
+        raise TypeError(funcName + ': \"output_high\" must be an int!')
+
+    isGray = clip.format.color_family == vs.GRAY
+    luma_expr = 'x 16 max 235 min'
+    chroma_expr = 'x 16 max 240 min'
+
+    if coring:
+        clip = core.std.Expr(clip, [luma_expr] if isGray else [luma_expr, chroma_expr])
+        clip = core.std.Levels(clip, 16, 235, 1, 0, 255)
+        clip = core.std.Levels(clip, input_low, input_high, gamma, output_low, output_high)
+        clip = core.std.Levels(clip, 0, 255, 1, 16, 235)
+    else:
+        clip = core.std.Levels(clip, input_low, input_high, gamma, output_low, output_high)
+    
+    if dither:
+        clip = core.fmtc.bitdepth(clip, bits=8, dmode=0)
+
+    return clip
