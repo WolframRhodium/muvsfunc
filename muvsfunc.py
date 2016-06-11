@@ -57,10 +57,12 @@ def Compare(src, flt, power=1.5, chroma=False):
     core = vs.get_core()
     funcName = 'Compare'
 
-    if not (isinstance(src, vs.VideoNode) and isinstance(flt, vs.VideoNode)):
-        raise TypeError(funcName + ': This is not a clip')
+    if not isinstance(src, vs.VideoNode):
+        raise TypeError(funcName + ': \"src\" must be a clip!')
+    if not isinstance(flt, vs.VideoNode):
+        raise TypeError(funcName + ': \"flt\" must be a clip!')
     if src.format.id != flt.format.id:
-        raise TypeError(funcName + ': Clips must have the same format')
+        raise TypeError(funcName + ': \"src\" and \"flt\" must have the same format')
 
     isGray = src.format.color_family == vs.GRAY
     bits = src.format.bits_per_sample
@@ -82,6 +84,9 @@ def Compare(src, flt, power=1.5, chroma=False):
 def MaskProcess(clip, mrad=0, msmooth=0, mblur=0, mode='rectangle', planes=[0, 1, 2]):
     core = vs.get_core()
     funcName = 'MaskProcess'
+
+    if not isinstance(clip, vs.VideoNode):
+        raise TypeError(funcName + ': \"clip\" must be a clip!')
     
     # internel functions
     def ExInpand(clip, mode=None, planes=None, mrad=None):
@@ -172,6 +177,9 @@ def MultiRemoveGrain(clip, mode=0, loop=1):
     core = vs.get_core()
     funcName = 'MultiRemoveGrain'
     
+    if not isinstance(clip, vs.VideoNode):
+        raise TypeError(funcName + ': \"clip\" must be a clip!')
+
     if isinstance(mode, int):
         mode = [mode]
 
