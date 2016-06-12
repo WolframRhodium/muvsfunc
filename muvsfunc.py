@@ -197,14 +197,18 @@ def MultiRemoveGrain(clip, mode=0, loop=1):
 
     return clip
 
-def AVS_Levels(clip, input_low, gamma, input_high, output_low, output_high, coring=True, dither=False):
+def Levels(clip, input_low, gamma, input_high, output_low, output_high, coring=True, dmode=1, planes=None):
+# High precision avs liked Levels
+# input_low, input_high, output_low, output_high is in 8 bits scale
     core = vs.get_core()
-    funcName = 'AVS_Levels'
+    funcName = 'Levels'
 
     if not isinstance(clip, vs.VideoNode):
         raise TypeError(funcName + ': \"clip\" must be a clip!')
-    if not isinstance(clip.format.bits_per_sample, int) or clip.format.bits_per_sample != 8:
-        raise TypeError(funcName + ': \"clip\" must be a 8bits int precesion clip!')
+    if not isinstance(clip.format.bits_per_sample, int):
+        raise TypeError(funcName + ': \"clip\" must be an int precesion clip!')
+    if clip.format.color_family not in [vs.YUV, vs.YCOCG, vs.GRAY]:
+        raise TypeError(funcName + ': \"clip\" must be used a YUV, YCOCG or GRAY clip!')
     
     if not isinstance(input_low, int):
         raise TypeError(funcName + ': \"input_low\" must be an int!')
@@ -218,22 +222,45 @@ def AVS_Levels(clip, input_low, gamma, input_high, output_low, output_high, cori
         raise TypeError(funcName + ': \"output_high\" must be an int!')
 
     isGray = clip.format.color_family == vs.GRAY
-    luma_expr = 'x 16 max 235 min'
-    chroma_expr = 'x 16 max 240 min'
+    if isGray:
+        if planes is None:
+            planes = [0]
+        elif 0 not in planes:
+            raise ValueError(funcName + ': No plane is processed!')
+        elif 1 in planes or 2 in planes:
+            raise ValueError(funcName + ': \"planes\" must be [0] if input clip is a GRAY clip!')
+    elif planes is None:
+        planes = [0, 1, 2]
+    chroma_planes = []
+    if 1 in planes:
+        chroma_planes.append(1)
+    if 2 in planes:
+        chroma_planes.append(2)
+    luma_expr = 'x 4096 max 60160 min'
+    chroma_expr = 'x 4096 max 61440 min'
+    bits = clip.format.bits_per_sample
+
+    if bits < 16:
+        clip = core.fmtc.bitdepth(clip, bits=16)
 
     if coring:
-        clip = core.std.Expr(clip, [luma_expr] if isGray else [luma_expr, chroma_expr])
-        clip = core.std.Levels(clip, 16, 235, 1, 0, 255, planes=[0])
-        if not isGRAY:
-            clip = core.std.Levels(clip, 16, 240, 1, 0, 255, planes=[1, 2])
-        clip = core.std.Levels(clip, input_low, input_high, gamma, output_low, output_high)
-        clip = core.std.Levels(clip, 0, 255, 1, 16, 235, planes=[0])
-        if not isGRAY:
-            clip = core.std.Levels(clip, 16, 240, 1, 0, 255, planes=[1, 2])
+        if isGray:
+            clip = core.std.Expr(clip, [luma_expr])
+        else:
+            clip = core.std.Expr(clip, [luma_expr if 0 in planes else '', chroma_expr if 1 in planes else '', chroma_expr if 2 in planes else ''])
+        if 0 in planes:
+            clip = core.std.Levels(clip, 4096, 60160, 1, 0, 65280, planes=[0])
+        if 1 in planes or 2 in planes:
+            clip = core.std.Levels(clip, 4096, 61440, 1, 0, 65280, planes=chroma_planes)
+        clip = core.std.Levels(clip, input_low << (16 - 8), input_high << (16 - 8), gamma, output_low << (16 - 8), output_high << (16 - 8), planes=planes)
+        if 0 in planes:
+            clip = core.std.Levels(clip, 0, 65280, 1, 4096, 60160, planes=[0])
+        if 1 in planes or 2 in planes:
+            clip = core.std.Levels(clip, 4096, 61400, 1, 0, 65280, planes=chroma_planes)
     else:
-        clip = core.std.Levels(clip, input_low, input_high, gamma, output_low, output_high)
+        clip = core.std.Levels(clip, input_low << (16 - 8), input_high << (16 - 8), gamma, output_low << (16 - 8), output_high << (16 - 8), planes=planes)
     
-    if dither:
-        clip = core.fmtc.bitdepth(clip, bits=8, dmode=0)
+    if bits < 16:
+        clip = core.fmtc.bitdepth(clip, bits=bits, dmode=dmode, fulls=False if coring else None, fulld=False if coring else None)
 
     return clip
