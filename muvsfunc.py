@@ -53,7 +53,7 @@ def AAMerge(Bsrc, aa_h, aa_v, mrad=0, power=1.0, show=0):
     else:
         return core.std.MaskedMerge(aa_h, aa_v, ldmap)
 
-def Compare(src, flt, power=1.5, chroma=False):
+def Compare(src, flt, power=1.5, chroma=False, mode=1):
     core = vs.get_core()
     funcName = 'Compare'
 
@@ -63,21 +63,26 @@ def Compare(src, flt, power=1.5, chroma=False):
         raise TypeError(funcName + ': \"flt\" must be a clip!')
     if src.format.id != flt.format.id:
         raise TypeError(funcName + ': \"src\" and \"flt\" must have the same format')
+    if mode not in [1, 2]:
+        raise ValueError(funcName + ': \"mode\" must be in [1, 2]!')
+
 
     isGray = src.format.color_family == vs.GRAY
     bits = src.format.bits_per_sample
 
-    expr = 'x y - abs 1 + {power} pow 1 -'.format(power=power)
+    expr = {}
+    expr[1] = 'y x - abs 1 + {power} pow 1 -'.format(power=power)
+    expr[2] = 'y x - {scale} * {neutral} +'.format(scale=(1 << (16 - 1)) / ((1 << 16) ** (1 / power) - 1), neutral=1 << (16 - 1))
 
     chroma = chroma or isGray
 
     if bits < 16:
         src = core.fmtc.bitdepth(src, bits=16)
         flt = core.fmtc.bitdepth(flt, bits=16)
-        diff = core.std.Expr([src, flt], [expr] if chroma else [expr, '{neutral}'.format(neutral=1 << (16 - 1))])
+        diff = core.std.Expr([src, flt], [expr[mode]] if chroma else [expr[mode], '{neutral}'.format(neutral=1 << (16 - 1))])
         diff = core.fmtc.bitdepth(diff, bits=bits, dmode=1)
     else:
-        diff = core.std.Expr([src, flt], [expr] if chroma else [expr, '{neutral}'.format(neutral=1 << (bits - 1))])
+        diff = core.std.Expr([src, flt], [expr[mode]] if chroma else [expr[mode], '{neutral}'.format(neutral=1 << (16 - 1))])
 
     return diff
 
