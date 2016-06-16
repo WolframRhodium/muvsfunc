@@ -30,6 +30,8 @@ def AAMerge(Bsrc, aa_h, aa_v, mrad=0, power=1.0, show=0):
 
     if not isinstance(show, int):
         raise TypeError(funcName + '\"show\" must be an int!')
+    if show not in list(range(0, 4)):
+        raise ValueError(funcName + '\"show\" must be in [0, 1, 2, 3]!')
     
     hmap = core.std.Convolution(Bsrc, matrix=[-1, 2, -1, -1, 2, -1, -1, 2, -1], saturate=False)
     vmap = core.std.Convolution(Bsrc, matrix=[-1, -1, -1, 2, 2, 2, -1, -1, -1], saturate=False)
@@ -43,15 +45,15 @@ def AAMerge(Bsrc, aa_h, aa_v, mrad=0, power=1.0, show=0):
     bits = Bsrc.format.bits_per_sample
     ldexpr = '{peak} 1 y x / {power} pow + /'.format(peak=(1 << bits) - 1, power=power)
     ldmap = core.std.Expr([hmap, vmap], [ldexpr])
-        
-    if show == 1:
+
+    if show == 0:
+        return core.std.MaskedMerge(aa_h, aa_v, ldmap)
+    elif show == 1:
         return ldmap
     elif show == 2:
         return hmap
     elif show == 3:
         return vmap
-    else:
-        return core.std.MaskedMerge(aa_h, aa_v, ldmap)
 
 def Compare(src, flt, power=1.5, chroma=False, mode=1):
     core = vs.get_core()
