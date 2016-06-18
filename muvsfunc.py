@@ -215,7 +215,7 @@ def MultiRemoveGrain(clip, mode=0, loop=1):
 ### Parameters "y", "u", "v" are changed into "planes"
 def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=None,
              ampn=None, pat=None, dyn=None, lsb=None, staticnoise=None, smode=None,
-             thr_det=None,debug=None, thrc=None, radiusc=None, elastc=None, planes=None, ref=None):
+             thr_det=None, debug=None, thrc=None, radiusc=None, elastc=None, planes=None, ref=None):
     core = vs.get_core()
     funcName = 'GradFun3'
 
@@ -277,7 +277,7 @@ def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=
 
     if debug is None:
         debug = False
-    elif not isinstance(debug, bool):
+    elif not isinstance(debug, bool) and debug not in [0, 1]:
         raise TypeError(funcName + ': \"debug\" must be a bool!')
 
     if thrc is None:
@@ -335,10 +335,13 @@ def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=
     	raise ValueError(funcName + ': no plane is processed')
 
     flt_y = GF3_smooth(src_16, ref_16, smode, radius, thr, elast, planes2)
-    if chroma_flag and 0 in planes2:
-        planes2.remove(0)
-    flt_c = GF3_smooth(src_16, ref_16, smode, radiusc, thrc, elastc, planes2) if chroma_flag else flt_y
-    flt = core.std.ShufflePlanes([flt_y, flt_c], [0, 1, 2], src.format.color_family) if chroma_flag else flt_y
+    if chroma_flag:
+        if 0 in planes2:
+            planes2.remove(0)
+        flt_c = GF3_smooth(src_16, ref_16, smode, radiusc, thrc, elastc, planes2)
+        flt = core.std.ShufflePlanes([flt_y, flt_c], [0, 1, 2], src.format.color_family)
+    else:
+        flt = flt_y
 
     # Edge/detail mask
 
@@ -346,21 +349,31 @@ def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=
     td_hi = max(thr_det, 1.0)
     mexpr = 'x {tl} - {th} {tl} - / 255 *'.format(tl=td_lo - 0.0001, th=td_hi+ 0.0001)
 
-    dmask = mvf.GetPlane(src_8, 0) if mask > 0 else src_8
-    dmask = Build_gf3_range_mask(dmask) if mask > 0 else dmask
-    dmask = core.std.Expr([dmask], [mexpr]) if mask > 0 else dmask
-    dmask = core.rgvs.RemoveGrain([dmask], [22]) if mask > 0 else dmask
-    dmask = core.rgvs.RemoveGrain([dmask], [11]) if mask > 1 else dmask
-    dmask = core.rgvs.RemoveGrain([dmask], [20]) if mask > 2 else dmask
-    dmask = core.fmtc.bitdepth(dmask, bits=16)
+    if mask > 0:
+        dmask = mvf.GetPlane(src_8, 0)
+        dmask = Build_gf3_range_mask(dmask)
+        dmask = core.std.Expr([dmask], [mexpr])
+        dmask = core.rgvs.RemoveGrain([dmask], [22])
+        if mask > 1:
+            dmask = core.rgvs.RemoveGrain([dmask], [11])
+            if mask > 2:
+                dmask = core.rgvs.RemoveGrain([dmask], [20])
+        dmask = core.fmtc.bitdepth(dmask, bits=16)
+        res_16 = core.std.MaskedMerge(flt, src_16, dmask, planes=planes, first_plane=True)
+    else:
+        res_16 = flt
 
-    res_16 = core.std.MaskedMerge(flt, src_16, dmask, planes=planes, first_plane=True) if mask > 0 else flt
+    # Dithering
 
     result = res_16 if lsb else core.fmtc.bitdepth(res_16, bits=bits, planes=planes, dmode=mode, ampo=ampo,
                                                    ampn=ampn, dyn=dyn, staticnoise=staticnoise, patsize=pat)
 
-    last = mvf.GetPlane(dmask, 0) if debug else result
-    last = core.fmtc.bitdepth(last, bits=16) if debug and lsb else last
+    if debug:
+        last = mvf.GetPlane(dmask, 0)
+        if lsb:
+            last = core.fmtc.bitdepth(last, bits=16)
+    else:
+        last = result
     return last
 
 def GF3_smooth(src_16, ref_16, smode, radius, thr, elast, planes):
@@ -433,10 +446,10 @@ def GF3_bilateral_multistage(src, ref, radius, thr, elast, planes):
 def Build_gf3_range_mask(src, radius=1):
     core = vs.get_core()
     last = src
-    ma = haf.mt_expand_multi(last, mode='ellipse', planes=[0], sw=radius, sh=radius) if radius > 1 else last
-    mi = haf.mt_inpand_multi(last, mode='ellipse', planes=[0], sw=radius, sh=radius) if radius > 1 else last
 
     if radius > 1:
+        ma = haf.mt_expand_multi(last, mode='ellipse', planes=[0], sw=radius, sh=radius)
+        mi = haf.mt_inpand_multi(last, mode='ellipse', planes=[0], sw=radius, sh=radius)
         last = core.std.Expr([ma, mi], ['x y -'])
     else:
         bits = src.format.bits_per_sample
