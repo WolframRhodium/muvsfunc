@@ -1,5 +1,6 @@
 import vapoursynth as vs
 import havsfunc as haf
+import mvsfunc as mvf
 
 def AAMerge(Bsrc, aa_h, aa_v, mrad=0, power=1.0, show=0):
     core = vs.get_core()
@@ -203,3 +204,248 @@ def MultiRemoveGrain(clip, mode=0, loop=1):
         raise TypeError(funcName + ': \"mode\" must be an int, a list of ints or a list of a list of ints!')
 
     return clip
+
+### GradFun3 by Firesledge v0.0.1
+### Port by Muonium  2016/6/18
+### Port from Dither_tools v1.27.2 (http://avisynth.nl/index.php/Dither_tools)
+### Currently only smode=1 and smode=2 is implemented in VapourSynth.
+### Internal calculation precision is always 16 bits
+### Removed parameters list: 
+###     "dthr", "wmin", "thr_edg", "subspl", "lsb_in"
+### Parameters "y", "u", "v" are changed into "planes"
+def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=None,
+             ampn=None, pat=None, dyn=None, lsb=None, staticnoise=None, smode=None,
+             thr_det=None,debug=None, thrc=None, radiusc=None, elastc=None, planes=None, ref=None):
+    core = vs.get_core()
+    funcName = 'GradFun3'
+
+    if not isinstance(src, vs.VideoNode):
+        raise TypeError(funcName + ': \"clip\" must be a clip!')
+    if src.format.color_family not in [vs.YUV, vs.GRAY, vs.YCOCG]:
+        raise TypeError(funcName + ': \"clip\" must be YUV, GRAY or YCOCG color family!')
+
+    if thr is None:
+    	thr = 0.35
+    elif isinstance(thr, int) or isinstance(thr, float):
+        if thr < 0.1 or thr > 10.0:
+            raise ValueError(funcName + ': \"thr\" must be in [0.1, 10.0]!')
+    else:
+        raise TypeError(funcName + ': \"thr\" must be an int or a float!')
+
+    if radius is None:
+        radius = 16 if src.width > 1024 or src.height > 576 else 12
+    elif isinstance(radius, int):
+        if radius <= 0:
+            raise ValueError(funcName + '\"radius\" must be strictly positive.')
+    else:
+    	raise TypeError(funcName + '\"radius\" must be an int!')
+
+    if elast is None:
+        elast = 3.0
+    elif isinstance(elast, int) or isinstance(elast, float):
+        if elast < 1:
+            raise ValueError(funcName + ':valid range of \"elast\" is [1, +inf)!')
+    else:
+        raise TypeError(funcName + ': \"elast\" must be an int or a float!')
+
+    if mask is None:
+    	mask = 2
+    elif not isinstance(mask, int):
+        raise TypeError(funcName + ': \"mask\" must be an int!')
+
+    if lsb is None:
+        lsb = False
+
+    if smode is None:
+    	smode = 1
+    elif smode not in [0, 1, 2, 3]:
+        raise ValueError(funcName + ': \"thr\" must be in [0, 1, 2, 3]!')
+    if smode == 0:
+        if radius not in list(range(1, 68+1)):
+            raise ValueError(funcName + ': \"radius\" must be in 1-68 for smode=0 !')
+    elif smode == 1:
+        if radius not in list(range(1, 128+1)):
+            raise ValueError(funcName + ': \"radius\" must be in 1-128 for smode=1 !')
+
+    if thr_det is None:
+        thr_det = 2 + round(max(thr - 0.35, 0) / 0.3)
+    elif isinstance(thr_det, float):
+        if thr_det <= 0.0:
+            raise ValueError(funcName + '" \"thr_det\" must be strictly positive!')
+    else:
+        raise TypeError(funcName + ': \"mask\" must be a float!')
+
+    if debug is None:
+        debug = False
+    elif not isinstance(debug, bool):
+        raise TypeError(funcName + ': \"debug\" must be a bool!')
+
+    if thrc is None:
+        thrc = thr
+    elif thrc < 0.1 or thrc > 10.0:
+        raise ValueError(funcName + ': \"thrc\" must be in [0.1, 10.0]!')
+
+    if radiusc is None:
+        radiusc = radius
+    elif isinstance(radiusc, int):
+        if radiusc <= 0:
+            raise ValueError(funcName + '\"radiusc\" must be strictly positive.')
+    else:
+    	raise TypeError(funcName + '\"radiusc\" must be an int!')
+    if smode == 0:
+        if radiusc not in list(range(1, 68+1)):
+            raise ValueError(funcName + ': \"radiusc\" must be in 1-68 for smode=0 !')
+    elif smode == 1:
+        if radiusc not in list(range(1, 128+1)):
+            raise ValueError(funcName + ': \"radiusc\" must be in 1-128 for smode=1 !')
+
+    if elastc is None:
+        elastc = elast
+    elif isinstance(elastc, int) or isinstance(elastc, float):
+        if elastc < 1:
+            raise ValueError(funcName + ':valid range of \"elastc\" is [1, +inf)!')
+    else:
+        raise TypeError(funcName + ': \"elastc\" must be an int or a float!')
+
+    if planes is None:
+        planes = list(range(src.format.num_planes))
+
+    if ref is None:
+        ref = src
+    elif not isinstance(src, vs.VideoNode):
+        raise TypeError(funcName + ': \"ref\" must be a clip!')
+    if ref.format.color_family not in [vs.YUV, vs.GRAY, vs.YCOCG]:
+        raise TypeError(funcName + ': \"ref\" must be YUV, GRAY or YCOCG color family!')
+
+    bits = src.format.bits_per_sample
+    src_16 = core.fmtc.bitdepth(src, bits=16, planes=planes) if bits < 16 else src
+    src_8 = core.fmtc.bitdepth(src, bits=8, planes=[0]) if bits != 8 else src
+    ref_16 = core.fmtc.bitdepth(ref, bits=16, planes=planes) if ref.format.bits_per_sample < 16 else ref
+
+    # Main debanding
+    chroma_flag = (thrc != thr or radiusc != radius or
+                   elastc != elast) and 0 in planes and (1 in planes or 2 in planes)
+
+    if chroma_flag:
+        planes2 = [0] if 0 in planes else []
+    else:
+    	planes2 = planes
+
+    if not planes2:
+    	raise ValueError(funcName + ': no plane is processed')
+
+    flt_y = GF3_smooth(src_16, ref_16, smode, radius, thr, elast, planes2)
+    if chroma_flag and 0 in planes2:
+        planes2.remove(0)
+    flt_c = GF3_smooth(src_16, ref_16, smode, radiusc, thrc, elastc, planes2) if chroma_flag else flt_y
+    flt = core.std.ShufflePlanes([flt_y, flt_c], [0, 1, 2], src.format.color_family) if chroma_flag else flt_y
+
+    # Edge/detail mask
+
+    td_lo = max(thr_det * 0.75, 1.0)
+    td_hi = max(thr_det, 1.0)
+    mexpr = 'x {tl} - {th} {tl} - / 255 *'.format(tl=td_lo - 0.0001, th=td_hi+ 0.0001)
+
+    dmask = mvf.GetPlane(src_8, 0) if mask > 0 else src_8
+    dmask = Build_gf3_range_mask(dmask) if mask > 0 else dmask
+    dmask = core.std.Expr([dmask], [mexpr]) if mask > 0 else dmask
+    dmask = core.rgvs.RemoveGrain([dmask], [22]) if mask > 0 else dmask
+    dmask = core.rgvs.RemoveGrain([dmask], [11]) if mask > 1 else dmask
+    dmask = core.rgvs.RemoveGrain([dmask], [20]) if mask > 2 else dmask
+    dmask = core.fmtc.bitdepth(dmask, bits=16)
+
+    res_16 = core.std.MaskedMerge(flt, src_16, dmask, planes=planes, first_plane=True) if mask > 0 else flt
+
+    result = res_16 if lsb else core.fmtc.bitdepth(res_16, bits=bits, planes=planes, dmode=mode, ampo=ampo,
+                                                   ampn=ampn, dyn=dyn, staticnoise=staticnoise, patsize=pat)
+
+    last = mvf.GetPlane(dmask, 0) if debug else result
+    last = core.fmtc.bitdepth(last, bits=16) if debug and lsb else last
+    return last
+
+def GF3_smooth(src_16, ref_16, smode, radius, thr, elast, planes):
+    core = vs.get_core()
+    if smode == 0:
+        return GF3_smoothgrad_multistage(src_16, ref_16, radius, thr, elast, planes)
+    elif smode == 1:
+        return GF3_dfttest(src_16, ref_16, radius, thr, elast, planes)
+    elif smode == 2:
+        return GF3_bilateral_multistage(src_16, ref_16, radius, thr, elast, planes)
+    elif smode == 3:
+        return GF3_smoothgrad_multistage_3(src_16, radius, thr, elast, planes)
+    else:
+        raise ValueError(funcName + ': wrong smode value!')
+
+def GF3_smoothgrad_multistage(src, ref, radius, thr, elast, planes):
+    core = vs.get_core()
+    raise RuntimeError(funcName + ': SmoothGrad has not been ported to VapourSynth!')
+    '''
+    ela_2 = max(elast * 0.83, 1.0)
+    ela_3 = max(elast * 0.67, 1.0)
+    r2 = radius * 2 // 3
+    r3 = radius * 3 // 3
+    r4 = radius * 4 // 4
+
+    last = src
+    last = SmoothGrad(radius=r2, thr=thr, elast=elast, ref=ref, planes=planes) if r2 >= 1 else last
+    last = SmoothGrad(radius=r3, thr=thr * 0.7, elast=ela_2, ref=ref, planes=planes) if r3 >= 1 else last
+    last = SmoothGrad(radius=r4, thr=thr * 0.46, elast=ela_3, ref=ref, planes=planes) if r4 >= 1 else last
+    return last
+    '''
+
+def GF3_smoothgrad_multistage_3(src, radius, thr, elast, planes):
+    core = vs.get_core()
+    raise RuntimeError(funcName + ': SmoothGrad has not been ported to VapourSynth!')
+    '''
+    ref = SmoothGrad(src, radius=radius // 3, thr=thr * 0.8, elast=elast)
+
+    last = Boxfilter(src, radius=radius, planes=planes)
+    last = Boxfilter(last, radius=radius, planes=planes)
+
+    last = mvf.LimitFilter(last, src, thr=thr * 0.6, elast=elast, ref=ref, planes=planes)
+	return last
+	'''
+
+def GF3_dfttest(src, ref, radius, thr, elast, planes):
+    core = vs.get_core()
+    hrad = max(radius * 3 // 4, 1)
+    last = core.dfttest.DFTTest(src, sigma=hrad * thr * thr * 32, sbsize=hrad * 4,
+                                sosize=hrad * 3, tbsize=1, planes=planes)
+    last = mvf.LimitFilter(last, ref, thr=thr, elast=elast, planes=planes)
+    return last
+
+def GF3_bilateral_multistage(src, ref, radius, thr, elast, planes):
+    core = vs.get_core()
+    thr_1 = max(thr * 4.5, 1.25)
+    thr_2 = max(thr * 9, 5.0)
+    r4 = max(radius * 4 / 3, 4.0)
+    r2 = max(radius * 2 / 3, 3.0)
+    r1 = max(radius * 1 / 3, 2.0)
+
+    last = src
+    last = core.bilateral.Bilateral(last, ref=ref, sigmaS=r4, sigmaR=thr_1 / 255, planes=planes, algorithm=0) if r4 >= 2 else last
+    last = core.bilateral.Bilateral(last, ref=ref, sigmaS=r2, sigmaR=thr_2 / 255, planes=planes, algorithm=0) if r2 >= 2 else last
+    last = core.bilateral.Bilateral(last, ref=ref, sigmaS=r1, sigmaR=thr_2 / 255, planes=planes, algorithm=0) if r1 >= 2 else last
+
+    last = mvf.LimitFilter(last, src, thr=thr, elast=elast, planes=planes)
+    return last
+
+def Build_gf3_range_mask(src, radius=1):
+    core = vs.get_core()
+    last = src
+    ma = haf.mt_expand_multi(last, mode='ellipse', planes=[0], sw=radius, sh=radius) if radius > 1 else last
+    mi = haf.mt_inpand_multi(last, mode='ellipse', planes=[0], sw=radius, sh=radius) if radius > 1 else last
+
+    if radius > 1:
+        last = core.std.Expr([ma, mi], ['x y -'])
+    else:
+        bits = src.format.bits_per_sample
+        black = 0
+        white = (1 << bits) - 1
+        maxi = core.std.Maximum(last, [0])
+        mini = core.std.Minimum(last, [0])
+        exp = "x y -"
+        exp2 = "x {thY1} < {black} x ? {thY2} > {white} x ?".format(thY1=0, thY2=255, black=black, white=white)
+        last = core.std.Expr([maxi,mini],[exp])
+        last = core.std.Expr([last], [exp2])
+    return last
