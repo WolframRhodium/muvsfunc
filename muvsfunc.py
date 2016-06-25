@@ -2,26 +2,26 @@ import vapoursynth as vs
 import havsfunc as haf
 import mvsfunc as mvf
 
-def LDMerge(aa_h, aa_v, Bsrc, mrad=0, power=1.0, show=0, planes=None):
+def LDMerge(flt_h, flt_v, Bsrc, mrad=0, power=1.0, show=0, planes=None):
     core = vs.get_core()
     funcName = 'LDMerge'
     
     if not isinstance(Bsrc, vs.VideoNode):
         raise TypeError(funcName + ': \"Bsrc\" must be a clip!')
          
-    if not isinstance(aa_h, vs.VideoNode):
-        raise TypeError(funcName + ': \"aa_h\" must be a clip!')
-    if Bsrc.format.id != aa_h.format.id:
-        raise ValueError(funcName + ': clip \"aa_h\" must be of the same format as the Bsrc clip!')
-    if Bsrc.width != aa_h.width or Bsrc.height != aa_h.height:
-        raise ValueError(funcName + ': clip \"aa_h\" must be of the same size as the Bsrc clip!')
+    if not isinstance(flt_h, vs.VideoNode):
+        raise TypeError(funcName + ': \"flt_h\" must be a clip!')
+    if Bsrc.format.id != flt_h.format.id:
+        raise ValueError(funcName + ': clip \"flt_h\" must be of the same format as the Bsrc clip!')
+    if Bsrc.width != flt_h.width or Bsrc.height != flt_h.height:
+        raise ValueError(funcName + ': clip \"flt_h\" must be of the same size as the Bsrc clip!')
     
-    if not isinstance(aa_v, vs.VideoNode):
-        raise TypeError(funcName + ': \"aa_v\" must be a clip!')
-    if Bsrc.format.id != aa_v.format.id:
-        raise ValueError(funcName + ': clip \"aa_v\" must be of the same format as the Bsrc clip!')
-    if Bsrc.width != aa_v.width or Bsrc.height != aa_v.height:
-        raise ValueError(funcName + ': clip \"aa_v\" must be of the same size as the Bsrc clip!')   
+    if not isinstance(flt_v, vs.VideoNode):
+        raise TypeError(funcName + ': \"flt_v\" must be a clip!')
+    if Bsrc.format.id != flt_v.format.id:
+        raise ValueError(funcName + ': clip \"flt_v\" must be of the same format as the Bsrc clip!')
+    if Bsrc.width != flt_v.width or Bsrc.height != flt_v.height:
+        raise ValueError(funcName + ': clip \"flt_v\" must be of the same size as the Bsrc clip!')   
         
     if not isinstance(mrad, int):
         raise TypeError(funcName + '\"mrad\" must be an int!')
@@ -35,10 +35,10 @@ def LDMerge(aa_h, aa_v, Bsrc, mrad=0, power=1.0, show=0, planes=None):
         raise ValueError(funcName + '\"show\" must be in [0, 1, 2, 3]!')
     
     if planes is None:
-        planes = list(range(aa_h.format.num_planes))
+        planes = list(range(flt_h.format.num_planes))
 
-    bits = aa_h.format.bits_per_sample
-    isGray = aa_h.format.color_family == vs.GRAY
+    bits = flt_h.format.bits_per_sample
+    isGray = flt_h.format.color_family == vs.GRAY
     
     hmap = core.std.Convolution(Bsrc, matrix=[-1, 2, -1, -1, 2, -1, -1, 2, -1], saturate=False, planes=planes)
     vmap = core.std.Convolution(Bsrc, matrix=[-1, -1, -1, 2, 2, 2, -1, -1, -1], saturate=False, planes=planes)
@@ -56,7 +56,7 @@ def LDMerge(aa_h, aa_v, Bsrc, mrad=0, power=1.0, show=0, planes=None):
         ldmap = core.std.Expr([hmap, vmap], [ldexpr if 0 in planes else '', ldexpr if 1 in planes else '', ldexpr if 2 in planes else ''])
 
     if show == 0:
-        return core.std.MaskedMerge(aa_h, aa_v, ldmap, planes=planes)
+        return core.std.MaskedMerge(flt_h, flt_v, ldmap, planes=planes)
     elif show == 1:
         return ldmap
     elif show == 2:
