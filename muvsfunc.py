@@ -2,9 +2,9 @@ import vapoursynth as vs
 import havsfunc as haf
 import mvsfunc as mvf
 
-def AAMerge(Bsrc, aa_h, aa_v, mrad=0, power=1.0, show=0):
+def LDMerge(aa_h, aa_v, Bsrc, mrad=0, power=1.0, show=0, planes=None):
     core = vs.get_core()
-    funcName = 'AAMerge'
+    funcName = 'LDMerge'
     
     if not isinstance(Bsrc, vs.VideoNode):
         raise TypeError(funcName + ': \"Bsrc\" must be a clip!')
@@ -34,21 +34,29 @@ def AAMerge(Bsrc, aa_h, aa_v, mrad=0, power=1.0, show=0):
     if show not in list(range(0, 4)):
         raise ValueError(funcName + '\"show\" must be in [0, 1, 2, 3]!')
     
-    hmap = core.std.Convolution(Bsrc, matrix=[-1, 2, -1, -1, 2, -1, -1, 2, -1], saturate=False)
-    vmap = core.std.Convolution(Bsrc, matrix=[-1, -1, -1, 2, 2, 2, -1, -1, -1], saturate=False)
-    if mrad > 0:
-        hmap = haf.mt_expand_multi(hmap, sw=mrad, sh=0)
-        vmap = haf.mt_expand_multi(vmap, sw=0, sh=mrad)
-    elif mrad < 0:
-        hmap = haf.mt_inpand_multi(hmap, sw=-mrad, sh=0)
-        vmap = haf.mt_inpand_multi(vmap, sw=0, sh=-mrad)  
+    if planes is None:
+        planes = list(range(aa_h.format.num_planes))
+
+    bits = aa_h.format.bits_per_sample
+    isGray = aa_h.format.color_family == vs.GRAY
     
-    bits = Bsrc.format.bits_per_sample
+    hmap = core.std.Convolution(Bsrc, matrix=[-1, 2, -1, -1, 2, -1, -1, 2, -1], saturate=False, planes=planes)
+    vmap = core.std.Convolution(Bsrc, matrix=[-1, -1, -1, 2, 2, 2, -1, -1, -1], saturate=False, planes=planes)
+    if mrad > 0:
+        hmap = haf.mt_expand_multi(hmap, sw=mrad, sh=0, planes=planes)
+        vmap = haf.mt_expand_multi(vmap, sw=0, sh=mrad, planes=planes)
+    elif mrad < 0:
+        hmap = haf.mt_inpand_multi(hmap, sw=-mrad, sh=0, planes=planes)
+        vmap = haf.mt_inpand_multi(vmap, sw=0, sh=-mrad, planes=planes)
+    
     ldexpr = '{peak} 1 y x / {power} pow + /'.format(peak=(1 << bits) - 1, power=power)
-    ldmap = core.std.Expr([hmap, vmap], [ldexpr])
+    if isGray:
+        ldmap = core.std.Expr([hmap, vmap], [ldexpr])
+    else:
+        ldmap = core.std.Expr([hmap, vmap], [ldexpr if 0 in planes else '', ldexpr if 1 in planes else '', ldexpr if 2 in planes else ''])
 
     if show == 0:
-        return core.std.MaskedMerge(aa_h, aa_v, ldmap)
+        return core.std.MaskedMerge(aa_h, aa_v, ldmap, planes=planes)
     elif show == 1:
         return ldmap
     elif show == 2:
@@ -89,12 +97,15 @@ def Compare(src, flt, power=1.5, chroma=False, mode=1):
 
     return diff
 
-def MaskProcess(clip, mrad=0, msmooth=0, mblur=0, mode='rectangle', planes=[0, 1, 2]):
+def MaskProcess(clip, mrad=0, msmooth=0, mblur=0, mode='rectangle', planes=None):
     core = vs.get_core()
     funcName = 'MaskProcess'
 
     if not isinstance(clip, vs.VideoNode):
         raise TypeError(funcName + ': \"clip\" must be a clip!')
+
+    if planes is None:
+        planes = list(range(clip.format.num_planes))
     
     # internel functions
     def ExInpand(clip, mode=None, planes=None, mrad=None):
@@ -213,9 +224,9 @@ def MultiRemoveGrain(clip, mode=0, loop=1):
 ### Removed parameters list: 
 ###     "dthr", "wmin", "thr_edg", "subspl", "lsb_in"
 ### Parameters "y", "u", "v" are changed into "planes"
-def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=None,
-             ampn=None, pat=None, dyn=None, lsb=None, staticnoise=None, smode=None,
-             thr_det=None, debug=None, thrc=None, radiusc=None, elastc=None, planes=None, ref=None):
+def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=None, ampn=None,
+             pat=None, dyn=None, lsb=None, staticnoise=None, smode=None, thr_det=None,
+             debug=None, thrc=None, radiusc=None, elastc=None, planes=None, ref=None):
     core = vs.get_core()
     funcName = 'GradFun3'
 
@@ -332,7 +343,7 @@ def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=
     	planes2 = planes
 
     if not planes2:
-    	raise ValueError(funcName + ': no plane is processed')
+    	raise ValueError(funcName + ': no plane is processed!')
 
     flt_y = GF3_smooth(src_16, ref_16, smode, radius, thr, elast, planes2)
     if chroma_flag:
