@@ -26,8 +26,8 @@ def LDMerge(flt_h, flt_v, Bsrc, mrad=0, power=1.0, show=0, planes=None):
     if not isinstance(mrad, int):
         raise TypeError(funcName + '\"mrad\" must be an int!')
     
-    if not isinstance(power, float):
-        raise TypeError(funcName + '\"power\" must be a float!')
+    if not isinstance(power, float) and not isinstance(power, int):
+        raise TypeError(funcName + '\"power\" must be a float or an int!')
 
     if not isinstance(show, int):
         raise TypeError(funcName + '\"show\" must be an int!')
@@ -40,20 +40,17 @@ def LDMerge(flt_h, flt_v, Bsrc, mrad=0, power=1.0, show=0, planes=None):
     bits = flt_h.format.bits_per_sample
     isGray = flt_h.format.color_family == vs.GRAY
     
-    hmap = core.std.Convolution(Bsrc, matrix=[-1, 2, -1, -1, 2, -1, -1, 2, -1], saturate=False, planes=planes)
-    vmap = core.std.Convolution(Bsrc, matrix=[-1, -1, -1, 2, 2, 2, -1, -1, -1], saturate=False, planes=planes)
+    hmap = core.std.Convolution(Bsrc, matrix=[-1, -1, -1, 2, 2, 2, -1, -1, -1], saturate=False, planes=planes)
+    vmap = core.std.Convolution(Bsrc, matrix=[-1, 2, -1, -1, 2, -1, -1, 2, -1], saturate=False, planes=planes)
     if mrad > 0:
-        hmap = haf.mt_expand_multi(hmap, sw=mrad, sh=0, planes=planes)
-        vmap = haf.mt_expand_multi(vmap, sw=0, sh=mrad, planes=planes)
+        hmap = haf.mt_expand_multi(hmap, sw=0, sh=mrad, planes=planes)
+        vmap = haf.mt_expand_multi(vmap, sw=mrad, sh=0, planes=planes)
     elif mrad < 0:
-        hmap = haf.mt_inpand_multi(hmap, sw=-mrad, sh=0, planes=planes)
-        vmap = haf.mt_inpand_multi(vmap, sw=0, sh=-mrad, planes=planes)
+        hmap = haf.mt_inpand_multi(hmap, sw=0, sh=-mrad, planes=planes)
+        vmap = haf.mt_inpand_multi(vmap, sw=-mrad, sh=0, planes=planes)
     
-    ldexpr = '{peak} 1 y x / {power} pow + /'.format(peak=(1 << bits) - 1, power=power)
-    if isGray:
-        ldmap = core.std.Expr([hmap, vmap], [ldexpr])
-    else:
-        ldmap = core.std.Expr([hmap, vmap], [ldexpr if 0 in planes else '', ldexpr if 1 in planes else '', ldexpr if 2 in planes else ''])
+    ldexpr = '{peak} 1 x 0.0001 + y 0.0001 + / {power} pow + /'.format(peak=(1 << bits) - 1, power=power)
+    ldmap = core.std.Expr([hmap, vmap], [ldexpr] if isGray else [ldexpr if 0 in planes else '', ldexpr if 1 in planes else '', ldexpr if 2 in planes else ''])
 
     if show == 0:
         return core.std.MaskedMerge(flt_h, flt_v, ldmap, planes=planes)
