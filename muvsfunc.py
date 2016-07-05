@@ -384,10 +384,12 @@ def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=
             last = core.fmtc.bitdepth(last, bits=16)
     else:
         last = result
+
     return last
 
 def GF3_smooth(src_16, ref_16, smode, radius, thr, elast, planes):
     core = vs.get_core()
+
     if smode == 0:
         return GF3_smoothgrad_multistage(src_16, ref_16, radius, thr, elast, planes)
     elif smode == 1:
@@ -432,6 +434,7 @@ def GF3_dfttest(src, ref, radius, thr, elast, planes):
     last = core.dfttest.DFTTest(src, sigma=hrad * thr * thr * 32, sbsize=hrad * 4,
                                 sosize=hrad * 3, tbsize=1, planes=planes)
     last = mvf.LimitFilter(last, ref, thr=thr, elast=elast, planes=planes)
+
     return last
 
 def GF3_bilateral_multistage(src, ref, radius, thr, elast, planes):
@@ -448,6 +451,7 @@ def GF3_bilateral_multistage(src, ref, radius, thr, elast, planes):
     last = core.bilateral.Bilateral(last, ref=ref, sigmaS=r1, sigmaR=thr_2 / 255, planes=planes, algorithm=0) if r1 >= 2 else last
 
     last = mvf.LimitFilter(last, src, thr=thr, elast=elast, planes=planes)
+
     return last
 
 def Build_gf3_range_mask(src, radius=1):
@@ -468,4 +472,5 @@ def Build_gf3_range_mask(src, radius=1):
         exp2 = "x {thY1} < {black} x ? {thY2} > {white} x ?".format(thY1=0, thY2=255, black=black, white=white)
         last = core.std.Expr([maxi,mini],[exp])
         last = core.std.Expr([last], [exp2])
+
     return last
