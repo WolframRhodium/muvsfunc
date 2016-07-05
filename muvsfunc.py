@@ -89,7 +89,7 @@ def Compare(src, flt, power=1.5, chroma=False, mode=1):
         src = core.fmtc.bitdepth(src, bits=16)
         flt = core.fmtc.bitdepth(flt, bits=16)
         diff = core.std.Expr([src, flt], [expr[mode]] if chroma else [expr[mode], '{neutral}'.format(neutral=32768)])
-        diff = core.fmtc.bitdepth(diff, bits=bits, dmode=1)
+        diff = core.fmtc.bitdepth(diff, bits=bits, dmode=1, fulls=True, fulld=True)
     else:
         diff = core.std.Expr([src, flt], [expr[mode]] if chroma else [expr[mode], '{neutral}'.format(neutral=32768)])
 
