@@ -2,26 +2,26 @@ import vapoursynth as vs
 import havsfunc as haf
 import mvsfunc as mvf
 
-def LDMerge(flt_h, flt_v, Bsrc, mrad=0, power=1.0, show=0, planes=None):
+def LDMerge(flt_h, flt_v, src, mrad=0, power=1.0, show=0, planes=None):
     core = vs.get_core()
     funcName = 'LDMerge'
     
-    if not isinstance(Bsrc, vs.VideoNode):
-        raise TypeError(funcName + ': \"Bsrc\" must be a clip!')
+    if not isinstance(src, vs.VideoNode):
+        raise TypeError(funcName + ': \"src\" must be a clip!')
          
     if not isinstance(flt_h, vs.VideoNode):
         raise TypeError(funcName + ': \"flt_h\" must be a clip!')
-    if Bsrc.format.id != flt_h.format.id:
-        raise ValueError(funcName + ': clip \"flt_h\" must be of the same format as the Bsrc clip!')
-    if Bsrc.width != flt_h.width or Bsrc.height != flt_h.height:
-        raise ValueError(funcName + ': clip \"flt_h\" must be of the same size as the Bsrc clip!')
+    if src.format.id != flt_h.format.id:
+        raise ValueError(funcName + ': clip \"flt_h\" must be of the same format as the src clip!')
+    if src.width != flt_h.width or src.height != flt_h.height:
+        raise ValueError(funcName + ': clip \"flt_h\" must be of the same size as the src clip!')
     
     if not isinstance(flt_v, vs.VideoNode):
         raise TypeError(funcName + ': \"flt_v\" must be a clip!')
-    if Bsrc.format.id != flt_v.format.id:
-        raise ValueError(funcName + ': clip \"flt_v\" must be of the same format as the Bsrc clip!')
-    if Bsrc.width != flt_v.width or Bsrc.height != flt_v.height:
-        raise ValueError(funcName + ': clip \"flt_v\" must be of the same size as the Bsrc clip!')   
+    if src.format.id != flt_v.format.id:
+        raise ValueError(funcName + ': clip \"flt_v\" must be of the same format as the src clip!')
+    if src.width != flt_v.width or src.height != flt_v.height:
+        raise ValueError(funcName + ': clip \"flt_v\" must be of the same size as the src clip!')   
         
     if not isinstance(mrad, int):
         raise TypeError(funcName + '\"mrad\" must be an int!')
@@ -40,8 +40,8 @@ def LDMerge(flt_h, flt_v, Bsrc, mrad=0, power=1.0, show=0, planes=None):
     bits = flt_h.format.bits_per_sample
     isGray = flt_h.format.color_family == vs.GRAY
     
-    hmap = core.std.Convolution(Bsrc, matrix=[-1, -1, -1, 2, 2, 2, -1, -1, -1], saturate=False, planes=planes)
-    vmap = core.std.Convolution(Bsrc, matrix=[-1, 2, -1, -1, 2, -1, -1, 2, -1], saturate=False, planes=planes)
+    hmap = core.std.Convolution(src, matrix=[-1, -1, -1, 2, 2, 2, -1, -1, -1], saturate=False, planes=planes)
+    vmap = core.std.Convolution(src, matrix=[-1, 2, -1, -1, 2, -1, -1, 2, -1], saturate=False, planes=planes)
     if mrad > 0:
         hmap = haf.mt_expand_multi(hmap, sw=0, sh=mrad, planes=planes)
         vmap = haf.mt_expand_multi(vmap, sw=mrad, sh=0, planes=planes)
