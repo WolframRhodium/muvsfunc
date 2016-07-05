@@ -115,6 +115,7 @@ def MaskProcess(clip, mrad=0, msmooth=0, mblur=0, mode='rectangle', planes=None)
             elif mode == 2:
                 mode = 'ellipse'
         if isinstance(mode, str):
+            mode = mode.lower()
             if mode not in ['rectangle', 'losange', 'ellipse']:
                 raise ValueError(funcName + ': \"mode\" must be an int in [0, 2] or a specific string in [\"rectangle\", \"losange\", \"ellipse\"]!')
         else:
