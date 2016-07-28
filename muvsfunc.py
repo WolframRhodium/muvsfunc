@@ -475,8 +475,9 @@ def Build_gf3_range_mask(src, radius=1):
 
     return last
 
-def AnimeEdgeMask(clip, shift1=0.75, shift2=None, thY1=0, thY2=255):
+def AnimeEdgeMask(clip, shift1=0, shift2=None, thY1=0, thY2=255):
 # Only the first plane of "clip" would be processd
+# For Anime's ringing mask, it's recomended to set "shift1" to about 0.75.
     core = vs.get_core()
     funcName = 'AnimeEdgeMask'
     
