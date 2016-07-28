@@ -475,7 +475,7 @@ def Build_gf3_range_mask(src, radius=1):
 
     return last
 
-def AnimeRingMask(clip, shift1=0.75, shift2=None):
+def AnimeRingMask(clip, shift1=0.7071067811865476, shift2=None):
     core = vs.get_core()
     funcName = 'MultiRemoveGrain'
     
