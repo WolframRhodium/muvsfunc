@@ -494,8 +494,8 @@ def AnimeEdgeMask(clip, shift1=0, shift2=None, thY1=0, thY2=255):
     
     peak = (1 << bits) - 1
 
-    thY1 = haf.scale(thY1)
-    thY2 = haf.scale(thY2)
+    thY1 = haf.scale(thY1, bits)
+    thY2 = haf.scale(thY2, bits)
     
     fmtc_args = dict(fulls=True, fulld=True)
     mask1 = core.std.Convolution(clip, [0, 2, -1, 0, -1, 0, 0, 0, 0], saturate=True).fmtc.resample(sx=shift1, sy=shift2, **fmtc_args)
