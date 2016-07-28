@@ -475,7 +475,8 @@ def Build_gf3_range_mask(src, radius=1):
 
     return last
 
-def AnimeEdgeMask(clip, shift1=0.75, shift2=None, thY1=0, thY2=None):
+def AnimeEdgeMask(clip, shift1=0.75, shift2=None, thY1=0, thY2=255):
+# Only the first plane of "clip" would be processd
     core = vs.get_core()
     funcName = 'AnimeEdgeMask'
     
@@ -489,20 +490,23 @@ def AnimeEdgeMask(clip, shift1=0.75, shift2=None, thY1=0, thY2=None):
 
     if shift2 is None:
         shift2 = shift1
-
-    if thY2 is None:
-        thY2 = (1 << bits) - 1
     
     peak = (1 << bits) - 1
 
-    expr = 'x {thY1} < 0 x {thY2} >= {peak} x ? ?'.format(thY1=thY1, thY2=thY2, peak=peak)
+    thY1 = haf.scale(thY1)
+    thY2 = haf.scale(thY2)
     
     fmtc_args = dict(fulls=True, fulld=True)
-    mask1 = core.std.Convolution(clip, [0, 2, -1, 0, -1, 0, 0, 0, 0], saturate=True).std.Expr([expr]).fmtc.resample(sx=shift1, sy=shift2, **fmtc_args)
-    mask2 = core.std.Convolution(clip, [0, 0, 0, 0, -1, 0, -1, 2, 0], saturate=True).std.Expr([expr]).fmtc.resample(sx=-shift1, sy=-shift2, **fmtc_args)
-    mask3 = core.std.Convolution(clip, [-1, 0, 0, 2, -1, 0, 0, 0, 0], saturate=True).std.Expr([expr]).fmtc.resample(sx=shift1, sy=-shift2, **fmtc_args)
-    mask4 = core.std.Convolution(clip, [0, 0, 0, 0, -1, 2, 0, 0, -1], saturate=True).std.Expr([expr]).fmtc.resample(sx=-shift1, sy=shift2, **fmtc_args)
-    mask = core.std.Expr([mask1, mask2, mask3, mask4], 'x x * y y * + z z * + a a * + sqrt')
+    mask1 = core.std.Convolution(clip, [0, 2, -1, 0, -1, 0, 0, 0, 0], saturate=True).fmtc.resample(sx=shift1, sy=shift2, **fmtc_args)
+    mask2 = core.std.Convolution(clip, [0, 0, 0, 0, -1, 0, -1, 2, 0], saturate=True).fmtc.resample(sx=-shift1, sy=-shift2, **fmtc_args)
+    mask3 = core.std.Convolution(clip, [-1, 0, 0, 2, -1, 0, 0, 0, 0], saturate=True).fmtc.resample(sx=shift1, sy=-shift2, **fmtc_args)
+    mask4 = core.std.Convolution(clip, [0, 0, 0, 0, -1, 2, 0, 0, -1], saturate=True).fmtc.resample(sx=-shift1, sy=shift2, **fmtc_args)
+
+    expr = 'x x * y y * + z z * + a a * + sqrt'
+    mask = core.std.Expr([mask1, mask2, mask3, mask4], [expr])
+
+    limitexpr = 'x {thY1} < 0 x {thY2} >= {peak} x ? ?'.format(thY1=thY1, thY2=thY2, peak=peak)
+    mask = core.std.Expr([mask], [limitexpr])
 
     if bits != 16:
         mask = core.fmtc.bitdepth(mask, bits=bits, dmode=1, **fmtc_args)
