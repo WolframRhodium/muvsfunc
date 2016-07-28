@@ -475,7 +475,7 @@ def Build_gf3_range_mask(src, radius=1):
 
     return last
 
-def AnimeRingMask(clip, shift1=1, shift2=None):
+def AnimeEdgeMask(clip, shift1=0.75, shift2=None, thY1=0, thY2=None):
     core = vs.get_core()
     funcName = 'MultiRemoveGrain'
     
@@ -485,16 +485,21 @@ def AnimeRingMask(clip, shift1=1, shift2=None):
     if clip.format.color_family != vs.GRAY:
         clip = mvf.GetPlane(clip, 0)
 
+    bits = clip.format.bits_per_sample
+
     if shift2 is None:
         shift2 = shift1
 
-    bits = clip.format.bits_per_sample
+    if thY2 is None:
+        thY2 = (1 << bits) - 1
+    
+    peak = (1 << bits) - 1
     
     fmtc_args = dict(fulls=True, fulld=True)
-    mask1 = core.std.Convolution(clip, [0, 2, -1, 0, -1, 0, 0, 0, 0], saturate=True).fmtc.resample(sx=shift1, sy=shift2, **fmtc_args)
-    mask2 = core.std.Convolution(clip, [0, 0, 0, 0, -1, 0, -1, 2, 0], saturate=True).fmtc.resample(sx=-shift1, sy=-shift2, **fmtc_args)
-    mask3 = core.std.Convolution(clip, [-1, 0, 0, 2, -1, 0, 0, 0, 0], saturate=True).fmtc.resample(sx=shift1, sy=-shift2, **fmtc_args)
-    mask4 = core.std.Convolution(clip, [0, 0, 0, 0, -1, 2, 0, 0, -1], saturate=True).fmtc.resample(sx=-shift1, sy=shift2, **fmtc_args)
+    mask1 = core.std.Convolution(clip, [0, 2, -1, 0, -1, 0, 0, 0, 0], saturate=True).std.Expr(['x {thY1} < 0 x {thY2} >= {peak} x ? ?'.format(thY1=thY1, thY2=thY2, peak=peak)]).fmtc.resample(sx=shift1, sy=shift2, **fmtc_args)
+    mask2 = core.std.Convolution(clip, [0, 0, 0, 0, -1, 0, -1, 2, 0], saturate=True).std.Expr(['x {thY1} < 0 x {thY2} >= {peak} x ? ?'.format(thY1=thY1, thY2=thY2, peak=peak)]).fmtc.resample(sx=-shift1, sy=-shift2, **fmtc_args)
+    mask3 = core.std.Convolution(clip, [-1, 0, 0, 2, -1, 0, 0, 0, 0], saturate=True).std.Expr(['x {thY1} < 0 x {thY2} >= {peak} x ? ?'.format(thY1=thY1, thY2=thY2, peak=peak)]).fmtc.resample(sx=shift1, sy=-shift2, **fmtc_args)
+    mask4 = core.std.Convolution(clip, [0, 0, 0, 0, -1, 2, 0, 0, -1], saturate=True).std.Expr(['x {thY1} < 0 x {thY2} >= {peak} x ? ?'.format(thY1=thY1, thY2=thY2, peak=peak)]).fmtc.resample(sx=-shift1, sy=shift2, **fmtc_args)
     mask = core.std.Expr([mask1, mask2, mask3, mask4], 'x x * y y * + z z * + a a * + sqrt')
 
     if bits != 16:
