@@ -477,7 +477,7 @@ def Build_gf3_range_mask(src, radius=1):
 
 def AnimeEdgeMask(clip, shift1=0.75, shift2=None, thY1=0, thY2=None):
     core = vs.get_core()
-    funcName = 'MultiRemoveGrain'
+    funcName = 'AnimeEdgeMask'
     
     if not isinstance(clip, vs.VideoNode):
         raise TypeError(funcName + ': \"clip\" must be a clip!')
