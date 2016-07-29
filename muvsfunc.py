@@ -480,7 +480,7 @@ def AnimeEdgeMask(clip, shift1=0, shift2=None, thY1=0, thY2=255, mode=1):
 # For Anime's ringing mask, it's recommended to set "shift1" to about 0.75.
 # Positive value of "shift1" is used for for ringing mask generation and negative value is used for edge mask generation.
 # "shift2" is used for debug.
-# Now it's recommended to set "mode" to 1 for ringing mask generation and 2 for edge mask generation.
+# Now it's recommended to set "mode" to 1 for ringing mask generation and -1 for edge mask generation.
 
     core = vs.get_core()
     funcName = 'AnimeEdgeMask'
@@ -493,15 +493,15 @@ def AnimeEdgeMask(clip, shift1=0, shift2=None, thY1=0, thY2=255, mode=1):
 
     bits = clip.format.bits_per_sample
 
-    if mode == 2:
-        clip = core.std.Invert(clip)
-        shift1 = -shift1
-        
     if shift2 is None:
         shift2 = shift1
 
-    if mode not in [1, 2]:
-        raise ValueError(funcName + ': \'mode\' have not a correct value! [1-2]')
+    if mode not in [-1, 1]:
+        raise ValueError(funcName + ': \'mode\' have not a correct value! [-1 or 1]')
+
+    if mode == -1:
+        clip = core.std.Invert(clip)
+        shift1 = -shift1
     
     peak = (1 << bits) - 1
 
