@@ -475,9 +475,13 @@ def Build_gf3_range_mask(src, radius=1):
 
     return last
 
-def AnimeEdgeMask(clip, shift1=0, shift2=None, thY1=0, thY2=255):
+def AnimeEdgeMask(clip, shift1=0, shift2=None, thY1=0, thY2=255, mode=1):
 # Only the first plane of "clip" would be processd
-# For Anime's ringing mask, it's recomended to set "shift1" to about 0.75.
+# For Anime's ringing mask, it's recommended to set "shift1" to about 0.75.
+# Positive value of "shift1" is used for for ringing mask generation and negative value is used for edge mask generation.
+# "shift2" is used for debug.
+# Now it's recommended to set "mode" to 1 for ringing mask generation and 2 for edge mask generation.
+
     core = vs.get_core()
     funcName = 'AnimeEdgeMask'
     
@@ -491,6 +495,9 @@ def AnimeEdgeMask(clip, shift1=0, shift2=None, thY1=0, thY2=255):
 
     if shift2 is None:
         shift2 = shift1
+
+    if mode not in [1, 2]:
+        raise ValueError(funcName + ': \'mode\' have not a correct value! [1-2]')
     
     peak = (1 << bits) - 1
 
@@ -498,10 +505,17 @@ def AnimeEdgeMask(clip, shift1=0, shift2=None, thY1=0, thY2=255):
     thY2 = haf.scale(thY2, bits)
     
     fmtc_args = dict(fulls=True, fulld=True)
-    mask1 = core.std.Convolution(clip, [0, 2, -1, 0, -1, 0, 0, 0, 0], saturate=True).fmtc.resample(sx=shift1, sy=shift2, **fmtc_args)
-    mask2 = core.std.Convolution(clip, [0, 0, 0, 0, -1, 0, -1, 2, 0], saturate=True).fmtc.resample(sx=-shift1, sy=-shift2, **fmtc_args)
-    mask3 = core.std.Convolution(clip, [-1, 0, 0, 2, -1, 0, 0, 0, 0], saturate=True).fmtc.resample(sx=shift1, sy=-shift2, **fmtc_args)
-    mask4 = core.std.Convolution(clip, [0, 0, 0, 0, -1, 2, 0, 0, -1], saturate=True).fmtc.resample(sx=-shift1, sy=shift2, **fmtc_args)
+    if mode == 1:
+        mask1 = core.std.Convolution(clip, [0, 2, -1, 0, -1, 0, 0, 0, 0], saturate=True).fmtc.resample(sx=shift1, sy=shift2, **fmtc_args)
+        mask2 = core.std.Convolution(clip, [0, 0, 0, 0, -1, 0, -1, 2, 0], saturate=True).fmtc.resample(sx=-shift1, sy=-shift2, **fmtc_args)
+        mask3 = core.std.Convolution(clip, [-1, 0, 0, 2, -1, 0, 0, 0, 0], saturate=True).fmtc.resample(sx=shift1, sy=-shift2, **fmtc_args)
+        mask4 = core.std.Convolution(clip, [0, 0, 0, 0, -1, 2, 0, 0, -1], saturate=True).fmtc.resample(sx=-shift1, sy=shift2, **fmtc_args)
+    elif mode == 2:
+        mode = -mode
+        mask1 = core.std.Convolution(clip, [0, -2, 1, 0, 1, 0, 0, 0, 0], saturate=True).fmtc.resample(sx=shift1, sy=shift2, **fmtc_args)
+        mask2 = core.std.Convolution(clip, [0, 0, 0, 0, 1, 0, 1, -2, 0], saturate=True).fmtc.resample(sx=-shift1, sy=-shift2, **fmtc_args)
+        mask3 = core.std.Convolution(clip, [1, 0, 0, -2, 1, 0, 0, 0, 0], saturate=True).fmtc.resample(sx=shift1, sy=-shift2, **fmtc_args)
+        mask4 = core.std.Convolution(clip, [0, 0, 0, 0, 1, -2, 0, 0, 1], saturate=True).fmtc.resample(sx=-shift1, sy=shift2, **fmtc_args)
 
     expr = 'x x * y y * + z z * + a a * + sqrt'
     mask = core.std.Expr([mask1, mask2, mask3, mask4], [expr])
