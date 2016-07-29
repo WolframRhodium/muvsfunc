@@ -2,6 +2,16 @@ import vapoursynth as vs
 import havsfunc as haf
 import mvsfunc as mvf
 
+'''
+Functions:
+    LDMerge
+    Compare
+    MaskProcess
+    MultiRemoveGrain
+    GradFun3
+    AnimeEdgeMask
+'''
+
 def LDMerge(flt_h, flt_v, src, mrad=0, power=1.0, show=0, planes=None):
     core = vs.get_core()
     funcName = 'LDMerge'
