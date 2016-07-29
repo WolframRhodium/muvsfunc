@@ -493,6 +493,10 @@ def AnimeEdgeMask(clip, shift1=0, shift2=None, thY1=0, thY2=255, mode=1):
 
     bits = clip.format.bits_per_sample
 
+    if mode == 2:
+        clip = core.std.Invert(clip)
+        shift1 = -shift1
+        
     if shift2 is None:
         shift2 = shift1
 
@@ -503,9 +507,6 @@ def AnimeEdgeMask(clip, shift1=0, shift2=None, thY1=0, thY2=255, mode=1):
 
     thY1 = haf.scale(thY1, bits)
     thY2 = haf.scale(thY2, bits)
-    
-    if mode == 2:
-        clip = core.std.Invert(clip)
     
     fmtc_args = dict(fulls=True, fulld=True)
     mask1 = core.std.Convolution(clip, [0, 2, -1, 0, -1, 0, 0, 0, 0], saturate=True).fmtc.resample(sx=shift1, sy=shift2, **fmtc_args)
