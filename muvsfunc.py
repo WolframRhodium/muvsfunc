@@ -485,7 +485,7 @@ def Build_gf3_range_mask(src, radius=1):
 
     return last
 
-def AnimeEdgeMask(clip, shift1=0, shift2=None, thY1=0, thY2=255, mode=1):
+def AnimeEdgeMask(clip, shift1=0, shift2=None, thY1=0, thY2=255, mode=None):
 # Only the first plane of "clip" would be processd
 # For Anime's ringing mask, it's recommended to set "shift1" to about 0.75.
 # Positive value of "shift1" is used for for ringing mask generation and negative value is used for edge mask generation.
@@ -505,6 +505,15 @@ def AnimeEdgeMask(clip, shift1=0, shift2=None, thY1=0, thY2=255, mode=1):
 
     if shift2 is None:
         shift2 = shift1
+
+    if mode is None:
+        if shift1 == shift2:
+            if shift1 < 0:
+                mode = -1
+            else:
+                mode = 1
+        else:
+            raise ValueError(funcName + ': \'mode\' have not a correct value! [-1 or 1]')
 
     if mode not in [-1, 1]:
         raise ValueError(funcName + ': \'mode\' have not a correct value! [-1 or 1]')
