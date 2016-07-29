@@ -504,18 +504,14 @@ def AnimeEdgeMask(clip, shift1=0, shift2=None, thY1=0, thY2=255, mode=1):
     thY1 = haf.scale(thY1, bits)
     thY2 = haf.scale(thY2, bits)
     
+    if mode == 2:
+        clip = core.std.Invert(clip)
+    
     fmtc_args = dict(fulls=True, fulld=True)
-    if mode == 1:
-        mask1 = core.std.Convolution(clip, [0, 2, -1, 0, -1, 0, 0, 0, 0], saturate=True).fmtc.resample(sx=shift1, sy=shift2, **fmtc_args)
-        mask2 = core.std.Convolution(clip, [0, 0, 0, 0, -1, 0, -1, 2, 0], saturate=True).fmtc.resample(sx=-shift1, sy=-shift2, **fmtc_args)
-        mask3 = core.std.Convolution(clip, [-1, 0, 0, 2, -1, 0, 0, 0, 0], saturate=True).fmtc.resample(sx=shift1, sy=-shift2, **fmtc_args)
-        mask4 = core.std.Convolution(clip, [0, 0, 0, 0, -1, 2, 0, 0, -1], saturate=True).fmtc.resample(sx=-shift1, sy=shift2, **fmtc_args)
-    elif mode == 2:
-        mode = -mode
-        mask1 = core.std.Convolution(clip, [0, -2, 1, 0, 1, 0, 0, 0, 0], saturate=True).fmtc.resample(sx=shift1, sy=shift2, **fmtc_args)
-        mask2 = core.std.Convolution(clip, [0, 0, 0, 0, 1, 0, 1, -2, 0], saturate=True).fmtc.resample(sx=-shift1, sy=-shift2, **fmtc_args)
-        mask3 = core.std.Convolution(clip, [1, 0, 0, -2, 1, 0, 0, 0, 0], saturate=True).fmtc.resample(sx=shift1, sy=-shift2, **fmtc_args)
-        mask4 = core.std.Convolution(clip, [0, 0, 0, 0, 1, -2, 0, 0, 1], saturate=True).fmtc.resample(sx=-shift1, sy=shift2, **fmtc_args)
+    mask1 = core.std.Convolution(clip, [0, 2, -1, 0, -1, 0, 0, 0, 0], saturate=True).fmtc.resample(sx=shift1, sy=shift2, **fmtc_args)
+    mask2 = core.std.Convolution(clip, [0, 0, 0, 0, -1, 0, -1, 2, 0], saturate=True).fmtc.resample(sx=-shift1, sy=-shift2, **fmtc_args)
+    mask3 = core.std.Convolution(clip, [-1, 0, 0, 2, -1, 0, 0, 0, 0], saturate=True).fmtc.resample(sx=shift1, sy=-shift2, **fmtc_args)
+    mask4 = core.std.Convolution(clip, [0, 0, 0, 0, -1, 2, 0, 0, -1], saturate=True).fmtc.resample(sx=-shift1, sy=shift2, **fmtc_args)
 
     expr = 'x x * y y * + z z * + a a * + sqrt'
     mask = core.std.Expr([mask1, mask2, mask3, mask4], [expr])
