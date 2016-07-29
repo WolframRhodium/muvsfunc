@@ -477,10 +477,10 @@ def Build_gf3_range_mask(src, radius=1):
 
 def AnimeEdgeMask(clip, shift1=0, shift2=None, thY1=0, thY2=255, mode=1):
 # Only the first plane of "clip" would be processd
-# For Anime's ringing mask, it's recommended to set "shift1" to about 0.75.
-# Positive value of "shift1" is used for for ringing mask generation and negative value is used for edge mask generation.
+# For Anime's "brignt" ringing mask, it's recommended to set "shift1" to about 0.75.
+# Positive value of "shift1" is used for for "brignt" ringing mask generation and negative value is used for edge mask generation.
 # "shift2" is used for debug.
-# Now it's recommended to set "mode" to 1 for ringing mask generation and 2 for edge mask generation.
+# Now it's recommended to set "mode" to 1 for "brignt" ringing mask generation and 2 for edge mask generation.
 
     core = vs.get_core()
     funcName = 'AnimeEdgeMask'
