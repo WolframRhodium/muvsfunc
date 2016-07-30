@@ -449,16 +449,8 @@ def GF3_dfttest(src, ref, radius, thr, elast, planes):
 
 def GF3_bilateral_multistage(src, ref, radius, thr, elast, planes):
     core = vs.get_core()
-    thr_1 = max(thr * 4.5, 1.25)
-    thr_2 = max(thr * 9, 5.0)
-    r4 = max(radius * 4 / 3, 4.0)
-    r2 = max(radius * 2 / 3, 3.0)
-    r1 = max(radius * 1 / 3, 2.0)
 
-    last = src
-    last = core.bilateral.Bilateral(last, ref=ref, sigmaS=r4, sigmaR=thr_1 / 255, planes=planes, algorithm=0) if r4 >= 2 else last
-    last = core.bilateral.Bilateral(last, ref=ref, sigmaS=r2, sigmaR=thr_2 / 255, planes=planes, algorithm=0) if r2 >= 2 else last
-    last = core.bilateral.Bilateral(last, ref=ref, sigmaS=r1, sigmaR=thr_2 / 255, planes=planes, algorithm=0) if r1 >= 2 else last
+    last = core.bilateral.Bilateral(src, ref=ref, sigmaS=radius, sigmaR=thr / 255, planes=planes, algorithm=0)
 
     last = mvf.LimitFilter(last, src, thr=thr, elast=elast, planes=planes)
 
