@@ -450,7 +450,7 @@ def GF3_dfttest(src, ref, radius, thr, elast, planes):
 def GF3_bilateral_multistage(src, ref, radius, thr, elast, planes):
     core = vs.get_core()
 
-    last = core.bilateral.Bilateral(src, ref=ref, sigmaS=radius, sigmaR=thr / 255, planes=planes, algorithm=0)
+    last = core.bilateral.Bilateral(src, ref=ref, sigmaS=radius / 2, sigmaR=thr / 255, planes=planes, algorithm=0) # Probably error using "thr".
 
     last = mvf.LimitFilter(last, src, thr=thr, elast=elast, planes=planes)
 
