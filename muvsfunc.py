@@ -9,7 +9,7 @@ Functions:
     MaskProcess
     MultiRemoveGrain
     GradFun3
-    AnimeEdgeMask
+    AnimeEdgeMask (2)
 '''
 
 def LDMerge(flt_h, flt_v, src, mrad=0, power=1.0, show=0, planes=None):
@@ -493,8 +493,6 @@ def AnimeEdgeMask(clip, shift1=0, shift2=None, thY1=0, thY2=255, mode=None):
     if clip.format.color_family != vs.GRAY:
         clip = mvf.GetPlane(clip, 0)
 
-    bits = clip.format.bits_per_sample
-
     if shift2 is None:
         shift2 = shift1
 
@@ -514,6 +512,7 @@ def AnimeEdgeMask(clip, shift1=0, shift2=None, thY1=0, thY2=255, mode=None):
         clip = core.std.Invert(clip)
         shift1 = -shift1
     
+    bits = clip.format.bits_per_sample
     peak = (1 << bits) - 1
 
     thY1 = haf.scale(thY1, bits)
@@ -527,6 +526,46 @@ def AnimeEdgeMask(clip, shift1=0, shift2=None, thY1=0, thY2=255, mode=None):
 
     expr = 'x x * y y * + z z * + a a * + sqrt'
     mask = core.std.Expr([mask1, mask2, mask3, mask4], [expr])
+
+    limitexpr = 'x {thY1} < 0 x {thY2} >= {peak} x ? ?'.format(thY1=thY1, thY2=thY2, peak=peak)
+    mask = core.std.Expr([mask], [limitexpr])
+
+    if bits != 16:
+        mask = core.fmtc.bitdepth(mask, bits=bits, dmode=1, **fmtc_args)
+
+    return mask
+
+def AnimeEdgeMask2(clip, rx=1.2, ry=None, amp=50, thY1=0, thY2=255, mode=1):
+# Similar to AnimeEdgeMask(), set mode 1 for ringing(haloing) mask generation and -1 for edge mask generation.
+    core = vs.get_core()
+    funcName = 'AnimeEdgeMask2'
+    
+    if not isinstance(clip, vs.VideoNode):
+        raise TypeError(funcName + ': \"clip\" must be a clip!')
+
+    if clip.format.color_family != vs.GRAY:
+        clip = mvf.GetPlane(clip, 0)
+
+    w = clip.width
+    h = clip.height
+    bits = clip.format.bits_per_sample
+    peak = (1 << bits) - 1
+
+    if ry is None:
+        ry = rx
+
+    thY1 = haf.scale(thY1, bits)
+    thY2 = haf.scale(thY2, bits)
+
+    if mode not in [-1, 1]:
+        raise ValueError(funcName + ': \'mode\' have not a correct value! [-1 or 1]')
+
+
+    smooth = core.fmtc.resample(clip, haf.m4(w / rx), haf.m4(h / ry), kernel='bicubic').fmtc.resample(w, h, kernel='bicubic', a1=1, a2=0)
+    smoother = core.fmtc.resample(clip, haf.m4(w / rx), haf.m4(h / ry), kernel='bicubic').fmtc.resample(w, h, kernel='bicubic', a1=1.5, a2=-0.25)
+
+    expr = 'x y - {amp} *'.format(amp=amp) if mode == 1 else 'y x - {amp} *'.format(amp=amp)
+    mask = core.std.Expr([smooth, smoother], [expr]).fmtc.bitdepth(bits=bits, fulls=True, fulld=True)
 
     limitexpr = 'x {thY1} < 0 x {thY2} >= {peak} x ? ?'.format(thY1=thY1, thY2=thY2, peak=peak)
     mask = core.std.Expr([mask], [limitexpr])
