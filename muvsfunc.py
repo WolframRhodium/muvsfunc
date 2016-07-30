@@ -211,6 +211,30 @@ def InDeflate(clip, msmooth=0, planes=None):
     
     return clip
 
+def MultiRemoveGrain(clip, mode=0, loop=1):
+    core = vs.get_core()
+    funcName = 'MultiRemoveGrain'
+    
+    if not isinstance(clip, vs.VideoNode):
+        raise TypeError(funcName + ': \"clip\" must be a clip!')
+
+    if isinstance(mode, int):
+        mode = [mode]
+
+    if not isinstance(loop, int):
+        raise TypeError(funcName + ': \"loop\" must be an int!')
+    if loop < 0:
+        raise ValueError(funcName + ': \"loop\" must be positive value!')
+
+    if isinstance(mode, list):
+        for i in range(loop):
+            for m in mode:
+                clip = core.rgvs.RemoveGrain(clip, mode=m)
+    else:
+        raise TypeError(funcName + ': \"mode\" must be an int, a list of ints or a list of a list of ints!')
+
+    return clip
+
 ### GradFun3 by Firesledge v0.0.1
 ### Port by Muonium  2016/6/18
 ### Port from Dither_tools v1.27.2 (http://avisynth.nl/index.php/Dither_tools)
