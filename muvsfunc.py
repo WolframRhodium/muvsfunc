@@ -6,7 +6,8 @@ import mvsfunc as mvf
 Functions:
     LDMerge
     Compare
-    MaskProcess
+    ExInpand
+    InDeflate
     MultiRemoveGrain
     GradFun3
     AnimeEdgeMask (2)
@@ -105,18 +106,26 @@ def Compare(src, flt, power=1.5, chroma=False, mode=1):
 
     return diff
 
-def MaskProcess(clip, mrad=0, msmooth=0, mblur=0, mode='rectangle', planes=None):
+def ExInpand(clip, mrad=0, mode='rectangle', planes=None):
     core = vs.get_core()
-    funcName = 'MaskProcess'
+    funcName = 'ExInpand'
 
     if not isinstance(clip, vs.VideoNode):
         raise TypeError(funcName + ': \"clip\" must be a clip!')
 
     if planes is None:
         planes = list(range(clip.format.num_planes))
+
+    if isinstance(mrad, int):
+        mrad = [mrad]
+    if isinstance(mode, str) or isinstance(mode, int):
+        mode = [mode]
     
-    # internel functions
-    def ExInpand(clip, mode=None, planes=None, mrad=None):
+    if not isinstance(mode, list):
+        raise TypeError(funcName + ': \"mode\" must be an int, a string, a list of ints, a list of strings or a list of mixing ints and strings!')
+
+    # internel function
+    def ExInpand_process(clip, mode=None, planes=None, mrad=None):
         if isinstance(mode, int):
             if mode == 0:
                 mode = 'rectangle'
@@ -146,24 +155,7 @@ def MaskProcess(clip, mrad=0, msmooth=0, mblur=0, mode='rectangle', planes=None)
         else:
             return haf.mt_inpand_multi(clip, mode=mode, planes=planes, sw=-sw, sh=-sh)
 
-    def InDeflate(clip, planes=None, radius=None):
-        if radius > 0:
-            return haf.mt_inflate_multi(clip, planes=planes, radius=radius)
-        else:
-            return haf.mt_deflate_multi(clip, planes=planes, radius=-radius)
-
-    if not isinstance(clip, vs.VideoNode):
-        raise TypeError(funcName + ': \"clip\" must be a clip!')
-
-    if isinstance(mrad, int):
-        mrad = [mrad]
-    if isinstance(mode, str) or isinstance(mode, int):
-        mode = [mode]
-    
-    if not isinstance(mode, list):
-        raise TypeError(funcName + ': \"mode\" must be an int, a string, a list of ints, a list of strings or a list of mixing ints and strings!')
-                
-    # ExInpand
+    # process
     if isinstance(mrad, list):
         if len(mode) < len(mrad):
             mode_length = len(mode)
@@ -181,48 +173,42 @@ def MaskProcess(clip, mrad=0, msmooth=0, mblur=0, mode='rectangle', planes=None)
                     mrad[i].append(mrad[i][0])
             elif not isinstance(mrad[i], int):
                 raise TypeError(funcName + ': \"mrad\" must be an int, a list of ints or a list of a list of two ints!')
-            clip = ExInpand(clip, mode=mode[i], planes=planes, mrad=mrad[i])
+            clip = ExInpand_process(clip, mode=mode[i], planes=planes, mrad=mrad[i])
     else:
         raise TypeError(funcName + ': \"mrad\" must be an int, a list of ints or a list of a list of two ints!')
 
-    # InDeflate
+    return clip
+
+def InDeflate(clip, msmooth=0, planes=None):
+    core = vs.get_core()
+    funcName = 'InDeFlate'
+
+    if not isinstance(clip, vs.VideoNode):
+        raise TypeError(funcName + ': \"clip\" must be a clip!')
+
+    if planes is None:
+        planes = list(range(clip.format.num_planes))
+
     if isinstance(msmooth, int):
-        clip = InDeflate(clip, planes=planes, radius=msmooth)
-    elif isinstance(msmooth, list):
+        msmoooth = [msmooth]
+
+    # internel function
+    def InDeflate_process(clip, planes=None, radius=None):
+        if radius > 0:
+            return haf.mt_inflate_multi(clip, planes=planes, radius=radius)
+        else:
+            return haf.mt_deflate_multi(clip, planes=planes, radius=-radius)
+
+    # process
+    if isinstance(msmooth, list):
         for m in msmooth:
             if not isinstance(m, int):
                 raise TypeError(funcName + ': \"msmooth\" must be an int or a list of ints!')
             else:
-                clip = InDeflate(clip, planes=planes, radius=m)
+                clip = InDeflate_process(clip, planes=planes, radius=m)
     else:
         raise TypeError(funcName + ': \"msmooth\" must be an int or a list of ints!')
-
-    clip = MultiRemoveGrain(clip, mode=mblur, loop=1)
-
-    return clip
-
-def MultiRemoveGrain(clip, mode=0, loop=1):
-    core = vs.get_core()
-    funcName = 'MultiRemoveGrain'
     
-    if not isinstance(clip, vs.VideoNode):
-        raise TypeError(funcName + ': \"clip\" must be a clip!')
-
-    if isinstance(mode, int):
-        mode = [mode]
-
-    if not isinstance(loop, int):
-        raise TypeError(funcName + ': \"loop\" must be an int!')
-    if loop < 0:
-        raise ValueError(funcName + ': \"loop\" must be positive value!')
-
-    if isinstance(mode, list):
-        for i in range(loop):
-            for m in mode:
-                clip = core.rgvs.RemoveGrain(clip, mode=m)
-    else:
-        raise TypeError(funcName + ': \"mode\" must be an int, a list of ints or a list of a list of ints!')
-
     return clip
 
 ### GradFun3 by Firesledge v0.0.1
