@@ -535,13 +535,10 @@ def AnimeEdgeMask(clip, shift1=0, shift2=None, thY1=0, thY2=255, mode=None):
     mask4 = core.std.Convolution(clip, [0, 0, 0, 0, -1, 2, 0, 0, -1], saturate=True).fmtc.resample(sx=-shift1, sy=shift2, **fmtc_args)
 
     expr = 'x x * y y * + z z * + a a * + sqrt'
-    mask = core.std.Expr([mask1, mask2, mask3, mask4], [expr])
+    mask = core.std.Expr([mask1, mask2, mask3, mask4], [expr]).fmtc.bitdepth(bits=bits, fulls=True, fulld=True, dmode=1)
 
     limitexpr = 'x {thY1} < 0 x {thY2} >= {peak} x ? ?'.format(thY1=thY1, thY2=thY2, peak=peak)
     mask = core.std.Expr([mask], [limitexpr])
-
-    if bits != 16:
-        mask = core.fmtc.bitdepth(mask, bits=bits, dmode=1, **fmtc_args)
 
     return mask
 
@@ -570,12 +567,11 @@ def AnimeEdgeMask2(clip, rx=1.2, ry=None, amp=50, thY1=0, thY2=255, mode=1):
     if mode not in [-1, 1]:
         raise ValueError(funcName + ': \'mode\' have not a correct value! [-1 or 1]')
 
-
     smooth = core.fmtc.resample(clip, haf.m4(w / rx), haf.m4(h / ry), kernel='bicubic').fmtc.resample(w, h, kernel='bicubic', a1=1, a2=0)
     smoother = core.fmtc.resample(clip, haf.m4(w / rx), haf.m4(h / ry), kernel='bicubic').fmtc.resample(w, h, kernel='bicubic', a1=1.5, a2=-0.25)
 
     expr = 'x y - {amp} *'.format(amp=amp) if mode == 1 else 'y x - {amp} *'.format(amp=amp)
-    mask = core.std.Expr([smooth, smoother], [expr]).fmtc.bitdepth(bits=bits, fulls=True, fulld=True)
+    mask = core.std.Expr([smooth, smoother], [expr]).fmtc.bitdepth(bits=bits, fulls=True, fulld=True, dmode)
 
     limitexpr = 'x {thY1} < 0 x {thY2} >= {peak} x ? ?'.format(thY1=thY1, thY2=thY2, peak=peak)
     mask = core.std.Expr([mask], [limitexpr])
