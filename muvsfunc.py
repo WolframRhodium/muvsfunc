@@ -488,8 +488,11 @@ def Build_gf3_range_mask(src, radius=1):
     return last
 
 def AnimeEdgeMask(clip, shift1=0, shift2=None, thY1=0, thY2=255, mode=None):
-# Only the first plane of "clip" would be processd
-# For Anime's ringing mask, it's recommended to set "shift1" to about 0.75.
+# shift1, shift2 [float, -1.5 ~ 1.5]
+# thY1, thY2 [int, 0 ~ 255]
+# mode [-1, 1]
+# Only the first plane of "clip" would be processd.
+# For Anime's ringing mask, it's recommended to set "shift1" to about 0.5.
 # Positive value of "shift1" is used for for ringing mask generation and negative value is used for edge mask generation.
 # "shift2" is used for debug.
 # Now it's recommended to set "mode" to 1 for ringing mask generation and -1 for edge mask generation.
@@ -530,13 +533,13 @@ def AnimeEdgeMask(clip, shift1=0, shift2=None, thY1=0, thY2=255, mode=None):
     thY2 = haf.scale(thY2, bits)
     
     fmtc_args = dict(fulls=True, fulld=True)
-    mask1 = core.std.Convolution(clip, [0, 2, -1, 0, -1, 0, 0, 0, 0], saturate=True).fmtc.resample(sx=shift1, sy=shift2, **fmtc_args)
-    mask2 = core.std.Convolution(clip, [0, 0, 0, 0, -1, 0, -1, 2, 0], saturate=True).fmtc.resample(sx=-shift1, sy=-shift2, **fmtc_args)
-    mask3 = core.std.Convolution(clip, [-1, 0, 0, 2, -1, 0, 0, 0, 0], saturate=True).fmtc.resample(sx=shift1, sy=-shift2, **fmtc_args)
-    mask4 = core.std.Convolution(clip, [0, 0, 0, 0, -1, 2, 0, 0, -1], saturate=True).fmtc.resample(sx=-shift1, sy=shift2, **fmtc_args)
+    mask1 = core.std.Convolution(clip, [0, 0, 0, 0, 2, -1, 0, -1, 0], saturate=True).fmtc.resample(sx=shift1, sy=shift2, **fmtc_args)
+    mask2 = core.std.Convolution(clip, [0, -1, 0, -1, 2, 0, 0, 0, 0], saturate=True).fmtc.resample(sx=-shift1, sy=-shift2, **fmtc_args)
+    mask3 = core.std.Convolution(clip, [0, -1, 0, 0, 2, -1, 0, 0, 0], saturate=True).fmtc.resample(sx=shift1, sy=-shift2, **fmtc_args)
+    mask4 = core.std.Convolution(clip, [0, 0, 0, -1, 2, 0, 0, -1, 0], saturate=True).fmtc.resample(sx=-shift1, sy=shift2, **fmtc_args)
 
     expr = 'x x * y y * + z z * + a a * + sqrt'
-    mask = core.std.Expr([mask1, mask2, mask3, mask4], [expr]).fmtc.bitdepth(bits=bits, fulls=True, fulld=True, dmode=1)
+    mask = core.std.Expr([mask1, mask2, mask3, mask4], [expr]).fmtc.bitdepth(bits=bits, dmode=1, **fmtc_args)
 
     limitexpr = 'x {thY1} < 0 x {thY2} >= {peak} x ? ?'.format(thY1=thY1, thY2=thY2, peak=peak)
     mask = core.std.Expr([mask], [limitexpr])
@@ -545,6 +548,7 @@ def AnimeEdgeMask(clip, shift1=0, shift2=None, thY1=0, thY2=255, mode=None):
 
 def AnimeEdgeMask2(clip, rx=1.2, ry=None, amp=50, thY1=0, thY2=255, mode=1):
 # Similar to AnimeEdgeMask(), set mode 1 for ringing(haloing) mask generation and -1 for edge mask generation.
+
     core = vs.get_core()
     funcName = 'AnimeEdgeMask2'
     
@@ -576,8 +580,5 @@ def AnimeEdgeMask2(clip, rx=1.2, ry=None, amp=50, thY1=0, thY2=255, mode=1):
 
     limitexpr = 'x {thY1} < 0 x {thY2} >= {peak} x ? ?'.format(thY1=thY1, thY2=thY2, peak=peak)
     mask = core.std.Expr([mask], [limitexpr])
-
-    if bits != 16:
-        mask = core.fmtc.bitdepth(mask, bits=bits, dmode=1, **fmtc_args)
 
     return mask
