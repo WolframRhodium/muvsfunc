@@ -521,6 +521,7 @@ def AnimeEdgeMask(clip, shift1=0, shift2=None, thY1=0, thY2=255, mode=None):
     if mode == -1:
         clip = core.std.Invert(clip)
         shift1 = -shift1
+        shift2 = -shift2
     
     bits = clip.format.bits_per_sample
     peak = (1 << bits) - 1
