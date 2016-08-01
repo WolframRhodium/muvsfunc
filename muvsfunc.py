@@ -12,6 +12,7 @@ Functions:
     MultiRemoveGrain
     GradFun3
     AnimeEdgeMask (2)
+    PolygonExInpand
 '''
 
 def LDMerge(flt_h, flt_v, src, mrad=0, power=1.0, show=0, planes=None):
@@ -585,7 +586,7 @@ def AnimeEdgeMask2(clip, rx=1.2, ry=None, amp=50, thY1=0, thY2=255, mode=1):
 
     return mask
 
-def PolygonExInpand(clip, shift=0, shape=0, mixmode=0, noncentral=False):
+def PolygonExInpand(clip, shift=0, shape=0, mixmode=0, noncentral=False, step=1.0):
 # shape [0:losange, 1:square, 2:octagon]
 # mixmode [0:max, 1:arithmetic mean, 2:quadratic mean]
 
@@ -601,6 +602,9 @@ def PolygonExInpand(clip, shift=0, shape=0, mixmode=0, noncentral=False):
     if mixmode not in list(range(3)):
         raise ValueError(funcName + ': \'mixmode\' have not a correct value! [0, 1 or 2]')
 
+    if step <= 0:
+        raise ValueError(funcName + ': \'step\' must be positive!')
+
     invert = False
     if shift < 0:
         invert = True
@@ -613,61 +617,65 @@ def PolygonExInpand(clip, shift=0, shape=0, mixmode=0, noncentral=False):
     resample_args = dict(kernel='bilinear')
     fmtc_args = dict(fulls=True, fulld=True)
 
-    ortho = [shift, shift * (1<< clip.format.subsampling_h)]
-    inv_ortho = [-shift, -shift * (1<< clip.format.subsampling_h)]
-    dia = [math.sqrt(shift / 2), math.sqrt(shift / 2) * (1 << clip.format.subsampling_h)]
-    inv_dia = [-math.sqrt(shift / 2), -math.sqrt(shift / 2) * (1 << clip.format.subsampling_h)]
-
     mask5 = clip
-    
-    # shift
-    if shape == 0 or shape == 2:
-        mask2 = core.fmtc.resample(mask5, sx=0, sy=ortho, **fmtc_args, **resample_args)
-        mask4 = core.fmtc.resample(mask5, sx=ortho, sy=0, **fmtc_args, **resample_args)
-        mask6 = core.fmtc.resample(mask5, sx=inv_ortho, sy=0, **fmtc_args, **resample_args)
-        mask8 = core.fmtc.resample(mask5, sx=0, sy=inv_ortho, **fmtc_args, **resample_args)
 
-    if shape == 1 or shape == 2:
-        mask1 = core.fmtc.resample(mask5, sx=dia, sy=dia, **fmtc_args, **resample_args)
-        mask3 = core.fmtc.resample(mask5, sx=inv_dia, sy=dia, **fmtc_args, **resample_args)
-        mask7 = core.fmtc.resample(mask5, sx=dia, sy=inv_dia, **fmtc_args, **resample_args)
-        mask9 = core.fmtc.resample(mask5, sx=inv_dia, sy=inv_dia, **fmtc_args, **resample_args)
+    while shift > 0:
+        step = min(step, shift)
+        shift = shift - step
 
-    # mix
-    if noncentral:
-        expr_list = [
-            'x y max z max a max',
-            'x y + z + a + 4 /',
-            'x x * y y * + z z * + a a * + 4 / sqrt',
-            'x y max z max a max b max c max d max e max',
-            'x y + z + a + b + c + d + e + 8 /',
-            'x x * y y * + z z * + a a * + b b * + c c * + d d * + e e * + 8 / sqrt',
-            ]
+        ortho = [step, step * (1<< clip.format.subsampling_h)]
+        inv_ortho = [-step, -step * (1<< clip.format.subsampling_h)]
+        dia = [math.sqrt(step / 2), math.sqrt(step / 2) * (1 << clip.format.subsampling_h)]
+        inv_dia = [-math.sqrt(step / 2), -math.sqrt(step / 2) * (1 << clip.format.subsampling_h)]
+        
+        # shift
+        if shape == 0 or shape == 2:
+            mask2 = core.fmtc.resample(mask5, sx=0, sy=ortho, **fmtc_args, **resample_args)
+            mask4 = core.fmtc.resample(mask5, sx=ortho, sy=0, **fmtc_args, **resample_args)
+            mask6 = core.fmtc.resample(mask5, sx=inv_ortho, sy=0, **fmtc_args, **resample_args)
+            mask8 = core.fmtc.resample(mask5, sx=0, sy=inv_ortho, **fmtc_args, **resample_args)
 
-        if shape == 0 or shape == 1:
-            expr = expr_list[mixmode]
-            mask = core.std.Expr([mask2, mask4, mask6, mask8] if shape == 0 else [mask1, mask3, mask7, mask9], [expr])
-        else: # shape == 2
-            expr = expr_list[mixmode + 3]
-            mask = core.std.Expr([mask1, mask2, mask3, mask4, mask6, mask7, mask8, mask9], [expr])
-    else:
-        expr_list = [
-            'x y max z max a max b max',
-            'x y + z + a + b + 5 /',
-            'x x * y y * + z z * + a a * + b b * + 5 / sqrt',
-            'x y max z max a max b max c max d max e max f max',
-            'x y + z + a + b + c + d + e + f + 9 /',
-            'x x * y y * + z z * + a a * + b b * + c c * + d d * + e e * + f f * + 9 / sqrt',
-            ]
+        if shape == 1 or shape == 2:
+            mask1 = core.fmtc.resample(mask5, sx=dia, sy=dia, **fmtc_args, **resample_args)
+            mask3 = core.fmtc.resample(mask5, sx=inv_dia, sy=dia, **fmtc_args, **resample_args)
+            mask7 = core.fmtc.resample(mask5, sx=dia, sy=inv_dia, **fmtc_args, **resample_args)
+            mask9 = core.fmtc.resample(mask5, sx=inv_dia, sy=inv_dia, **fmtc_args, **resample_args)
 
-        if shape == 0 or shape == 1:
-            expr = expr_list[mixmode]
-            mask = core.std.Expr([mask2, mask4, mask5, mask6, mask8] if shape == 0 else [mask1, mask3, mask5, mask7, mask9], [expr])
-        else: # shape == 2
-            expr = expr_list[mixmode + 3]
-            mask = core.std.Expr([mask1, mask2, mask3, mask4, mask5, mask6, mask7, mask8, mask9], [expr])
+        # mix
+        if noncentral:
+            expr_list = [
+                'x y max z max a max',
+                'x y + z + a + 4 /',
+                'x x * y y * + z z * + a a * + 4 / sqrt',
+                'x y max z max a max b max c max d max e max',
+                'x y + z + a + b + c + d + e + 8 /',
+                'x x * y y * + z z * + a a * + b b * + c c * + d d * + e e * + 8 / sqrt',
+                ]
+
+            if shape == 0 or shape == 1:
+                expr = expr_list[mixmode]
+                mask5 = core.std.Expr([mask2, mask4, mask6, mask8] if shape == 0 else [mask1, mask3, mask7, mask9], [expr])
+            else: # shape == 2
+                expr = expr_list[mixmode + 3]
+                mask5 = core.std.Expr([mask1, mask2, mask3, mask4, mask6, mask7, mask8, mask9], [expr])
+        else:
+            expr_list = [
+                'x y max z max a max b max',
+                'x y + z + a + b + 5 /',
+                'x x * y y * + z z * + a a * + b b * + 5 / sqrt',
+                'x y max z max a max b max c max d max e max f max',
+                'x y + z + a + b + c + d + e + f + 9 /',
+                'x x * y y * + z z * + a a * + b b * + c c * + d d * + e e * + f f * + 9 / sqrt',
+                ]
+
+            if shape == 0 or shape == 1:
+                expr = expr_list[mixmode]
+                mask5 = core.std.Expr([mask2, mask4, mask5, mask6, mask8] if shape == 0 else [mask1, mask3, mask5, mask7, mask9], [expr])
+            else: # shape == 2
+                expr = expr_list[mixmode + 3]
+                mask5 = core.std.Expr([mask1, mask2, mask3, mask4, mask5, mask6, mask7, mask8, mask9], [expr])
 
     if bits != 16:
-        mask = core.fmtc.bitdepth(mask, bits=bits, dmode=1, **fmtc_args)
+        mask5 = core.fmtc.bitdepth(mask5, bits=bits, dmode=1, **fmtc_args)
 
-    return core.std.Invert(mask) if invert else mask
+    return core.std.Invert(mask5) if invert else mask5
