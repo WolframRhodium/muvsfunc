@@ -1,6 +1,7 @@
 import vapoursynth as vs
 import havsfunc as haf
 import mvsfunc as mvf
+import math
 
 '''
 Functions:
@@ -533,10 +534,11 @@ def AnimeEdgeMask(clip, shift1=0, shift2=None, thY1=0, thY2=255, mode=None):
     thY2 = haf.scale(thY2, bits)
     
     fmtc_args = dict(fulls=True, fulld=True)
-    mask1 = core.std.Convolution(clip, [0, 0, 0, 0, 2, -1, 0, -1, 0], saturate=True).fmtc.resample(sx=shift1, sy=shift2, **fmtc_args)
-    mask2 = core.std.Convolution(clip, [0, -1, 0, -1, 2, 0, 0, 0, 0], saturate=True).fmtc.resample(sx=-shift1, sy=-shift2, **fmtc_args)
-    mask3 = core.std.Convolution(clip, [0, -1, 0, 0, 2, -1, 0, 0, 0], saturate=True).fmtc.resample(sx=shift1, sy=-shift2, **fmtc_args)
-    mask4 = core.std.Convolution(clip, [0, 0, 0, -1, 2, 0, 0, -1, 0], saturate=True).fmtc.resample(sx=-shift1, sy=shift2, **fmtc_args)
+    resample_args = dict(kernel='bilinear')
+    mask1 = core.std.Convolution(clip, [0, 0, 0, 0, 2, -1, 0, -1, 0], saturate=True).fmtc.resample(sx=shift1, sy=shift2, **fmtc_args, **resample_args)
+    mask2 = core.std.Convolution(clip, [0, -1, 0, -1, 2, 0, 0, 0, 0], saturate=True).fmtc.resample(sx=-shift1, sy=-shift2, **fmtc_args, **resample_args)
+    mask3 = core.std.Convolution(clip, [0, -1, 0, 0, 2, -1, 0, 0, 0], saturate=True).fmtc.resample(sx=shift1, sy=-shift2, **fmtc_args, **resample_args)
+    mask4 = core.std.Convolution(clip, [0, 0, 0, -1, 2, 0, 0, -1, 0], saturate=True).fmtc.resample(sx=-shift1, sy=shift2, **fmtc_args, **resample_args)
 
     expr = 'x x * y y * + z z * + a a * + sqrt'
     mask = core.std.Expr([mask1, mask2, mask3, mask4], [expr]).fmtc.bitdepth(bits=bits, dmode=1, **fmtc_args)
@@ -582,3 +584,90 @@ def AnimeEdgeMask2(clip, rx=1.2, ry=None, amp=50, thY1=0, thY2=255, mode=1):
     mask = core.std.Expr([mask], [limitexpr])
 
     return mask
+
+def PolygonExInpand(clip, shift=0, shape=0, mixmode=0, noncentral=False):
+# shape [0:losange, 1:square, 2:octagon]
+# mixmode [0:max, 1:arithmetic mean, 2:quadratic mean]
+
+    core = vs.get_core()
+    funcName = 'PolygonExInpand'
+    
+    if not isinstance(clip, vs.VideoNode):
+        raise TypeError(funcName + ': \"clip\" must be a clip!')
+
+    if shape not in list(range(3)):
+        raise ValueError(funcName + ': \'shape\' have not a correct value! [0, 1 or 2]')
+
+    if mixmode not in list(range(3)):
+        raise ValueError(funcName + ': \'mixmode\' have not a correct value! [0, 1 or 2]')
+
+    invert = False
+    if shift < 0:
+        invert = True
+        clip = core.std.Invert(clip)
+        shift = -shift
+    elif shift == 0:
+        return clip
+
+    bits = clip.format.bits_per_sample
+    resample_args = dict(kernel='bilinear')
+    fmtc_args = dict(fulls=True, fulld=True)
+
+    ortho = [shift, shift * (1<< clip.format.subsampling_h)]
+    inv_ortho = [-shift, -shift * (1<< clip.format.subsampling_h)]
+    dia = [math.sqrt(shift / 2), math.sqrt(shift / 2) * (1 << clip.format.subsampling_h)]
+    inv_dia = [-math.sqrt(shift / 2), -math.sqrt(shift / 2) * (1 << clip.format.subsampling_h)]
+
+    mask5 = clip
+    
+    # shift
+    if shape == 0 or shape == 2:
+        mask2 = core.fmtc.resample(mask5, sx=0, sy=ortho, **fmtc_args, **resample_args)
+        mask4 = core.fmtc.resample(mask5, sx=ortho, sy=0, **fmtc_args, **resample_args)
+        mask6 = core.fmtc.resample(mask5, sx=inv_ortho, sy=0, **fmtc_args, **resample_args)
+        mask8 = core.fmtc.resample(mask5, sx=0, sy=inv_ortho, **fmtc_args, **resample_args)
+
+    if shape == 1 or shape == 2:
+        mask1 = core.fmtc.resample(mask5, sx=dia, sy=dia, **fmtc_args, **resample_args)
+        mask3 = core.fmtc.resample(mask5, sx=inv_dia, sy=dia, **fmtc_args, **resample_args)
+        mask7 = core.fmtc.resample(mask5, sx=dia, sy=inv_dia, **fmtc_args, **resample_args)
+        mask9 = core.fmtc.resample(mask5, sx=inv_dia, sy=inv_dia, **fmtc_args, **resample_args)
+
+    # mix
+    if noncentral:
+        expr_list = [
+            'x y max z max a max',
+            'x y + z + a + 4 /',
+            'x x * y y * + z z * + a a * + 4 / sqrt',
+            'x y max z max a max b max c max d max e max',
+            'x y + z + a + b + c + d + e + 8 /',
+            'x x * y y * + z z * + a a * + b b * + c c * + d d * + e e * + 8 / sqrt',
+            ]
+
+        if shape == 0 or shape == 1:
+            expr = expr_list[mixmode]
+            mask = core.std.Expr([mask2, mask4, mask6, mask8] if shape == 0 else [mask1, mask3, mask7, mask9], [expr])
+        else: # shape == 2
+            expr = expr_list[mixmode + 3]
+            mask = core.std.Expr([mask1, mask2, mask3, mask4, mask6, mask7, mask8, mask9], [expr])
+    else:
+        expr_list = [
+            'x y max z max a max b max',
+            'x y + z + a + b + 5 /',
+            'x x * y y * + z z * + a a * + b b * + 5 / sqrt',
+            'x y max z max a max b max c max d max e max f max',
+            'x y + z + a + b + c + d + e + f + 9 /',
+            'x x * y y * + z z * + a a * + b b * + c c * + d d * + e e * + f f * + 9 / sqrt',
+            ]
+
+        if shape == 0 or shape == 1:
+            expr = expr_list[mixmode]
+            mask = core.std.Expr([mask2, mask4, mask5, mask6, mask8] if shape == 0 else [mask1, mask3, mask5, mask7, mask9], [expr])
+        else: # shape == 2
+            expr = expr_list[mixmode + 3]
+            mask = core.std.Expr([mask1, mask2, mask3, mask4, mask5, mask6, mask7, mask8, mask9], [expr])
+
+    if bits != 16:
+        mask = core.fmtc.bitdepth(mask, bits=bits, dmode=1, **fmtc_args)
+
+    return core.std.Invert(mask) if invert else mask
