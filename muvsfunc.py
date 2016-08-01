@@ -586,7 +586,7 @@ def AnimeEdgeMask2(clip, rx=1.2, ry=None, amp=50, thY1=0, thY2=255, mode=1):
 
     return mask
 
-def PolygonExInpand(clip, shift=0, shape=0, mixmode=0, noncentral=False, step=1.0):
+def PolygonExInpand(clip, shift=0, shape=0, mixmode=0, noncentral=False, step=1, amp=1):
 # shape [0:losange, 1:square, 2:octagon]
 # mixmode [0:max, 1:arithmetic mean, 2:quadratic mean]
 
@@ -653,10 +653,10 @@ def PolygonExInpand(clip, shift=0, shape=0, mixmode=0, noncentral=False, step=1.
                 ]
 
             if shape == 0 or shape == 1:
-                expr = expr_list[mixmode]
+                expr = expr_list[mixmode] + ' {amp} *'.format(amp=amp)
                 mask5 = core.std.Expr([mask2, mask4, mask6, mask8] if shape == 0 else [mask1, mask3, mask7, mask9], [expr])
             else: # shape == 2
-                expr = expr_list[mixmode + 3]
+                expr = expr_list[mixmode + 3] + ' {amp} *'.format(amp=amp)
                 mask5 = core.std.Expr([mask1, mask2, mask3, mask4, mask6, mask7, mask8, mask9], [expr])
         else:
             expr_list = [
@@ -669,10 +669,10 @@ def PolygonExInpand(clip, shift=0, shape=0, mixmode=0, noncentral=False, step=1.
                 ]
 
             if shape == 0 or shape == 1:
-                expr = expr_list[mixmode]
+                expr = expr_list[mixmode] + ' {amp} *'.format(amp=amp)
                 mask5 = core.std.Expr([mask2, mask4, mask5, mask6, mask8] if shape == 0 else [mask1, mask3, mask5, mask7, mask9], [expr])
             else: # shape == 2
-                expr = expr_list[mixmode + 3]
+                expr = expr_list[mixmode + 3] + ' {amp} *'.format(amp=amp)
                 mask5 = core.std.Expr([mask1, mask2, mask3, mask4, mask5, mask6, mask7, mask8, mask9], [expr])
 
     if bits != 16:
