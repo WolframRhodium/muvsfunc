@@ -489,7 +489,7 @@ def Build_gf3_range_mask(src, radius=1):
 
     return last
 
-def AnimeEdgeMask(clip, shift1=0, shift2=None, thY1=0, thY2=255, mode=None):
+def AnimeEdgeMask(clip, shift1=0, shift2=None, thY1=0, thY2=255, mode=None, resample_args = dict(kernel='bilinear')):
 # shift1, shift2 [float, -1.5 ~ 1.5]
 # thY1, thY2 [int, 0 ~ 255]
 # mode [-1, 1]
@@ -535,7 +535,6 @@ def AnimeEdgeMask(clip, shift1=0, shift2=None, thY1=0, thY2=255, mode=None):
     thY2 = haf.scale(thY2, bits)
     
     fmtc_args = dict(fulls=True, fulld=True)
-    resample_args = dict(kernel='bilinear')
     mask1 = core.std.Convolution(clip, [0, 0, 0, 0, 2, -1, 0, -1, 0], saturate=True).fmtc.resample(sx=shift1, sy=shift2, **fmtc_args, **resample_args)
     mask2 = core.std.Convolution(clip, [0, -1, 0, -1, 2, 0, 0, 0, 0], saturate=True).fmtc.resample(sx=-shift1, sy=-shift2, **fmtc_args, **resample_args)
     mask3 = core.std.Convolution(clip, [0, -1, 0, 0, 2, -1, 0, 0, 0], saturate=True).fmtc.resample(sx=shift1, sy=-shift2, **fmtc_args, **resample_args)
@@ -586,7 +585,7 @@ def AnimeEdgeMask2(clip, rx=1.2, ry=None, amp=50, thY1=0, thY2=255, mode=1):
 
     return mask
 
-def PolygonExInpand(clip, shift=0, shape=0, mixmode=0, noncentral=False, step=1, amp=1):
+def PolygonExInpand(clip, shift=0, shape=0, mixmode=0, noncentral=False, step=1, amp=1, fmtc_args=dict(), resample_args=dict(kernel='bilinear')):
 # shape [0:losange, 1:square, 2:octagon]
 # mixmode [0:max, 1:arithmetic mean, 2:quadratic mean]
 
@@ -614,8 +613,6 @@ def PolygonExInpand(clip, shift=0, shape=0, mixmode=0, noncentral=False, step=1,
         return clip
 
     bits = clip.format.bits_per_sample
-    resample_args = dict(kernel='bilinear')
-    fmtc_args = dict(fulls=True, fulld=True)
 
     mask5 = clip
 
@@ -658,7 +655,7 @@ def PolygonExInpand(clip, shift=0, shape=0, mixmode=0, noncentral=False, step=1,
             else: # shape == 2
                 expr = expr_list[mixmode + 3] + ' {amp} *'.format(amp=amp)
                 mask5 = core.std.Expr([mask1, mask2, mask3, mask4, mask6, mask7, mask8, mask9], [expr])
-        else:
+        else: # noncentral == False
             expr_list = [
                 'x y max z max a max b max',
                 'x y + z + a + b + 5 /',
