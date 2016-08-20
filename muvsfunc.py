@@ -389,7 +389,7 @@ def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=
         if mask > 1:
             dmask = core.rgvs.RemoveGrain([dmask], [11])
             if mask > 2:
-                dmask = core.rgvs.RemoveGrain([dmask], [20])
+                dmask = core.std.Convolution(dmask, matrix=[1, 1, 1, 1, 1, 1, 1, 1, 1])
         dmask = core.fmtc.bitdepth(dmask, bits=16)
         res_16 = core.std.MaskedMerge(flt, src_16, dmask, planes=planes, first_plane=True)
     else:
