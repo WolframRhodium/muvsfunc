@@ -15,7 +15,7 @@ Functions:
     PolygonExInpand
 '''
 
-def LDMerge(flt_h, flt_v, src, mrad=0, show=0, planes=None, convknl=1, realcorner=False):
+def LDMerge(flt_h, flt_v, src, mrad=0, show=0, planes=None, convknl=1):
     core = vs.get_core()
     funcName = 'LDMerge'
     
