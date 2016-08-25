@@ -15,7 +15,7 @@ Functions:
     PolygonExInpand
 '''
 
-def LDMerge(flt_h, flt_v, src, mrad=0, power=1.0, show=0, planes=None):
+def LDMerge(flt_h, flt_v, src, mrad=0, power=1.0, show=0, planes=None, convknl=1):
     core = vs.get_core()
     funcName = 'LDMerge'
     
@@ -53,8 +53,16 @@ def LDMerge(flt_h, flt_v, src, mrad=0, power=1.0, show=0, planes=None):
     bits = flt_h.format.bits_per_sample
     isGray = flt_h.format.color_family == vs.GRAY
     
-    hmap = core.std.Convolution(src, matrix=[-1, -1, -1, 2, 2, 2, -1, -1, -1], saturate=False, planes=planes)
-    vmap = core.std.Convolution(src, matrix=[-1, 2, -1, -1, 2, -1, -1, 2, -1], saturate=False, planes=planes)
+    if convknl == 0:
+        convknl_h = [-1, -1, -1, 2, 2, 2, -1, -1, -1]
+        convknl_v = [-1, 2, -1, -1, 2, -1, -1, 2, -1]
+    else: # convknl == 1
+        convknl_h = [-17, -61, -17, 0, 0, 0, 17, 61, 61]
+        convknl_v = [-17, 0, 17, -61, 0, 61, -17, 0, 17]
+
+    hmap = core.std.Convolution(src, matrix=convknl_h, saturate=False, planes=planes)
+    vmap = core.std.Convolution(src, matrix=convknl_v, saturate=False, planes=planes)
+
     if mrad > 0:
         hmap = haf.mt_expand_multi(hmap, sw=0, sh=mrad, planes=planes)
         vmap = haf.mt_expand_multi(vmap, sw=mrad, sh=0, planes=planes)
