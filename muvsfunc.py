@@ -15,7 +15,7 @@ Functions:
     PolygonExInpand
 '''
 
-def LDMerge(flt_h, flt_v, src, mrad=0, power=1.0, show=0, planes=None, convknl=1):
+def LDMerge(flt_h, flt_v, src, mrad=0, show=0, planes=None, convknl=1, realcorner=False):
     core = vs.get_core()
     funcName = 'LDMerge'
     
@@ -38,9 +38,6 @@ def LDMerge(flt_h, flt_v, src, mrad=0, power=1.0, show=0, planes=None, convknl=1
         
     if not isinstance(mrad, int):
         raise TypeError(funcName + '\"mrad\" must be an int!')
-    
-    if not isinstance(power, float) and not isinstance(power, int):
-        raise TypeError(funcName + '\"power\" must be a float or an int!')
 
     if not isinstance(show, int):
         raise TypeError(funcName + '\"show\" must be an int!')
@@ -70,7 +67,7 @@ def LDMerge(flt_h, flt_v, src, mrad=0, power=1.0, show=0, planes=None, convknl=1
         hmap = haf.mt_inpand_multi(hmap, sw=0, sh=-mrad, planes=planes)
         vmap = haf.mt_inpand_multi(vmap, sw=-mrad, sh=0, planes=planes)
     
-    ldexpr = '{peak} 1 x 0.0001 + y 0.0001 + / {power} pow + /'.format(peak=(1 << bits) - 1, power=power)
+    ldexpr = 'y x x * y y * + sqrt / {peak} *'.format(peak=(1 << bits) - 1)
     ldmap = core.std.Expr([hmap, vmap], [ldexpr] if isGray else [ldexpr if 0 in planes else '', ldexpr if 1 in planes else '', ldexpr if 2 in planes else ''])
 
     if show == 0:
