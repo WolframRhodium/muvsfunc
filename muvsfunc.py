@@ -15,7 +15,7 @@ Functions:
     PolygonExInpand
 '''
 
-def LDMerge(flt_h, flt_v, src, mrad=0, show=0, planes=None, convknl=1):
+def LDMerge(flt_h, flt_v, src, mrad=0, show=0, planes=None, convknl=1, conv_div=None):
     core = vs.get_core()
     funcName = 'LDMerge'
     
@@ -56,9 +56,12 @@ def LDMerge(flt_h, flt_v, src, mrad=0, show=0, planes=None, convknl=1):
     else: # convknl == 1
         convknl_h = [-17, -61, -17, 0, 0, 0, 17, 61, 17]
         convknl_v = [-17, 0, 17, -61, 0, 61, -17, 0, 17]
+    
+    if conv_div is None:
+        conv_div = max(convknl_h)
 
-    hmap = core.std.Convolution(src, matrix=convknl_h, saturate=False, planes=planes)
-    vmap = core.std.Convolution(src, matrix=convknl_v, saturate=False, planes=planes)
+    hmap = core.std.Convolution(src, matrix=convknl_h, saturate=False, planes=planes, divisor=conv_div)
+    vmap = core.std.Convolution(src, matrix=convknl_v, saturate=False, planes=planes, divisor=conv_div)
 
     if mrad > 0:
         hmap = haf.mt_expand_multi(hmap, sw=0, sh=mrad, planes=planes)
