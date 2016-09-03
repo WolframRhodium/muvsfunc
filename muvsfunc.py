@@ -13,6 +13,7 @@ Functions:
     GradFun3
     AnimeEdgeMask (2)
     PolygonExInpand
+    Luma
 '''
 
 def LDMerge(flt_h, flt_v, src, mrad=0, show=0, planes=None, convknl=1, conv_div=None):
@@ -684,3 +685,9 @@ def PolygonExInpand(clip, shift=0, shape=0, mixmode=0, noncentral=False, step=1,
         mask5 = core.fmtc.bitdepth(mask5, bits=bits, dmode=1, **fmtc_args)
 
     return core.std.Invert(mask5) if invert else mask5
+
+
+def Luma(clip, plane=0):
+    core = vs.get_core()
+    
+    return core.hist.Luma(mvf.GetPlane(mvf.ToYUV(clip, depth=8), plane))
