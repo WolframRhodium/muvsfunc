@@ -547,12 +547,13 @@ def AnimeEdgeMask(clip, shift1=0, shift2=None, thY1=0, thY2=255, mode=None, resa
     mask4 = core.std.Convolution(clip, [0, 0, 0, -1, 2, 0, 0, -1, 0], saturate=True).fmtc.resample(sx=-shift1, sy=shift2, **fmtc_args, **resample_args)
 
     expr = 'x x * y y * + z z * + a a * + sqrt'
-    mask = core.std.Expr([mask1, mask2, mask3, mask4], [expr]).fmtc.bitdepth(bits=bits, dmode=1, **fmtc_args)
 
     if (thY1 > 0) or (thY2 < 255):
         thY1 = haf.scale(thY1, bits)
         thY2 = haf.scale(thY2, bits)
-        mask = core.std.Limiter(mask, min=thY1, max=thY2)
+        expr += '{thY1} max {thY2} min'.format(thY1=thY1, thY2=thY2)
+
+    mask = core.std.Expr([mask1, mask2, mask3, mask4], [expr]).fmtc.bitdepth(bits=bits, fulls=True, fulld=True, dmode=1)
 
     return mask
 
@@ -583,12 +584,13 @@ def AnimeEdgeMask2(clip, rx=1.2, ry=None, amp=50, thY1=0, thY2=255, mode=1):
     smoother = core.fmtc.resample(clip, haf.m4(w / rx), haf.m4(h / ry), kernel='bicubic').fmtc.resample(w, h, kernel='bicubic', a1=1.5, a2=-0.25)
 
     expr = 'x y - {amp} *'.format(amp=amp) if mode == 1 else 'y x - {amp} *'.format(amp=amp)
-    mask = core.std.Expr([smooth, smoother], [expr]).fmtc.bitdepth(bits=bits, fulls=True, fulld=True, dmode=1)
 
     if (thY1 > 0) or (thY2 < 255):
         thY1 = haf.scale(thY1, bits)
         thY2 = haf.scale(thY2, bits)
-        mask = core.std.Limiter(mask, min=thY1, max=thY2)
+        expr += '{thY1} max {thY2} min'.format(thY1=thY1, thY2=thY2)
+    
+    mask = core.std.Expr([smooth, smoother], [expr]).fmtc.bitdepth(bits=bits, fulls=True, fulld=True, dmode=1)
 
     return mask
 
