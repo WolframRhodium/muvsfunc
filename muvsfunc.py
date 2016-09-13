@@ -14,6 +14,10 @@ Functions:
     AnimeEdgeMask (2)
     PolygonExInpand
     Luma
+    ediaa
+    nnedi3aa
+    maa
+    SharpAAMcmod
 '''
 
 def LDMerge(flt_h, flt_v, src, mrad=0, show=0, planes=None, convknl=1, conv_div=None):
@@ -83,7 +87,7 @@ def LDMerge(flt_h, flt_v, src, mrad=0, show=0, planes=None, convknl=1, conv_div=
     elif show == 3:
         return vmap
 
-def Compare(src, flt, power=1.5, chroma=False, mode=1):
+def Compare(src, flt, power=1.5, chroma=False, mode=2):
     core = vs.get_core()
     funcName = 'Compare'
 
@@ -690,3 +694,175 @@ def Luma(clip, plane=0):
     core = vs.get_core()
 
     return core.hist.Luma(mvf.GetPlane(mvf.ToYUV(clip, depth=8, dither=0), plane))
+
+
+
+
+#Suggested by Mystery Keeper in "Denoise of tv-anime" thread
+def ediaa(a):
+    core = vs.get_core()
+    funcname = 'ediaa'
+    
+    if not isinstance(a, vs.VideoNode):
+        raise TypeError(funcname + ': \"a\" must be a clip!')
+
+    bits = a.format.bits_per_sample
+    
+    last = core.eedi2.EEDI2(a, field=1).std.Transpose()
+    last = core.eedi2.EEDI2(last, field=1).std.Transpose()
+    last = core.fmtc.resample(last, a.width, a.height, -0.5, -0.5, kernel='spline36')
+
+    if last.format.bits_per_sample == bits:
+        return last
+    else:
+        return core.fmtc.bitdepth(last, bits=bits)
+
+#Using nnedi3 (Emulgator):
+def nnedi3aa(a):
+    core = vs.get_core()
+    funcname = 'nnedi3aa'
+    
+    if not isinstance(a, vs.VideoNode):
+        raise TypeError(funcname + ': \"a\" must be a clip!')
+
+    bits = a.format.bits_per_sample
+    
+    last = core.nnedi3.nnedi3(a, field=1).std.Transpose()
+    last = core.nnedi3.nnedi3(last, field=1).std.Transpose()
+    last = core.fmtc.resample(last, a.width, a.height, -0.5, -0.5, kernel='spline36')
+
+    if last.format.bits_per_sample == bits:
+        return last
+    else:
+        return core.fmtc.bitdepth(last, bits=bits)
+    
+#Anti-aliasing with edge masking by martino, mask using "sobel" taken from Kintaro's useless filterscripts and modded by thetoof for spline36
+def maa(input):
+    core = vs.get_core()
+    funcname = 'maa'
+    
+    if not isinstance(input, vs.VideoNode):
+        raise TypeError(funcname + ': \"input\" must be a clip!')
+    
+    w = input.width
+    h = input.height
+    bits = input.format.bits_per_sample
+    
+    if input.format.color_family != vs.GRAY:
+        input_src = input
+        input = mvf.GetPlane(input, 0)
+    else:
+        input_src = None
+
+    mask = core.std.Convolution(input, [0, -1, 0, -1, 0, 1, 0, 1, 0], divisor=2, saturate=False).std.Binarize(haf.scale(7 + 1, bits))   
+    aa_clip = core.resize.Spline36(input, w * 2, h * 2)
+    aa_clip = core.sangnom.SangNom(aa_clip).std.Transpose()
+    aa_clip = core.sangnom.SangNom(aa_clip).std.Transpose()
+    aa_clip = core.resize.Spline36(aa_clip, w, h)
+    last = core.std.MaskedMerge(input, aa_clip, mask)
+    
+    if input_src is None:
+        return last
+    else:
+        return core.std.ShufflePlanes([last, input_src], planes=[0, 1, 2], colorfamily=input_src.format.color_family)
+
+#Developed in the "fine anime antialiasing thread"
+#
+# Parameters:
+#  dark (float)    - strokes darkening strength
+#  thin (int)     - Presharpening
+#  sharp (int)   - Postsharpening
+#  smooth (int)     - Postsmoothing
+#  stabilize (bool)   - Use post stabilization with Motion Compensation
+#  tradius (int)    - 1 = Degrain1 / 2 = Degrain2 / 3 = Degrain3 
+#  aapel (int)     - accuracy of the motion estimation (Value can only be 1, 2 or 4. 1 means a precision to the pixel. 2 means a precision to half a pixel, 4 means a precision to quarter a pixel, produced by spatial interpolation (better but slower).)
+#  aaov (int) - block overlap value (horizontal). Must be even and less than block size. (Higher = more precise & slower)
+#  aablk (int) - Size of a block (horizontal). It's either 4, 8 or 16 ( default is 8 ). Larger blocks are less sensitive to noise, are faster, but also less accurate.
+#  aatype (string) - Use Sangnom() or EEDI2() or NNEDI3() for anti-aliasing
+def SharpAAMcmod(orig, dark=0.2, thin=10, sharp=150, smooth=-1, stabilize=False, Tradius=2, aapel=1, aaov=None, aablk=None, aatype='nnedi3'):
+    core = vs.get_core()
+    funcname = 'SharpAAMcmod'
+    
+    if not isinstance(orig, vs.VideoNode):
+        raise TypeError(funcname + ': \"orig\" must be a clip!')
+    
+    w = orig.width
+    h = orig.height
+    bits = orig.format.bits_per_sample
+    
+    if orig.format.color_family != vs.GRAY:
+        orig_src = orig
+        orig = mvf.GetPlane(orig, 0)
+    else:
+        orig_src = None
+    
+    if aaov is None:
+        aaov = 8 if w > 1100 else 4
+    
+    if aablk is None:
+        aablk = 16 is w > 1100 else 8
+    
+    m = core.std.Expr([core.std.Convolution(orig, [5, 10, 5, 0, 0, 0, -5, -10, -5], divisor=4, saturate=False), core.std.Convolution(orig, [5, 0, -5, 10, 0, -10, 5, 0, -5], divisor=4, saturate=False)], ['x y max {neutral8} / 0.86 pow {peak8} *'.format(neutral8=haf.scale(128, bits), peak8=haf.scale(255, bits))])
+
+    if thin == 0 and dark == 0:
+        preaa = orig
+    elif thin == 0:
+        preaa = haf.Toon(orig, str=dark)
+    elif dark == 0:
+        preaa = core.warp.AWarpSharp2(orig, depth=thin)
+    else:
+        preaa = haf.Toon(orig, str=dark).warp.AWarpSharp2(depth=thin)
+    
+    aatype = aatype.lower()
+    if aatype == 'sangnom':
+        aa = core.resize.Spline36(preaa, w * 2, h * 2)
+        aa = core.std.Transpose(aa).sangnom.SangNom()
+        aa = core.std.Transpose(aa).sangnom.SangNom()
+        aa = core.resize.Spline36(aa, w, h)
+    elif aatype == 'eedi2':
+        aa = ediaa(preaa)
+    elif aatype == 'nnedi3':
+        aa = nnedi3aa(preaa)
+    else:
+        raise ValueError(funcName + ': valid values of \"aatype\" are \"sangnom\", \"eedi2\" and \"nnedi3\"!')
+    
+    if sharp == 0 and smooth == 0:
+        postsh = aa
+    else:
+        postsh = haf.LSFmod(aa, strength=sharp, overshoot=1, soft=smooth, edgemode=1)
+    
+    merged = core.std.MaskedMerge(orig, postsh, m)
+    
+    if stabilize:
+        sD = core.std.MakeDiff(orig, merged)
+    
+        origSuper = haf.DitherLumaRebuild(orig, s0=1).mv.Super(pel=aapel)
+        sDsuper = core.mv.Super(sD, pel=aapel)
+    
+        fv3 = core.mv.Analyse(origsuper, isb=False, delta=3, overlap=aaov, blksize=aablk) if tradius == 3 else None
+        fv2 = core.mv.Analyse(origsuper, isb=False, delta=2, overlap=aaov, blksize=aablk) if tradius >= 2 else None
+        fv1 = core.mv.Analyse(origsuper, isb=False, delta=1, overlap=aaov, blksize=aablk) if tradius >= 1 else None
+        bv1 = core.mv.Analyse(origsuper, isb=True, delta=1, overlap=aaov, blksize=aablk) if tradius >= 1 else None
+        bv2 = core.mv.Analyse(origsuper, isb=True, delta=2, overlap=aaov, blksize=aablk) if tradius >= 2 else None
+        bv3 = core.mv.Analyse(origsuper, isb=True, delta=3, overlap=aaov, blksize=aablk) if tradius == 3 else None
+        
+        if tradius == 1:
+            sDD = core.mv.Degrain1(sD, sDsuper, bv1, fv1)
+        elif tradius == 2:
+            sDD = core.mv.Degrain2(sD, sDsuper, bv1, fv1, bv2, fv2)
+        elif tradius == 3:
+            sDD = core.mv.Degrain3(sD, sDsuper, bv1, fv1, bv2, fv2, bv3, fv3)
+        else:
+            raise ValueError(funcName + ': valid values of \"tradius\" are 1, 2 and 3!')
+        
+        reduc = 0.4
+        sDD = core.std.Expr(sD, sDD, ['x {neutral} - abs y {neutral} - abs < x y ?'.format(neutral=haf.scale(128, bits))]).std.Merge(sDD, 1.0 - reduc)
+    
+        last = core.std.MakeDiff(orig, sDD)
+    else:
+        last = merged
+    
+    if orig_src is None:
+        return last
+    else:
+        return core.std.ShufflePlanes([last, orig_src], planes=[0, 1, 2], colorfamily=orig_src.format.color_family)
