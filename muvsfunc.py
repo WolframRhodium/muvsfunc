@@ -727,8 +727,8 @@ def nnedi3aa(a):
 
     bits = a.format.bits_per_sample
     
-    last = core.nnedi3.nnedi3(a, field=1).std.Transpose()
-    last = core.nnedi3.nnedi3(last, field=1).std.Transpose()
+    last = core.nnedi3.nnedi3(a, field=1, dh=True).std.Transpose()
+    last = core.nnedi3.nnedi3(last, field=1, dh=True).std.Transpose()
     last = core.fmtc.resample(last, a.width, a.height, -0.5, -0.5, kernel='spline36')
 
     if last.format.bits_per_sample == bits:
@@ -800,7 +800,7 @@ def SharpAAMcmod(orig, dark=0.2, thin=10, sharp=150, smooth=-1, stabilize=False,
         aaov = 8 if w > 1100 else 4
     
     if aablk is None:
-        aablk = 16 is w > 1100 else 8
+        aablk = 16 if w > 1100 else 8
     
     m = core.std.Expr([core.std.Convolution(orig, [5, 10, 5, 0, 0, 0, -5, -10, -5], divisor=4, saturate=False), core.std.Convolution(orig, [5, 0, -5, 10, 0, -10, 5, 0, -5], divisor=4, saturate=False)], ['x y max {neutral8} / 0.86 pow {peak8} *'.format(neutral8=haf.scale(128, bits), peak8=haf.scale(255, bits))])
 
