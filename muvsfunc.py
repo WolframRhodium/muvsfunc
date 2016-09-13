@@ -689,4 +689,4 @@ def PolygonExInpand(clip, shift=0, shape=0, mixmode=0, noncentral=False, step=1,
 def Luma(clip, plane=0):
     core = vs.get_core()
 
-    return core.hist.Luma(mvf.GetPlane(mvf.ToYUV(clip, depth=8), plane))
+    return core.hist.Luma(mvf.GetPlane(mvf.ToYUV(clip, depth=8, dither=0), plane))
