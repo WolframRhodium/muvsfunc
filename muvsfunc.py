@@ -866,3 +866,30 @@ def SharpAAMcmod(orig, dark=0.2, thin=10, sharp=150, smooth=-1, stabilize=False,
         return last
     else:
         return core.std.ShufflePlanes([last, orig_src], planes=[0, 1, 2], colorfamily=orig_src.format.color_family)
+
+(port from https://github.com/chikuzen/GenericFilters/blob/2044dc6c25a1b402aae443754d7a46217a2fddbf/src/convolution/tedge.c
+fix missing "rshift")
+
+def TEdge(clip, min=0, max=65535, planes=None, rshift=0):
+    core = vs.get_core()
+    funcName = 'TEdge'
+
+    if not isinstance(clip, vs.VideoNode):
+        raise TypeError(funcName + ': \"clip\" must be a clip!')
+
+    if planes is None:
+        planes = list(range(clip.format.num_planes))
+
+    rshift = 1 << rshift
+
+    isGray = clip.format.color_family == vs.GARY
+    bits = clip.format.bits_per_sample
+    floor = 0
+    peak = (1 << bits) - 1
+
+    gx = core.std.Convolution(clip, [4, -25, 0, 25, -4], planes=planes, saturate=False, mode='h')
+    gy = core.std.Convolution(clip, [-4, 25, 0, -25, 4], planes=planes, saturate=False, mode='v')
+    expr = 'x x * y y * + {rshift} / sqrt {max} > {peak} {min} < {floor} x x * y y * + sqrt {rshift} /? ?'.format(rshift=rshift, max=max, peak=peak, min=min, floor=floor)
+    g = core.std.Expr([gx, gy], [expr] if isGray else [expr if 0 in planes else '', expr if 1 in planes else '', expr if 2 in planes else ''])
+
+    return g
