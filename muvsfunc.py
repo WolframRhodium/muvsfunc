@@ -14,10 +14,12 @@ Functions:
     AnimeEdgeMask (2)
     PolygonExInpand
     Luma
+
     ediaa
     nnedi3aa
     maa
     SharpAAMcmod
+    TEdge
 '''
 
 def LDMerge(flt_h, flt_v, src, mrad=0, show=0, planes=None, convknl=1, conv_div=None):
@@ -553,13 +555,11 @@ def AnimeEdgeMask(clip, shift1=0, shift2=None, thY1=0, thY2=255, mode=None, resa
     expr = 'x x * y y * + z z * + a a * + sqrt'
 
     if (thY1 > 0) or (thY2 < 255):
-        thY1 = haf.scale(thY1, bits)
-        thY2 = haf.scale(thY2, bits)
+        thY1 = haf.scale(thY1, 16)
+        thY2 = haf.scale(thY2, 16)
         expr += '{thY1} max {thY2} min'.format(thY1=thY1, thY2=thY2)
 
-    mask = core.std.Expr([mask1, mask2, mask3, mask4], [expr]).fmtc.bitdepth(bits=bits, fulls=True, fulld=True, dmode=1)
-
-    return mask
+    return core.std.Expr([mask1, mask2, mask3, mask4], [expr]).fmtc.bitdepth(bits=bits, fulls=True, fulld=True, dmode=1)
 
 def AnimeEdgeMask2(clip, rx=1.2, ry=None, amp=50, thY1=0, thY2=255, mode=1):
 # Similar to AnimeEdgeMask(), set mode 1 for ringing(haloing) mask generation and -1 for edge mask generation.
@@ -590,13 +590,11 @@ def AnimeEdgeMask2(clip, rx=1.2, ry=None, amp=50, thY1=0, thY2=255, mode=1):
     expr = 'x y - {amp} *'.format(amp=amp) if mode == 1 else 'y x - {amp} *'.format(amp=amp)
 
     if (thY1 > 0) or (thY2 < 255):
-        thY1 = haf.scale(thY1, bits)
-        thY2 = haf.scale(thY2, bits)
+        thY1 = haf.scale(thY1, 16)
+        thY2 = haf.scale(thY2, 16)
         expr += '{thY1} max {thY2} min'.format(thY1=thY1, thY2=thY2)
-    
-    mask = core.std.Expr([smooth, smoother], [expr]).fmtc.bitdepth(bits=bits, fulls=True, fulld=True, dmode=1)
 
-    return mask
+    return core.std.Expr([smooth, smoother], [expr]).fmtc.bitdepth(bits=bits, fulls=True, fulld=True, dmode=1)
 
 def PolygonExInpand(clip, shift=0, shape=0, mixmode=0, noncentral=False, step=1, amp=1, fmtc_args=dict(), resample_args=dict(kernel='bilinear')):
 # shape [0:losange, 1:square, 2:octagon]
@@ -779,7 +777,7 @@ def maa(input):
 #  aaov (int) - block overlap value (horizontal). Must be even and less than block size. (Higher = more precise & slower)
 #  aablk (int) - Size of a block (horizontal). It's either 4, 8 or 16 ( default is 8 ). Larger blocks are less sensitive to noise, are faster, but also less accurate.
 #  aatype (string) - Use Sangnom() or EEDI2() or NNEDI3() for anti-aliasing
-def SharpAAMcmod(orig, dark=0.2, thin=10, sharp=150, smooth=-1, stabilize=False, Tradius=2, aapel=1, aaov=None, aablk=None, aatype='nnedi3'):
+def SharpAAMcmod(orig, dark=0.2, thin=10, sharp=150, smooth=-1, stabilize=False, tradius=2, aapel=1, aaov=None, aablk=None, aatype='nnedi3'):
     core = vs.get_core()
     funcname = 'SharpAAMcmod'
     
@@ -867,9 +865,8 @@ def SharpAAMcmod(orig, dark=0.2, thin=10, sharp=150, smooth=-1, stabilize=False,
     else:
         return core.std.ShufflePlanes([last, orig_src], planes=[0, 1, 2], colorfamily=orig_src.format.color_family)
 
-(port from https://github.com/chikuzen/GenericFilters/blob/2044dc6c25a1b402aae443754d7a46217a2fddbf/src/convolution/tedge.c
-fix missing "rshift")
-
+# (port from https://github.com/chikuzen/GenericFilters/blob/2044dc6c25a1b402aae443754d7a46217a2fddbf/src/convolution/tedge.c
+# fix missing "rshift")
 def TEdge(clip, min=0, max=65535, planes=None, rshift=0):
     core = vs.get_core()
     funcName = 'TEdge'
@@ -882,14 +879,14 @@ def TEdge(clip, min=0, max=65535, planes=None, rshift=0):
 
     rshift = 1 << rshift
 
-    isGray = clip.format.color_family == vs.GARY
+    isGray = clip.format.color_family == vs.GRAY
     bits = clip.format.bits_per_sample
     floor = 0
     peak = (1 << bits) - 1
 
     gx = core.std.Convolution(clip, [4, -25, 0, 25, -4], planes=planes, saturate=False, mode='h')
     gy = core.std.Convolution(clip, [-4, 25, 0, -25, 4], planes=planes, saturate=False, mode='v')
-    expr = 'x x * y y * + {rshift} / sqrt {max} > {peak} {min} < {floor} x x * y y * + sqrt {rshift} /? ?'.format(rshift=rshift, max=max, peak=peak, min=min, floor=floor)
-    g = core.std.Expr([gx, gy], [expr] if isGray else [expr if 0 in planes else '', expr if 1 in planes else '', expr if 2 in planes else ''])
 
-    return g
+    calcexpr = 'x x * y y * + {rshift} / sqrt'.format(rshift=rshift)
+    expr = '{calc} {max} > {peak} {calc} {min} < {floor} {calc} ? ?'.format(calc=calcexpr, max=max, peak=peak, min=min, floor=floor)
+    return core.std.Expr([gx, gy], [expr] if isGray else [expr if 0 in planes else '', expr if 1 in planes else '', expr if 2 in planes else ''])
