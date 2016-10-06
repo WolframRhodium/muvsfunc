@@ -55,7 +55,6 @@ def LDMerge(flt_h, flt_v, src, mrad=0, show=0, planes=None, convknl=1, conv_div=
         planes = list(range(flt_h.format.num_planes))
 
     bits = flt_h.format.bits_per_sample
-    isGray = flt_h.format.color_family == vs.GRAY
     
     if convknl == 0:
         convknl_h = [-1, -1, -1, 2, 2, 2, -1, -1, -1]
@@ -78,7 +77,7 @@ def LDMerge(flt_h, flt_v, src, mrad=0, show=0, planes=None, convknl=1, conv_div=
         vmap = haf.mt_inpand_multi(vmap, sw=-mrad, sh=0, planes=planes)
     
     ldexpr = 'y x x * y y * + sqrt / {peak} *'.format(peak=(1 << bits) - 1)
-    ldmap = core.std.Expr([hmap, vmap], [ldexpr] if isGray else [ldexpr if 0 in planes else '', ldexpr if 1 in planes else '', ldexpr if 2 in planes else ''])
+    ldmap = core.std.Expr([hmap, vmap], [ldexpr if 0 in planes else '', ldexpr if 1 in planes else '', ldexpr if 2 in planes else ''][0:src.format.num_planes])
 
     if show == 0:
         return core.std.MaskedMerge(flt_h, flt_v, ldmap, planes=planes)
@@ -691,7 +690,7 @@ def PolygonExInpand(clip, shift=0, shape=0, mixmode=0, noncentral=False, step=1,
 def Luma(clip, plane=0):
     core = vs.get_core()
 
-    return core.hist.Luma(mvf.GetPlane(mvf.ToYUV(clip, depth=8, dither=0), plane))
+    return core.hist.Luma(mvf.GetPlane(mvf.ToYUV(clip, depth=8, dither=1, ampn=0), plane))
 
 
 
@@ -708,7 +707,7 @@ def ediaa(a):
     
     last = core.eedi2.EEDI2(a, field=1).std.Transpose()
     last = core.eedi2.EEDI2(last, field=1).std.Transpose()
-    last = core.fmtc.resample(last, a.width, a.height, -0.5, -0.5, kernel='spline36')
+    last = core.fmtc.resample(last, a.width, a.height, [-0.5, -0.5 * (1 << clip.format.subsampling_w)], [-0.5, -0.5 * (1 << clip.format.subsampling_h)], kernel='spline36')
 
     if last.format.bits_per_sample == bits:
         return last
@@ -727,7 +726,7 @@ def nnedi3aa(a):
     
     last = core.nnedi3.nnedi3(a, field=1, dh=True).std.Transpose()
     last = core.nnedi3.nnedi3(last, field=1, dh=True).std.Transpose()
-    last = core.fmtc.resample(last, a.width, a.height, -0.5, -0.5, kernel='spline36')
+    last = core.fmtc.resample(last, a.width, a.height, [-0.5, -0.5 * (1 << clip.format.subsampling_w)], [-0.5, -0.5 * (1 << clip.format.subsampling_h)], kernel='spline36')
 
     if last.format.bits_per_sample == bits:
         return last
@@ -889,4 +888,4 @@ def TEdge(clip, min=0, max=65535, planes=None, rshift=0):
 
     calcexpr = 'x x * y y * + {rshift} / sqrt'.format(rshift=rshift)
     expr = '{calc} {max} > {peak} {calc} {min} < {floor} {calc} ? ?'.format(calc=calcexpr, max=max, peak=peak, min=min, floor=floor)
-    return core.std.Expr([gx, gy], [expr] if isGray else [expr if 0 in planes else '', expr if 1 in planes else '', expr if 2 in planes else ''])
+    return core.std.Expr([gx, gy], [expr if 0 in planes else '', expr if 1 in planes else '', expr if 2 in planes else ''][0:clip.format.num_planes])
