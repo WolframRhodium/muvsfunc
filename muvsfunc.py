@@ -77,7 +77,7 @@ def LDMerge(flt_h, flt_v, src, mrad=0, show=0, planes=None, convknl=1, conv_div=
         vmap = haf.mt_inpand_multi(vmap, sw=-mrad, sh=0, planes=planes)
     
     ldexpr = 'y x x * y y * + sqrt / {peak} *'.format(peak=(1 << bits) - 1)
-    ldmap = core.std.Expr([hmap, vmap], [ldexpr if 0 in planes else '', ldexpr if 1 in planes else '', ldexpr if 2 in planes else ''][0:src.format.num_planes])
+    ldmap = core.std.Expr([hmap, vmap], [(ldexpr if i in planes else '') for i in range(src.format.num_planes)])
 
     if show == 0:
         return core.std.MaskedMerge(flt_h, flt_v, ldmap, planes=planes)
@@ -878,7 +878,6 @@ def TEdge(clip, min=0, max=65535, planes=None, rshift=0):
 
     rshift = 1 << rshift
 
-    isGray = clip.format.color_family == vs.GRAY
     bits = clip.format.bits_per_sample
     floor = 0
     peak = (1 << bits) - 1
@@ -888,4 +887,4 @@ def TEdge(clip, min=0, max=65535, planes=None, rshift=0):
 
     calcexpr = 'x x * y y * + {rshift} / sqrt'.format(rshift=rshift)
     expr = '{calc} {max} > {peak} {calc} {min} < {floor} {calc} ? ?'.format(calc=calcexpr, max=max, peak=peak, min=min, floor=floor)
-    return core.std.Expr([gx, gy], [expr if 0 in planes else '', expr if 1 in planes else '', expr if 2 in planes else ''][0:clip.format.num_planes])
+    return core.std.Expr([gx, gy], [(expr if i in planes else '') for i in range(clip.format.num_planes)])
