@@ -687,13 +687,25 @@ def PolygonExInpand(clip, shift=0, shape=0, mixmode=0, noncentral=False, step=1,
 
     return core.std.Invert(mask5) if invert else mask5
 
-def Luma(clip, plane=0):
+def Luma(input, plane=0, power=4):
     core = vs.get_core()
 
-    return core.hist.Luma(mvf.GetPlane(mvf.ToYUV(clip, depth=8, dither=1, ampn=0), plane))
-
-
-
+    if not isinstance(input, vs.VideoNode):
+        raise TypeError(funcname + ': \"input\" must be a clip!')
+    
+    if (input.format.sample_type != vs.INTEGER):
+        raise TypeError(funcname + ': \"input\" must be of integer format!')
+        
+    bits = input.format.bits_per_sample
+    peak = (1 << bits) - 1
+    
+    clip = mvf.GetPlane(input, 0)
+    
+    def calc_luma(x):
+        p = x << power
+        return (peak - (p & peak)) if (p & (peak + 1)) else (p & peak)
+    
+    return core.std.Lut(clip, function=calc_luma)
 
 #Suggested by Mystery Keeper in "Denoise of tv-anime" thread
 def ediaa(a):
