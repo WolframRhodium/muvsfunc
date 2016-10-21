@@ -699,7 +699,7 @@ def Luma(input, plane=0, power=4):
     bits = input.format.bits_per_sample
     peak = (1 << bits) - 1
     
-    clip = mvf.GetPlane(input, 0)
+    clip = mvf.GetPlane(input, plane)
     
     def calc_luma(x):
         p = x << power
