@@ -902,7 +902,7 @@ def TEdge(clip, min=0, max=65535, planes=None, rshift=0):
     expr = '{calc} {max} > {peak} {calc} {min} < {floor} {calc} ? ?'.format(calc=calcexpr, max=max, peak=peak, min=min, floor=floor)
     return core.std.Expr([gx, gy], [(expr if i in planes else '') for i in range(clip.format.num_planes)])
 
-def Sort(input, order=1, mode='max', planes=None):
+def Sort(input, order=1, planes=None, mode='max'):
     core = vs.get_core()
     funcName = 'Sort'
 
@@ -912,6 +912,7 @@ def Sort(input, order=1, mode='max', planes=None):
     if order not in range(1, 10):
         raise ValueError(funcName + ': valid values of \"order\" are 1~9!')
 
+    mode = mode.lower()
     if mode not in ['max', 'min']:
         raise ValueError(funcName + ': valid values of \"mode\" are \"max\" and \"min\"!')
 
