@@ -20,6 +20,7 @@ Functions:
     maa
     SharpAAMcmod
     TEdge
+    Sort
 '''
 
 def LDMerge(flt_h, flt_v, src, mrad=0, show=0, planes=None, convknl=1, conv_div=None):
@@ -900,3 +901,37 @@ def TEdge(clip, min=0, max=65535, planes=None, rshift=0):
     calcexpr = 'x x * y y * + {rshift} / sqrt'.format(rshift=rshift)
     expr = '{calc} {max} > {peak} {calc} {min} < {floor} {calc} ? ?'.format(calc=calcexpr, max=max, peak=peak, min=min, floor=floor)
     return core.std.Expr([gx, gy], [(expr if i in planes else '') for i in range(clip.format.num_planes)])
+
+def Sort(input, order=1, mode='max', planes=None):
+    core = vs.get_core()
+    funcName = 'Sort'
+
+    if not isinstance(input, vs.VideoNode):
+        raise TypeError(funcName + ': \"input\" must be a clip!')
+
+    if order not in range(1, 10):
+        raise ValueError(funcName + ': valid values of \"order\" are 1~9!')
+
+    if mode not in ['max', 'min']:
+        raise ValueError(funcName + ': valid values of \"mode\" are \"max\" and \"min\"!')
+
+    if planes is None:
+        planes = list(range(input.format.num_planes))
+
+    if mode == 'min':
+        order = 10 - order # the nth smallest value in 3x3 neighbourhood is the same as the (10-n)th largest value
+
+    if order == 1:
+        sort = core.std.Maximum(input, planes=planes)
+    elif order in range(2, 5):
+        sort = core.rgvs.Repair(core.std.Maximum(input, planes=planes), input, 
+                                [(order if i in planes else 0) for i in range(input.format.num_planes)])
+    elif order == 5:
+        sort = core.std.Median(input, planes=planes)
+    elif order in range(6, 9):
+        sort = core.rgvs.Repair(core.std.Minimum(input, planes=planes), input, 
+                                [((10 - order) if i in planes else 0) for i in range(input.format.num_planes)])
+    else: # order == 9
+        sort = core.std.Minimum(input, planes=planes)
+
+    return sort
