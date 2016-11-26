@@ -504,14 +504,11 @@ def Build_gf3_range_mask(src, radius=1):
 
     return last
 
-def AnimeEdgeMask(clip, shift1=0, shift2=None, thY1=0, thY2=255, mode=None, resample_args = dict(kernel='bilinear')):
-# shift1, shift2 [float, -1.5 ~ 1.5]
-# thY1, thY2 [int, 0 ~ 255]
+def AnimeEdgeMask(clip, shift=0, expr=None, mode=1, resample_args=dict(kernel='bicubic')):
+# shift [float, -1.5 ~ 1.5]
 # mode [-1, 1]
 # Only the first plane of "clip" would be processd.
-# For Anime's ringing mask, it's recommended to set "shift1" to about 0.5.
-# Positive value of "shift1" is used for for ringing mask generation and negative value is used for edge mask generation.
-# "shift2" is used for debug.
+# For Anime's ringing mask, it's recommended to set "shift" between 0.5 to 1.0.
 # Now it's recommended to set "mode" to 1 for ringing mask generation and -1 for edge mask generation.
 
     core = vs.get_core()
@@ -523,18 +520,6 @@ def AnimeEdgeMask(clip, shift1=0, shift2=None, thY1=0, thY2=255, mode=None, resa
     if clip.format.color_family != vs.GRAY:
         clip = mvf.GetPlane(clip, 0)
 
-    if shift2 is None:
-        shift2 = shift1
-
-    if mode is None:
-        if shift1 == shift2:
-            if shift1 < 0:
-                mode = -1
-            else:
-                mode = 1
-        else:
-            raise ValueError(funcName + ': \'mode\' have not a correct value! [-1 or 1]')
-
     if mode not in [-1, 1]:
         raise ValueError(funcName + ': \'mode\' have not a correct value! [-1 or 1]')
 
@@ -544,24 +529,26 @@ def AnimeEdgeMask(clip, shift1=0, shift2=None, thY1=0, thY2=255, mode=None, resa
         shift2 = -shift2
     
     bits = clip.format.bits_per_sample
-    peak = (1 << bits) - 1
     
     fmtc_args = dict(fulls=True, fulld=True)
-    mask1 = core.std.Convolution(clip, [0, 0, 0, 0, 2, -1, 0, -1, 0], saturate=True).fmtc.resample(sx=shift1, sy=shift2, **fmtc_args, **resample_args)
-    mask2 = core.std.Convolution(clip, [0, -1, 0, -1, 2, 0, 0, 0, 0], saturate=True).fmtc.resample(sx=-shift1, sy=-shift2, **fmtc_args, **resample_args)
-    mask3 = core.std.Convolution(clip, [0, -1, 0, 0, 2, -1, 0, 0, 0], saturate=True).fmtc.resample(sx=shift1, sy=-shift2, **fmtc_args, **resample_args)
-    mask4 = core.std.Convolution(clip, [0, 0, 0, -1, 2, 0, 0, -1, 0], saturate=True).fmtc.resample(sx=-shift1, sy=shift2, **fmtc_args, **resample_args)
+    mask1 = core.std.Convolution(clip, [0, 0, 0, 0, 2, -1, 0, -1, 0], saturate=True).fmtc.resample(sx=shift, sy=shift, **fmtc_args, **resample_args)
+    mask2 = core.std.Convolution(clip, [0, -1, 0, -1, 2, 0, 0, 0, 0], saturate=True).fmtc.resample(sx=-shift, sy=-shift, **fmtc_args, **resample_args)
+    mask3 = core.std.Convolution(clip, [0, -1, 0, 0, 2, -1, 0, 0, 0], saturate=True).fmtc.resample(sx=shift, sy=-shift, **fmtc_args, **resample_args)
+    mask4 = core.std.Convolution(clip, [0, 0, 0, -1, 2, 0, 0, -1, 0], saturate=True).fmtc.resample(sx=-shift, sy=shift, **fmtc_args, **resample_args)
 
-    expr = 'x x * y y * + z z * + a a * + sqrt'
+    calc_expr = 'x x * y y * + z z * + a a * + sqrt '
 
-    if (thY1 > 0) or (thY2 < 255):
-        thY1 = haf.scale(thY1, 16)
-        thY2 = haf.scale(thY2, 16)
-        expr += '{thY1} max {thY2} min'.format(thY1=thY1, thY2=thY2)
+    if isinstance(expr, str):
+        calc_expr += expr
 
-    return core.std.Expr([mask1, mask2, mask3, mask4], [expr]).fmtc.bitdepth(bits=bits, fulls=True, fulld=True, dmode=1)
+    mask = core.std.Expr([mask1, mask2, mask3, mask4], [calc_expr])
 
-def AnimeEdgeMask2(clip, rx=1.2, ry=None, amp=50, thY1=0, thY2=255, mode=1):
+    if bits != mask.format.bits_per_sample:
+        mask = core.fmtc.bitdepth(mask, bits=bits, fulls=True, fulld=True, dmode=1)
+
+    return mask
+
+def AnimeEdgeMask2(clip, r=1.2, expr=None, mode=1):
 # Similar to AnimeEdgeMask(), set mode 1 for ringing(haloing) mask generation and -1 for edge mask generation.
 
     core = vs.get_core()
@@ -576,25 +563,24 @@ def AnimeEdgeMask2(clip, rx=1.2, ry=None, amp=50, thY1=0, thY2=255, mode=1):
     w = clip.width
     h = clip.height
     bits = clip.format.bits_per_sample
-    peak = (1 << bits) - 1
-
-    if ry is None:
-        ry = rx
 
     if mode not in [-1, 1]:
         raise ValueError(funcName + ': \'mode\' have not a correct value! [-1 or 1]')
 
-    smooth = core.fmtc.resample(clip, haf.m4(w / rx), haf.m4(h / ry), kernel='bicubic').fmtc.resample(w, h, kernel='bicubic', a1=1, a2=0)
-    smoother = core.fmtc.resample(clip, haf.m4(w / rx), haf.m4(h / ry), kernel='bicubic').fmtc.resample(w, h, kernel='bicubic', a1=1.5, a2=-0.25)
+    smooth = core.fmtc.resample(clip, haf.m4(w / r), haf.m4(h / r), kernel='bicubic').fmtc.resample(w, h, kernel='bicubic', a1=1, a2=0)
+    smoother = core.fmtc.resample(clip, haf.m4(w / r), haf.m4(h / r), kernel='bicubic').fmtc.resample(w, h, kernel='bicubic', a1=1.5, a2=-0.25)
 
-    expr = 'x y - {amp} *'.format(amp=amp) if mode == 1 else 'y x - {amp} *'.format(amp=amp)
+    calc_expr = 'x y - ' if mode == 1 else 'y x - '
 
-    if (thY1 > 0) or (thY2 < 255):
-        thY1 = haf.scale(thY1, 16)
-        thY2 = haf.scale(thY2, 16)
-        expr += '{thY1} max {thY2} min'.format(thY1=thY1, thY2=thY2)
+    if isinstance(expr, str):
+        calc_expr += expr
 
-    return core.std.Expr([smooth, smoother], [expr]).fmtc.bitdepth(bits=bits, fulls=True, fulld=True, dmode=1)
+    mask = core.std.Expr([smooth, smoother], [calc_expr])
+
+    if bits != mask.format.bits_per_sample:
+        mask = core.fmtc.bitdepth(mask, bits=bits, fulls=True, fulld=True, dmode=1)
+
+    return mask
 
 def PolygonExInpand(clip, shift=0, shape=0, mixmode=0, noncentral=False, step=1, amp=1, fmtc_args=dict(), resample_args=dict(kernel='bilinear')):
 # shape [0:losange, 1:square, 2:octagon]
@@ -683,13 +669,14 @@ def PolygonExInpand(clip, shift=0, shape=0, mixmode=0, noncentral=False, step=1,
                 expr = expr_list[mixmode + 3] + ' {amp} *'.format(amp=amp)
                 mask5 = core.std.Expr([mask1, mask2, mask3, mask4, mask5, mask6, mask7, mask8, mask9], [expr])
 
-    if bits != 16:
+    if bits != mask5.format.bits_per_sample:
         mask5 = core.fmtc.bitdepth(mask5, bits=bits, dmode=1, **fmtc_args)
 
     return core.std.Invert(mask5) if invert else mask5
 
 def Luma(input, plane=0, power=4):
     core = vs.get_core()
+    funcName = 'Luma'
 
     if not isinstance(input, vs.VideoNode):
         raise TypeError(funcname + ': \"input\" must be a clip!')
