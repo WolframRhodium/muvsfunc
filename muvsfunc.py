@@ -22,6 +22,7 @@ Functions:
     TEdge
     Sort
     Soothe_mod
+    TemporalSoften
 '''
 
 def LDMerge(flt_h, flt_v, src, mrad=0, show=0, planes=None, convknl=1, conv_div=None):
@@ -928,10 +929,10 @@ def Sort(input, order=1, planes=None, mode='max'):
 # 
 # Basd on Didée, 6th September 2005, http://forum.doom9.org/showthread.php?p=708217#post708217
 # Modified by TheRyuu, 14th July 2007, http://forum.doom9.org/showthread.php?p=1024318#post1024318
-# Modified by Muonium, 12th, December 2016, use misc.AverageFrames instead of focus2.TemporalSoften and add args "radius"
+# Modified by Muonium, 12th, December 2016, add args "radius", "scenechange" and "use_misc"
 # 
 # Requires Filters
-# misc
+# misc (optional)
 # 
 # Parameters
 # keep int (0-100, default 24)
@@ -949,7 +950,7 @@ def Sort(input, order=1, planes=None, mode='max'):
 # 
 # Soothe( sharp, dull, 20 )
 # 
-def Soothe_mod(input, source, keep=24, radius=1):
+def Soothe_mod(input, source, keep=24, radius=1, scenechange=32, use_misc=False):
     core = vs.get_core()
     funcName = 'Soothe_mod'
     
@@ -971,14 +972,21 @@ def Soothe_mod(input, source, keep=24, radius=1):
     
     keep = max(min(keep, 100), 0)
     
-    if not isinstance(radius, int) or (not(1 <= radius <= 12)):
-        raise ValueError(funcName + ': \'radius\' have not a correct value! [1-12]')
+    if use_misc:
+        if not isinstance(radius, int) or (not(1 <= radius <= 12)):
+            raise ValueError(funcName + ': \'radius\' have not a correct value! [1-12]')
+    else:
+        if not isinstance(radius, int) or (not(1 <= radius <= 7)):
+            raise ValueError(funcName + ': \'radius\' have not a correct value! [1-7]')
     
     bits = source.format.bits_per_sample
     
     diff = core.std.MakeDiff(source, input)
-    diff2 = core.misc.AverageFrames(diff, [1 for i in range(2*radius + 1)], scenechange=2)
-    expr = 'x {neutral} < y {neutral} < xor x {neutral} - {KP} * {neutral} + x {neutral} - abs y {neutral} - abs > x {KP} * y {iKP} * + x ? ?'.format(neutral=haf.scale(128, bits), KP=keep/100, iKP=1-keep/100)
+    if use_misc:
+        diff2 = TemporalSoften(diff, radius, scenechange)
+    else:
+        diff2 = haf.TemporalSoften(diff, radius, scenechange=scenechange)
+    expr = 'x {neutral} - y {neutral} - * 0 < x {neutral} - {KP} * {neutral} + x {neutral} - abs y {neutral} - abs > x {KP} * y {iKP} * + x ? ?'.format(neutral=haf.scale(128, bits), KP=keep/100, iKP=1-keep/100)
     diff3 = core.std.Expr([diff, diff2], [expr])
     
     last = core.std.MakeDiff(source, diff3)
@@ -987,3 +995,16 @@ def Soothe_mod(input, source, keep=24, radius=1):
         return last
     else:
         return core.std.ShufflePlanes([last, source_src], planes=list(range(source_src.format.num_planes)), colorfamily=source_src.format.color_family)
+
+# TemporalSoften filter using Miscellaneous filters (http://forum.doom9.org/showthread.php?t=173871), with only slight difference in result compare to havsfunc.TemporalSoften().
+# However, for now, it seems that this Misc-filter-based TemporalSoften is slower than the one in havsfunc.
+def TemporalSoften(input, radius=4, scenechange=15):
+    core = vs.get_core()
+    funcName = 'TemporalSoften'
+    
+    if not isinstance(input, vs.VideoNode):
+        raise TypeError(funcName + ': \"input\" must be a clip!')
+
+    if scenechange:
+        input = core.misc.SCDetect(input, scenechange/255)
+    return core.misc.AverageFrames(input, [1 for i in range(2*radius + 1)], scenechange=scenechange)
