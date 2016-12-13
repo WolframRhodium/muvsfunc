@@ -938,7 +938,7 @@ def Sort(input, order=1, planes=None, mode='max'):
 # keep int (0-100, default 24)
 # Minimum percent of the original sharpening to keep.
 #
-# radius int (1-12, default 1)
+# radius int (1-7 (use_misc=True) or 12 (use_misc=False), default 1)
 # temporal radius of AverageFrames
 # 
 # Examples
@@ -985,7 +985,7 @@ def Soothe_mod(input, source, keep=24, radius=1, scenechange=32, use_misc=False)
     if use_misc:
         diff2 = TemporalSoften(diff, radius, scenechange)
     else:
-        diff2 = haf.TemporalSoften(diff, radius, scenechange=scenechange)
+        diff2 = haf.TemporalSoften(diff, radius, haf.scale(255, bits), 0, scenechange)
     expr = 'x {neutral} - y {neutral} - * 0 < x {neutral} - {KP} * {neutral} + x {neutral} - abs y {neutral} - abs > x {KP} * y {iKP} * + x ? ?'.format(neutral=haf.scale(128, bits), KP=keep/100, iKP=1-keep/100)
     diff3 = core.std.Expr([diff, diff2], [expr])
     
