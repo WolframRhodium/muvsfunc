@@ -21,6 +21,7 @@ Functions:
     SharpAAMcmod
     TEdge
     Sort
+    Soothe_mod
 '''
 
 def LDMerge(flt_h, flt_v, src, mrad=0, show=0, planes=None, convknl=1, conv_div=None):
@@ -386,7 +387,7 @@ def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=
         if 0 in planes2:
             planes2.remove(0)
         flt_c = GF3_smooth(src_16, ref_16, smode, radiusc, thrc, elastc, planes2)
-        flt = core.std.ShufflePlanes([flt_y, flt_c], [0, 1, 2], src.format.color_family)
+        flt = core.std.ShufflePlanes([flt_y, flt_c], list(range(src.format.num_planes)), src.format.color_family)
     else:
         flt = flt_y
 
@@ -761,7 +762,7 @@ def maa(input):
     if input_src is None:
         return last
     else:
-        return core.std.ShufflePlanes([last, input_src], planes=[0, 1, 2], colorfamily=input_src.format.color_family)
+        return core.std.ShufflePlanes([last, input_src], planes=list(range(input_src.format.num_planes)), colorfamily=input_src.format.color_family)
 
 #Developed in the "fine anime antialiasing thread"
 #
@@ -862,7 +863,7 @@ def SharpAAMcmod(orig, dark=0.2, thin=10, sharp=150, smooth=-1, stabilize=False,
     if orig_src is None:
         return last
     else:
-        return core.std.ShufflePlanes([last, orig_src], planes=[0, 1, 2], colorfamily=orig_src.format.color_family)
+        return core.std.ShufflePlanes([last, orig_src], planes=list(range(orig_src.format.num_planes)), colorfamily=orig_src.format.color_family)
 
 # (port from https://github.com/chikuzen/GenericFilters/blob/2044dc6c25a1b402aae443754d7a46217a2fddbf/src/convolution/tedge.c
 # fix missing "rshift")
@@ -923,3 +924,66 @@ def Sort(input, order=1, planes=None, mode='max'):
         sort = core.std.Minimum(input, planes=planes)
 
     return sort
+
+# 
+# Basd on Didée, 6th September 2005, http://forum.doom9.org/showthread.php?p=708217#post708217
+# Modified by TheRyuu, 14th July 2007, http://forum.doom9.org/showthread.php?p=1024318#post1024318
+# Modified by Muonium, 12th, December 2016, use misc.AverageFrames instead of focus2.TemporalSoften and add args "radius"
+# 
+# Requires Filters
+# misc
+# 
+# Parameters
+# keep int (0-100, default 24)
+# Minimum percent of the original sharpening to keep.
+#
+# radius int (1-12, default 1)
+# temporal radius of AverageFrames
+# 
+# Examples
+# 
+# We use LimitedSharpen() as sharpener, and we'll keep at least 20% of its result:
+# 
+# dull   = last
+# sharp  = dull.LimitedSharpen( ss_x=1.25, ss_y=1.25, strength=150, overshoot=1 )
+# 
+# Soothe( sharp, dull, 20 )
+# 
+def Soothe_mod(input, source, keep=24, radius=1):
+    core = vs.get_core()
+    funcName = 'Soothe_mod'
+    
+    if not isinstance(input, vs.VideoNode):
+        raise TypeError(funcName + ': \"input\" must be a clip!')
+    if input.format.color_family != vs.GRAY:
+        input = mvf.GetPlane(input, 0)
+
+    if not isinstance(source, vs.VideoNode):
+        raise TypeError(funcName + ': \"source\" must be a clip!')
+    if source.format.color_family != vs.GRAY:
+        source_src = source
+        source = mvf.GetPlane(source, 0)
+    else:
+        source_src = None
+
+    if input.format.id != source.format.id:
+        raise TypeError(funcName + ': \"input\" and \"source\" must have the same format')
+    
+    keep = max(min(keep, 100), 0)
+    
+    if not isinstance(radius, int) or (not(1 <= radius <= 12)):
+        raise ValueError(funcName + ': \'radius\' have not a correct value! [1-12]')
+    
+    bits = source.format.bits_per_sample
+    
+    diff = core.std.MakeDiff(source, input)
+    diff2 = core.misc.AverageFrames(diff, [1 for i in range(2*radius + 1)], scenechange=2)
+    expr = 'x {neutral} < y {neutral} < xor x {neutral} - {KP} * {neutral} + x {neutral} - abs y {neutral} - abs > x {KP} * y {iKP} * + x ? ?'.format(neutral=haf.scale(128, bits), KP=keep/100, iKP=1-keep/100)
+    diff3 = core.std.Expr([diff, diff2], [expr])
+    
+    last = core.std.MakeDiff(source, diff3)
+
+    if source_src is None:
+        return last
+    else:
+        return core.std.ShufflePlanes([last, source_src], planes=list(range(source_src.format.num_planes)), colorfamily=source_src.format.color_family)
