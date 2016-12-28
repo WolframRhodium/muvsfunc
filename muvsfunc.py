@@ -835,7 +835,7 @@ def SharpAAMcmod(orig, dark=0.2, thin=10, sharp=150, smooth=-1, stabilize=False,
     if stabilize:
         sD = core.std.MakeDiff(orig, merged)
     
-        origSuper = haf.DitherLumaRebuild(orig, s0=1).mv.Super(pel=aapel)
+        origsuper = haf.DitherLumaRebuild(orig, s0=1).mv.Super(pel=aapel)
         sDsuper = core.mv.Super(sD, pel=aapel)
     
         fv3 = core.mv.Analyse(origsuper, isb=False, delta=3, overlap=aaov, blksize=aablk) if tradius == 3 else None
