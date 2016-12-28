@@ -709,7 +709,7 @@ def ediaa(a):
     
     last = core.eedi2.EEDI2(a, field=1).std.Transpose()
     last = core.eedi2.EEDI2(last, field=1).std.Transpose()
-    last = core.fmtc.resample(last, a.width, a.height, [-0.5, -0.5 * (1 << clip.format.subsampling_w)], [-0.5, -0.5 * (1 << clip.format.subsampling_h)], kernel='spline36')
+    last = core.fmtc.resample(last, a.width, a.height, [-0.5, -0.5 * (1 << a.format.subsampling_w)], [-0.5, -0.5 * (1 << a.format.subsampling_h)], kernel='spline36')
 
     if last.format.bits_per_sample == bits:
         return last
@@ -728,7 +728,7 @@ def nnedi3aa(a):
     
     last = core.nnedi3.nnedi3(a, field=1, dh=True).std.Transpose()
     last = core.nnedi3.nnedi3(last, field=1, dh=True).std.Transpose()
-    last = core.fmtc.resample(last, a.width, a.height, [-0.5, -0.5 * (1 << clip.format.subsampling_w)], [-0.5, -0.5 * (1 << clip.format.subsampling_h)], kernel='spline36')
+    last = core.fmtc.resample(last, a.width, a.height, [-0.5, -0.5 * (1 << a.format.subsampling_w)], [-0.5, -0.5 * (1 << a.format.subsampling_h)], kernel='spline36')
 
     if last.format.bits_per_sample == bits:
         return last
@@ -753,7 +753,7 @@ def maa(input):
     else:
         input_src = None
 
-    mask = core.std.Convolution(input, [0, -1, 0, -1, 0, 1, 0, 1, 0], divisor=2, saturate=False).std.Binarize(haf.scale(7 + 1, bits))   
+    mask = core.std.Convolution(input, [0, -1, 0, -1, 0, 1, 0, 1, 0], divisor=2, saturate=False).std.Binarize(haf.scale(7, bits) + 1)   
     aa_clip = core.resize.Spline36(input, w * 2, h * 2)
     aa_clip = core.sangnom.SangNom(aa_clip).std.Transpose()
     aa_clip = core.sangnom.SangNom(aa_clip).std.Transpose()
