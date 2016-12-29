@@ -26,6 +26,20 @@ Functions:
 '''
 
 def LDMerge(flt_h, flt_v, src, mrad=0, show=0, planes=None, convknl=1, conv_div=None):
+    """A filter to merge two filtered clip based on gradient direction map from source clip.
+
+    Args:
+        flt_h, flt_v: Two filtered clip.
+        src: Source clip. Must matc the filtered clip.
+        mrad: (int) Expanding of gradient direction map. Default is 0.
+        show: (bint) Whether to output gradient direction map. Default is False.
+        planes: (int []) Whether to process the corresponding plane. By default, every plane will be processed.
+            The unprocessed planes will be copied from the first clip, "flt_h".
+        convknl: (int, 0 or 1) Which convolution kernel for gradient direction map generation to use. Default is 1.
+        conv_div: (int) Divisor in convolution filter. Default is the max value in convolution kernel.
+
+    """
+
     core = vs.get_core()
     funcName = 'LDMerge'
     
@@ -35,16 +49,16 @@ def LDMerge(flt_h, flt_v, src, mrad=0, show=0, planes=None, convknl=1, conv_div=
     if not isinstance(flt_h, vs.VideoNode):
         raise TypeError(funcName + ': \"flt_h\" must be a clip!')
     if src.format.id != flt_h.format.id:
-        raise ValueError(funcName + ': clip \"flt_h\" must be of the same format as the src clip!')
+        raise ValueError(funcName + ': \"flt_h\" must be of the same format as the src clip!')
     if src.width != flt_h.width or src.height != flt_h.height:
-        raise ValueError(funcName + ': clip \"flt_h\" must be of the same size as the src clip!')
+        raise ValueError(funcName + ': \"flt_h\" must be of the same size as the src clip!')
     
     if not isinstance(flt_v, vs.VideoNode):
         raise TypeError(funcName + ': \"flt_v\" must be a clip!')
     if src.format.id != flt_v.format.id:
-        raise ValueError(funcName + ': clip \"flt_v\" must be of the same format as the src clip!')
+        raise ValueError(funcName + ': \"flt_v\" must be of the same format as the src clip!')
     if src.width != flt_v.width or src.height != flt_v.height:
-        raise ValueError(funcName + ': clip \"flt_v\" must be of the same size as the src clip!')   
+        raise ValueError(funcName + ': \"flt_v\" must be of the same size as the src clip!')   
         
     if not isinstance(mrad, int):
         raise TypeError(funcName + '\"mrad\" must be an int!')
@@ -92,6 +106,17 @@ def LDMerge(flt_h, flt_v, src, mrad=0, show=0, planes=None, convknl=1, conv_div=
         return vmap
 
 def Compare(src, flt, power=1.5, chroma=False, mode=2):
+    """A filter to check the difference of source clip and filtered clip.
+
+    Args:
+        src: Source clip.
+        flt: Filtered clip.
+        power: (float) The variable in the processing kernel which controls the "strength" to increase difference. Default is 1.5.
+        chroma: (bint) Whether to process chroma. Default is False.
+        mode: (int, 1 or 2) Different processing kernel. 1: non-linear; 2: linear.
+
+    """
+
     core = vs.get_core()
     funcName = 'Compare'
 
@@ -125,15 +150,35 @@ def Compare(src, flt, power=1.5, chroma=False, mode=2):
 
     return diff
 
-def ExInpand(clip, mrad=0, mode='rectangle', planes=None):
+def ExInpand(input, mrad=0, mode='rectangle', planes=None):
+    """A filter to use std.Maximum()/std.Minimum() and their mix conveniently.
+
+    Args:
+        input: Source clip.
+        mrad: (int []) How many times to use std.Maximum()/std.Minimum(). Default is 0.
+            Positive value indicates to use std.Maximum().
+            Negative value indicates to use std.Minimum().
+            Values can be formed into a list, or a list of lists.
+
+            Example:
+                mrad=[2, -1] is equvalant to clip.std.Maximum().std.Maximum().std.Minimum()
+                mrad=[[2, 1], [2, -1]] is equivalant to
+                    haf.mt_expand_multi(clip, sw=2, sh=1).std.Maximum().std.Maximum().std.Minimum()
+        mode: (0:"rectangle", 1:"losange" or 2:"ellipse", int or string). Default is "rectangle"
+            The shape of the kernel.
+        planes: (int []) Whether to process the corresponding plane. By default, every plane will be processed.
+            The unprocessed planes will be copied from "input".
+
+    """
+
     core = vs.get_core()
     funcName = 'ExInpand'
 
-    if not isinstance(clip, vs.VideoNode):
-        raise TypeError(funcName + ': \"clip\" must be a clip!')
+    if not isinstance(input, vs.VideoNode):
+        raise TypeError(funcName + ': \"input\" must be a clip!')
 
     if planes is None:
-        planes = list(range(clip.format.num_planes))
+        planes = list(range(input.format.num_planes))
 
     if isinstance(mrad, int):
         mrad = [mrad]
@@ -144,7 +189,7 @@ def ExInpand(clip, mrad=0, mode='rectangle', planes=None):
         raise TypeError(funcName + ': \"mode\" must be an int, a string, a list of ints, a list of strings or a list of mixing ints and strings!')
 
     # internel function
-    def ExInpand_process(clip, mode=None, planes=None, mrad=None):
+    def ExInpand_process(input, mode=None, planes=None, mrad=None):
         if isinstance(mode, int):
             if mode == 0:
                 mode = 'rectangle'
@@ -170,9 +215,9 @@ def ExInpand(clip, mrad=0, mode='rectangle', planes=None):
             raise TypeError(funcName + ': \"mrad\" at a time must be both positive or negative!')
         
         if sw > 0 or sh > 0:
-            return haf.mt_expand_multi(clip, mode=mode, planes=planes, sw=sw, sh=sh)
+            return haf.mt_expand_multi(input, mode=mode, planes=planes, sw=sw, sh=sh)
         else:
-            return haf.mt_inpand_multi(clip, mode=mode, planes=planes, sw=-sw, sh=-sh)
+            return haf.mt_inpand_multi(input, mode=mode, planes=planes, sw=-sw, sh=-sh)
 
     # process
     if isinstance(mrad, list):
@@ -192,31 +237,43 @@ def ExInpand(clip, mrad=0, mode='rectangle', planes=None):
                     mrad[i].append(mrad[i][0])
             elif not isinstance(mrad[i], int):
                 raise TypeError(funcName + ': \"mrad\" must be an int, a list of ints or a list of a list of two ints!')
-            clip = ExInpand_process(clip, mode=mode[i], planes=planes, mrad=mrad[i])
+            clip = ExInpand_process(input, mode=mode[i], planes=planes, mrad=mrad[i])
     else:
         raise TypeError(funcName + ': \"mrad\" must be an int, a list of ints or a list of a list of two ints!')
 
     return clip
 
-def InDeflate(clip, msmooth=0, planes=None):
+def InDeflate(input, msmooth=0, planes=None):
+    """A filter to use std.Inflate()/std.Deflate() and their mix conveniently.
+
+    Args:
+        input: Source clip.
+        msmooth: (int []) How many times to use std.Inflate()/std.Deflate(). Default is 0.
+            The behaviour is the same as "mode" in ExInpand(). 
+
+        planes: (int []) Whether to process the corresponding plane. By default, every plane will be processed.
+            The unprocessed planes will be copied from "input".
+
+    """
+
     core = vs.get_core()
     funcName = 'InDeFlate'
 
-    if not isinstance(clip, vs.VideoNode):
-        raise TypeError(funcName + ': \"clip\" must be a clip!')
+    if not isinstance(input, vs.VideoNode):
+        raise TypeError(funcName + ': \"input\" must be a clip!')
 
     if planes is None:
-        planes = list(range(clip.format.num_planes))
+        planes = list(range(input.format.num_planes))
 
     if isinstance(msmooth, int):
         msmoooth = [msmooth]
 
     # internel function
-    def InDeflate_process(clip, planes=None, radius=None):
+    def InDeflate_process(input, planes=None, radius=None):
         if radius > 0:
-            return haf.mt_inflate_multi(clip, planes=planes, radius=radius)
+            return haf.mt_inflate_multi(input, planes=planes, radius=radius)
         else:
-            return haf.mt_deflate_multi(clip, planes=planes, radius=-radius)
+            return haf.mt_deflate_multi(input, planes=planes, radius=-radius)
 
     # process
     if isinstance(msmooth, list):
@@ -224,18 +281,31 @@ def InDeflate(clip, msmooth=0, planes=None):
             if not isinstance(m, int):
                 raise TypeError(funcName + ': \"msmooth\" must be an int or a list of ints!')
             else:
-                clip = InDeflate_process(clip, planes=planes, radius=m)
+                clip = InDeflate_process(input, planes=planes, radius=m)
     else:
         raise TypeError(funcName + ': \"msmooth\" must be an int or a list of ints!')
     
     return clip
 
-def MultiRemoveGrain(clip, mode=0, loop=1):
+def MultiRemoveGrain(input, mode=0, loop=1):
+    """A filter to use rgvs.RemoveGrain() and their mix conveniently.
+
+    Args:
+        input: Source clip.
+        mode: (int []) "mode" in rgvs.RemoveGrain(). Default is 0.
+            Can be a list, the logic is similar to "mode" in ExInpand().
+
+            Example: mode=[4, 11, 11] is equivalant to clip.rgvs.RemoveGrain(4).rgvs.RemoveGrain(11).rgvs.RemoveGrain(11)
+
+        loop: (int) How many times the "mode" loops.
+
+    """
+
     core = vs.get_core()
     funcName = 'MultiRemoveGrain'
     
-    if not isinstance(clip, vs.VideoNode):
-        raise TypeError(funcName + ': \"clip\" must be a clip!')
+    if not isinstance(input, vs.VideoNode):
+        raise TypeError(funcName + ': \"input\" must be a clip!')
 
     if isinstance(mode, int):
         mode = [mode]
@@ -248,23 +318,30 @@ def MultiRemoveGrain(clip, mode=0, loop=1):
     if isinstance(mode, list):
         for i in range(loop):
             for m in mode:
-                clip = core.rgvs.RemoveGrain(clip, mode=m)
+                clip = core.rgvs.RemoveGrain(input, mode=m)
     else:
         raise TypeError(funcName + ': \"mode\" must be an int, a list of ints or a list of a list of ints!')
 
     return clip
 
-### GradFun3 by Firesledge v0.0.1
-### Port by Muonium  2016/6/18
-### Port from Dither_tools v1.27.2 (http://avisynth.nl/index.php/Dither_tools)
-### Currently only smode=1 and smode=2 is implemented in VapourSynth.
-### Internal calculation precision is always 16 bits
-### Removed parameters list: 
-###     "dthr", "wmin", "thr_edg", "subspl", "lsb_in"
-### Parameters "y", "u", "v" are changed into "planes"
 def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=None, ampn=None,
              pat=None, dyn=None, lsb=None, staticnoise=None, smode=None, thr_det=None,
              debug=None, thrc=None, radiusc=None, elastc=None, planes=None, ref=None):
+    """GradFun3 by Firesledge v0.0.1
+
+    Port by Muonium  2016/6/18
+    Port from Dither_tools v1.27.2 (http://avisynth.nl/index.php/Dither_tools)
+    Currently only smode=1 and smode=2 is implemented in VapourSynth.
+    Internal calculation precision is always 16 bits.
+
+    Read the document of Avisynth version for more details.
+
+    Removed parameters list: 
+        "dthr", "wmin", "thr_edg", "subspl", "lsb_in"
+    Parameters "y", "u", "v" are changed into "planes"
+
+    """
+
     core = vs.get_core()
     funcName = 'GradFun3'
 
@@ -393,7 +470,6 @@ def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=
         flt = flt_y
 
     # Edge/detail mask
-
     td_lo = max(thr_det * 0.75, 1.0)
     td_hi = max(thr_det, 1.0)
     mexpr = 'x {tl} - {th} {tl} - / 255 *'.format(tl=td_lo - 0.0001, th=td_hi+ 0.0001)
@@ -413,7 +489,6 @@ def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=
         res_16 = flt
 
     # Dithering
-
     result = res_16 if lsb else core.fmtc.bitdepth(res_16, bits=bits, planes=planes, dmode=mode, ampo=ampo,
                                                    ampn=ampn, dyn=dyn, staticnoise=staticnoise, patsize=pat)
 
@@ -506,37 +581,44 @@ def Build_gf3_range_mask(src, radius=1):
 
     return last
 
-def AnimeEdgeMask(clip, shift=0, expr=None, mode=1, resample_args=dict(kernel='bicubic')):
-# shift [float, -1.5 ~ 1.5]
-# mode [-1, 1]
-# Only the first plane of "clip" would be processd.
-# For Anime's ringing mask, it's recommended to set "shift" between 0.5 to 1.0.
-# Now it's recommended to set "mode" to 1 for ringing mask generation and -1 for edge mask generation.
+def AnimeMask(input, shift=0, expr=None, mode=1, resample_args=dict(kernel='bicubic')):
+    """A filter to generate edge/ringing mask for anime based on gradient operator.
+
+    For Anime's ringing mask, it's recommended to set "shift" between 0.5 to 1.0.
+
+    Args:
+        input: Source clip. Only the First plane will be processed.
+        shift: (float, -1.5 ~ 1.5) Location of mask. Default is 0.
+        expr: (string) Subsequent processing in std.Expr(). Default is "".
+        mode: (-1 or 1) Different kernel. Typically, -1 is for edge, 1 is for ringing. Default is 1.
+        resample_args: (dictinary) Which kernel is used to shift the mask. Default is dict(kernel='bicubic').
+
+    """
 
     core = vs.get_core()
-    funcName = 'AnimeEdgeMask'
+    funcName = 'AnimeMask'
     
-    if not isinstance(clip, vs.VideoNode):
-        raise TypeError(funcName + ': \"clip\" must be a clip!')
+    if not isinstance(input, vs.VideoNode):
+        raise TypeError(funcName + ': \"input\" must be a clip!')
 
-    if clip.format.color_family != vs.GRAY:
-        clip = mvf.GetPlane(clip, 0)
+    if input.format.color_family != vs.GRAY:
+        input = mvf.GetPlane(input, 0)
 
     if mode not in [-1, 1]:
         raise ValueError(funcName + ': \'mode\' have not a correct value! [-1 or 1]')
 
     if mode == -1:
-        clip = core.std.Invert(clip)
+        input = core.std.Invert(input)
         shift1 = -shift1
         shift2 = -shift2
     
-    bits = clip.format.bits_per_sample
+    bits = input.format.bits_per_sample
     
     fmtc_args = dict(fulls=True, fulld=True)
-    mask1 = core.std.Convolution(clip, [0, 0, 0, 0, 2, -1, 0, -1, 0], saturate=True).fmtc.resample(sx=shift, sy=shift, **fmtc_args, **resample_args)
-    mask2 = core.std.Convolution(clip, [0, -1, 0, -1, 2, 0, 0, 0, 0], saturate=True).fmtc.resample(sx=-shift, sy=-shift, **fmtc_args, **resample_args)
-    mask3 = core.std.Convolution(clip, [0, -1, 0, 0, 2, -1, 0, 0, 0], saturate=True).fmtc.resample(sx=shift, sy=-shift, **fmtc_args, **resample_args)
-    mask4 = core.std.Convolution(clip, [0, 0, 0, -1, 2, 0, 0, -1, 0], saturate=True).fmtc.resample(sx=-shift, sy=shift, **fmtc_args, **resample_args)
+    mask1 = core.std.Convolution(input, [0, 0, 0, 0, 2, -1, 0, -1, 0], saturate=True).fmtc.resample(sx=shift, sy=shift, **fmtc_args, **resample_args)
+    mask2 = core.std.Convolution(input, [0, -1, 0, -1, 2, 0, 0, 0, 0], saturate=True).fmtc.resample(sx=-shift, sy=-shift, **fmtc_args, **resample_args)
+    mask3 = core.std.Convolution(input, [0, -1, 0, 0, 2, -1, 0, 0, 0], saturate=True).fmtc.resample(sx=shift, sy=-shift, **fmtc_args, **resample_args)
+    mask4 = core.std.Convolution(input, [0, 0, 0, -1, 2, 0, 0, -1, 0], saturate=True).fmtc.resample(sx=-shift, sy=shift, **fmtc_args, **resample_args)
 
     calc_expr = 'x x * y y * + z z * + a a * + sqrt '
 
@@ -550,27 +632,37 @@ def AnimeEdgeMask(clip, shift=0, expr=None, mode=1, resample_args=dict(kernel='b
 
     return mask
 
-def AnimeEdgeMask2(clip, r=1.2, expr=None, mode=1):
-# Similar to AnimeEdgeMask(), set mode 1 for ringing(haloing) mask generation and -1 for edge mask generation.
+def AnimeMask2(input, r=1.2, expr=None, mode=1):
+    """Yet another filter to generate edge/ringing mask for anime.
+
+    More specifically, it's an approximate Difference of Gaussians filter based on resampling kernel.
+
+    Args:
+        input: Source clip. Only the First plane will be processed.
+        r: (float, positive) Radius of resampling coefficient. Default is 1.2.
+        expr: (string) Subsequent processing in std.Expr(). Default is "".
+        mode: (-1 or 1) Different kernel. Typically, -1 is for edge, 1 is for ringing. Default is 1.
+
+    """
 
     core = vs.get_core()
-    funcName = 'AnimeEdgeMask2'
+    funcName = 'AnimeMask2'
     
-    if not isinstance(clip, vs.VideoNode):
-        raise TypeError(funcName + ': \"clip\" must be a clip!')
+    if not isinstance(input, vs.VideoNode):
+        raise TypeError(funcName + ': \"input\" must be a clip!')
 
-    if clip.format.color_family != vs.GRAY:
-        clip = mvf.GetPlane(clip, 0)
+    if input.format.color_family != vs.GRAY:
+        input = mvf.GetPlane(input, 0)
 
-    w = clip.width
-    h = clip.height
-    bits = clip.format.bits_per_sample
+    w = input.width
+    h = input.height
+    bits = input.format.bits_per_sample
 
     if mode not in [-1, 1]:
         raise ValueError(funcName + ': \'mode\' have not a correct value! [-1 or 1]')
 
-    smooth = core.fmtc.resample(clip, haf.m4(w / r), haf.m4(h / r), kernel='bicubic').fmtc.resample(w, h, kernel='bicubic', a1=1, a2=0)
-    smoother = core.fmtc.resample(clip, haf.m4(w / r), haf.m4(h / r), kernel='bicubic').fmtc.resample(w, h, kernel='bicubic', a1=1.5, a2=-0.25)
+    smooth = core.fmtc.resample(input, haf.m4(w / r), haf.m4(h / r), kernel='bicubic').fmtc.resample(w, h, kernel='bicubic', a1=1, a2=0)
+    smoother = core.fmtc.resample(input, haf.m4(w / r), haf.m4(h / r), kernel='bicubic').fmtc.resample(w, h, kernel='bicubic', a1=1.5, a2=-0.25)
 
     calc_expr = 'x y - ' if mode == 1 else 'y x - '
 
@@ -584,15 +676,28 @@ def AnimeEdgeMask2(clip, r=1.2, expr=None, mode=1):
 
     return mask
 
-def PolygonExInpand(clip, shift=0, shape=0, mixmode=0, noncentral=False, step=1, amp=1, fmtc_args=dict(), resample_args=dict(kernel='bilinear')):
-# shape [0:losange, 1:square, 2:octagon]
-# mixmode [0:max, 1:arithmetic mean, 2:quadratic mean]
+def PolygonExInpand(input, shift=0, shape=0, mixmode=0, noncentral=False, step=1, amp=1, fmtc_args=dict(), resample_args=dict(kernel='bilinear')):
+    """ A filter to process mask based on resampling kernel.
+
+    Args:
+        input: Source clip. Only the First plane will be processed.
+        shift: (float) How far to expand/inpand. Default is 0.
+        shape: (int, 0:losange, 1:square, 2:octagon) The shape of expand/inpand kernel. Default is 0.
+        mixmode: (int, 0:max, 1:arithmetic mean, 2:quadratic mean)
+            Method used to calculate the mix of different mask. Default is 0.
+        noncentral: (bint) Whether to calculate center pixel in mix process.
+        step: (float) How far each step of expand/inpand. Default is 1.
+        amp: (float) Linear multiple to strengthen the final mask. Default is 1.
+        fmtc_args: (dictinary) Extra arguments of fmtc. Default is dict().
+        resample_args: (dictinary) Controls which kernel is used to shift the mask. Default is dict(kernel='bilinear').
+
+    """
 
     core = vs.get_core()
     funcName = 'PolygonExInpand'
     
-    if not isinstance(clip, vs.VideoNode):
-        raise TypeError(funcName + ': \"clip\" must be a clip!')
+    if not isinstance(input, vs.VideoNode):
+        raise TypeError(funcName + ': \"input\" must be a clip!')
 
     if shape not in list(range(3)):
         raise ValueError(funcName + ': \'shape\' have not a correct value! [0, 1 or 2]')
@@ -606,23 +711,23 @@ def PolygonExInpand(clip, shift=0, shape=0, mixmode=0, noncentral=False, step=1,
     invert = False
     if shift < 0:
         invert = True
-        clip = core.std.Invert(clip)
+        input = core.std.Invert(input)
         shift = -shift
     elif shift == 0:
-        return clip
+        return input
 
-    bits = clip.format.bits_per_sample
+    bits = input.format.bits_per_sample
 
-    mask5 = clip
+    mask5 = input
 
     while shift > 0:
         step = min(step, shift)
         shift = shift - step
 
-        ortho = [step, step * (1<< clip.format.subsampling_h)]
-        inv_ortho = [-step, -step * (1<< clip.format.subsampling_h)]
-        dia = [math.sqrt(step / 2), math.sqrt(step / 2) * (1 << clip.format.subsampling_h)]
-        inv_dia = [-math.sqrt(step / 2), -math.sqrt(step / 2) * (1 << clip.format.subsampling_h)]
+        ortho = [step, step * (1<< input.format.subsampling_h)]
+        inv_ortho = [-step, -step * (1<< input.format.subsampling_h)]
+        dia = [math.sqrt(step / 2), math.sqrt(step / 2) * (1 << input.format.subsampling_h)]
+        inv_dia = [-math.sqrt(step / 2), -math.sqrt(step / 2) * (1 << input.format.subsampling_h)]
         
         # shift
         if shape == 0 or shape == 2:
@@ -677,6 +782,15 @@ def PolygonExInpand(clip, shift=0, shape=0, mixmode=0, noncentral=False, step=1,
     return core.std.Invert(mask5) if invert else mask5
 
 def Luma(input, plane=0, power=4):
+    """ std.Lut() implementation of Luma() in Histogram() filter.
+
+    Args:
+        input: Source clip. Only the First plane will be processed.
+        plane: (int) Which plane to be processed. Default is 0.
+        power: (int) Coefficient in processing. Default is 4.
+
+    """
+
     core = vs.get_core()
     funcName = 'Luma'
 
@@ -697,8 +811,13 @@ def Luma(input, plane=0, power=4):
     
     return core.std.Lut(clip, function=calc_luma)
 
-#Suggested by Mystery Keeper in "Denoise of tv-anime" thread
 def ediaa(a):
+    """Suggested by Mystery Keeper in "Denoise of tv-anime" thread
+
+    Read the document of Avisynth version for more details.
+
+    """
+
     core = vs.get_core()
     funcname = 'ediaa'
     
@@ -716,8 +835,13 @@ def ediaa(a):
     else:
         return core.fmtc.bitdepth(last, bits=bits)
 
-#Using nnedi3 (Emulgator):
 def nnedi3aa(a):
+    """Using nnedi3 (Emulgator):
+
+    Read the document of Avisynth version for more details.
+
+    """
+
     core = vs.get_core()
     funcname = 'nnedi3aa'
     
@@ -735,8 +859,13 @@ def nnedi3aa(a):
     else:
         return core.fmtc.bitdepth(last, bits=bits)
     
-#Anti-aliasing with edge masking by martino, mask using "sobel" taken from Kintaro's useless filterscripts and modded by thetoof for spline36
 def maa(input):
+    """ Anti-aliasing with edge masking by martino, mask using "sobel" taken from Kintaro's useless filterscripts and modded by thetoof for spline36
+
+    Read the document of Avisynth version for more details.
+
+    """
+
     core = vs.get_core()
     funcname = 'maa'
     
@@ -765,20 +894,38 @@ def maa(input):
     else:
         return core.std.ShufflePlanes([last, input_src], planes=list(range(input_src.format.num_planes)), colorfamily=input_src.format.color_family)
 
-#Developed in the "fine anime antialiasing thread"
-#
-# Parameters:
-#  dark (float)    - strokes darkening strength
-#  thin (int)     - Presharpening
-#  sharp (int)   - Postsharpening
-#  smooth (int)     - Postsmoothing
-#  stabilize (bool)   - Use post stabilization with Motion Compensation
-#  tradius (int)    - 1 = Degrain1 / 2 = Degrain2 / 3 = Degrain3 
-#  aapel (int)     - accuracy of the motion estimation (Value can only be 1, 2 or 4. 1 means a precision to the pixel. 2 means a precision to half a pixel, 4 means a precision to quarter a pixel, produced by spatial interpolation (better but slower).)
-#  aaov (int) - block overlap value (horizontal). Must be even and less than block size. (Higher = more precise & slower)
-#  aablk (int) - Size of a block (horizontal). It's either 4, 8 or 16 ( default is 8 ). Larger blocks are less sensitive to noise, are faster, but also less accurate.
-#  aatype (string) - Use Sangnom() or EEDI2() or NNEDI3() for anti-aliasing
 def SharpAAMcmod(orig, dark=0.2, thin=10, sharp=150, smooth=-1, stabilize=False, tradius=2, aapel=1, aaov=None, aablk=None, aatype='nnedi3'):
+    """High quality MoComped AntiAliasing script.
+
+    Also a line darkener since it uses edge masking to apply tweakable warp-sharpening,
+    "normal" sharpening and line darkening with optional temporal stabilization of these edges.
+    Part of AnimeIVTC.
+    
+    Developed in the "fine anime antialiasing thread".
+
+    Args:
+        orig: Source clip. Only the first plane will be processed.
+        dark:(float) Strokes darkening strength. Default is 0.2.
+        thin:(int) Presharpening. Default is 10.
+        sharp:(int) Postsharpening. Default is 150.
+        smooth:(int) Postsmoothing. Default is -1
+        stabilize:(bint) Use post stabilization with Motion Compensation. Default is False.
+        tradius:(int, 1~3) 1 = Degrain1 / 2 = Degrain2 / 3 = Degrain3. Default is 2.
+        aapel:(int) Accuracy of the motion estimation. Default is 1
+            (Value can only be 1, 2 or 4.
+            1 means a precision to the pixel.
+            2 means a precision to half a pixel,
+            4 means a precision to quarter a pixel,
+            produced by spatial interpolation (better but slower).)
+        aaov:(int) Block overlap value (horizontal). Default is None.
+            Must be even and less than block size.(Higher = more precise & slower)
+        aablk:(int, 4, 8, 16, 32, 64, 128) Size of a block (horizontal). Default is 8.
+            Larger blocks are less sensitive to noise, are faster, but also less accurate.
+        aatype:(string, "sangnom", "eedi2" or "nnedi3"). Default is "nnedi3".
+            Use Sangnom() or EEDI2() or NNEDI3() for anti-aliasing.
+
+    """
+
     core = vs.get_core()
     funcname = 'SharpAAMcmod'
     
@@ -855,7 +1002,7 @@ def SharpAAMcmod(orig, dark=0.2, thin=10, sharp=150, smooth=-1, stabilize=False,
             raise ValueError(funcName + ': valid values of \"tradius\" are 1, 2 and 3!')
         
         reduc = 0.4
-        sDD = core.std.Expr(sD, sDD, ['x {neutral} - abs y {neutral} - abs < x y ?'.format(neutral=haf.scale(128, bits))]).std.Merge(sDD, 1.0 - reduc)
+        sDD = core.std.Expr([sD, sDD], ['x {neutral} - abs y {neutral} - abs < x y ?'.format(neutral=haf.scale(128, bits))]).std.Merge(sDD, 1.0 - reduc)
     
         last = core.std.MakeDiff(orig, sDD)
     else:
@@ -866,32 +1013,55 @@ def SharpAAMcmod(orig, dark=0.2, thin=10, sharp=150, smooth=-1, stabilize=False,
     else:
         return core.std.ShufflePlanes([last, orig_src], planes=list(range(orig_src.format.num_planes)), colorfamily=orig_src.format.color_family)
 
-# (port from https://github.com/chikuzen/GenericFilters/blob/2044dc6c25a1b402aae443754d7a46217a2fddbf/src/convolution/tedge.c
-# fix missing "rshift")
-def TEdge(clip, min=0, max=65535, planes=None, rshift=0):
+def TEdge(input, min=0, max=65535, planes=None, rshift=0):
+    """Detect edge using the kernel like TEdgeMask(type=2).
+
+    Port from https://github.com/chikuzen/GenericFilters/blob/2044dc6c25a1b402aae443754d7a46217a2fddbf/src/convolution/tedge.c
+
+    Args:
+        input: Source clip.
+        min: (int) If output pixel value is lower than this, it will be zero. Default is 0.
+        max: (int) If output pixel value is same or higher than this, it will be maximum value of the format. Default is 65535.
+        planes: (int []) Whether to process the corresponding plane. By default, every plane will be processed.
+            The unprocessed planes will be copied from "input".
+        rshift: (int) Shift the output values to right by this count before clamp. Default is 0.
+
+    """
+
     core = vs.get_core()
     funcName = 'TEdge'
 
-    if not isinstance(clip, vs.VideoNode):
-        raise TypeError(funcName + ': \"clip\" must be a clip!')
+    if not isinstance(input, vs.VideoNode):
+        raise TypeError(funcName + ': \"input\" must be a clip!')
 
     if planes is None:
-        planes = list(range(clip.format.num_planes))
+        planes = list(range(input.format.num_planes))
 
     rshift = 1 << rshift
 
-    bits = clip.format.bits_per_sample
+    bits = input.format.bits_per_sample
     floor = 0
     peak = (1 << bits) - 1
 
-    gx = core.std.Convolution(clip, [4, -25, 0, 25, -4], planes=planes, saturate=False, mode='h')
-    gy = core.std.Convolution(clip, [-4, 25, 0, -25, 4], planes=planes, saturate=False, mode='v')
+    gx = core.std.Convolution(input, [4, -25, 0, 25, -4], planes=planes, saturate=False, mode='h')
+    gy = core.std.Convolution(input, [-4, 25, 0, -25, 4], planes=planes, saturate=False, mode='v')
 
     calcexpr = 'x x * y y * + {rshift} / sqrt'.format(rshift=rshift)
     expr = '{calc} {max} > {peak} {calc} {min} < {floor} {calc} ? ?'.format(calc=calcexpr, max=max, peak=peak, min=min, floor=floor)
-    return core.std.Expr([gx, gy], [(expr if i in planes else '') for i in range(clip.format.num_planes)])
+    return core.std.Expr([gx, gy], [(expr if i in planes else '') for i in range(input.format.num_planes)])
 
 def Sort(input, order=1, planes=None, mode='max'):
+    """Simple filter to get nth large value in 3x3.
+
+    Args:
+        input: Source clip.
+        order: (int) The order of value to get in 3x3 neighbourhood. Default is 1.
+        planes: (int []) Whether to process the corresponding plane. By default, every plane will be processed.
+            The unprocessed planes will be copied from "input".
+        mode: ("max" or "min") How to measure order. Default is "max".
+
+    """
+
     core = vs.get_core()
     funcName = 'Sort'
 
@@ -926,31 +1096,33 @@ def Sort(input, order=1, planes=None, mode='max'):
 
     return sort
 
-# 
-# Basd on Didée, 6th September 2005, http://forum.doom9.org/showthread.php?p=708217#post708217
-# Modified by TheRyuu, 14th July 2007, http://forum.doom9.org/showthread.php?p=1024318#post1024318
-# Modified by Muonium, 12th, December 2016, add args "radius", "scenechange" and "use_misc"
-# 
-# Requires Filters
-# misc (optional)
-# 
-# Parameters
-# keep int (0-100, default 24)
-# Minimum percent of the original sharpening to keep.
-#
-# radius int (1-7 (use_misc=True) or 12 (use_misc=False), default 1)
-# temporal radius of AverageFrames
-# 
-# Examples
-# 
-# We use LimitedSharpen() as sharpener, and we'll keep at least 20% of its result:
-# 
-# dull   = last
-# sharp  = dull.LimitedSharpen( ss_x=1.25, ss_y=1.25, strength=150, overshoot=1 )
-# 
-# Soothe( sharp, dull, 20 )
-# 
 def Soothe_mod(input, source, keep=24, radius=1, scenechange=32, use_misc=False):
+    """Modified Soothe().
+
+    Basd on Didée, 6th September 2005, http://forum.doom9.org/showthread.php?p=708217#post708217
+    Modified by TheRyuu, 14th July 2007, http://forum.doom9.org/showthread.php?p=1024318#post1024318
+    Modified by Muonium, 12th, December 2016, add args "radius", "scenechange" and "use_misc"
+
+    Requires Filters
+    misc (optional)
+
+    Args:
+        input: Filtered clip.
+        source: Source clip. Must match "input" clip.
+        keep:(int, 0~100). Minimum percent of the original sharpening to keep. Default is 24.
+        radius:(int, 1~7 (use_misc=True) or 1~12 (use_misc=False)) Temporal radius of AverageFrames. Default is 1.
+        scenechange:(int) Argument in scenechange detection. Default is 32.
+        use_misc:(bint) Whether to use miscellaneous filters. Default is False.
+
+    Examples: (in Avisynth)
+        We use LimitedSharpen() as sharpener, and we'll keep at least 20% of its result:
+        dull = last
+        sharpener = dull.LimitedSharpen( ss_x=1.25, ss_y=1.25, strength=150, overshoot=1 )
+
+        Soothe( sharp, dull, 20 )
+ 
+    """
+
     core = vs.get_core()
     funcName = 'Soothe_mod'
     
@@ -996,9 +1168,16 @@ def Soothe_mod(input, source, keep=24, radius=1, scenechange=32, use_misc=False)
     else:
         return core.std.ShufflePlanes([last, source_src], planes=list(range(source_src.format.num_planes)), colorfamily=source_src.format.color_family)
 
-# TemporalSoften filter using Miscellaneous filters (http://forum.doom9.org/showthread.php?t=173871), with only slight difference in result compare to havsfunc.TemporalSoften().
-# However, for now, it seems that this Misc-filter-based TemporalSoften is slower than the one in havsfunc.
 def TemporalSoften(input, radius=4, scenechange=15):
+    """TemporalSoften filter without thresholding using Miscellaneous filters.
+
+    There will be slight difference in result compare to havsfunc.TemporalSoften().
+    It seems that this Misc-filter-based TemporalSoften is slower than the one in havsfunc.
+
+    Read the document of Avisynth version for more details.
+
+    """
+
     core = vs.get_core()
     funcName = 'TemporalSoften'
     
