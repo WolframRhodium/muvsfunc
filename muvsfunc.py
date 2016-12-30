@@ -1,6 +1,7 @@
 import vapoursynth as vs
 import havsfunc as haf
 import mvsfunc as mvf
+import functools
 import math
 
 '''
@@ -11,7 +12,7 @@ Functions:
     InDeflate
     MultiRemoveGrain
     GradFun3
-    AnimeEdgeMask (2)
+    AnimeMask (2)
     PolygonExInpand
     Luma
 
@@ -23,6 +24,7 @@ Functions:
     Sort
     Soothe_mod
     TemporalSoften
+    FixTelecinedFades
 '''
 
 def LDMerge(flt_h, flt_v, src, mrad=0, show=0, planes=None, convknl=1, conv_div=None):
@@ -905,23 +907,23 @@ def SharpAAMcmod(orig, dark=0.2, thin=10, sharp=150, smooth=-1, stabilize=False,
 
     Args:
         orig: Source clip. Only the first plane will be processed.
-        dark:(float) Strokes darkening strength. Default is 0.2.
-        thin:(int) Presharpening. Default is 10.
-        sharp:(int) Postsharpening. Default is 150.
-        smooth:(int) Postsmoothing. Default is -1
-        stabilize:(bint) Use post stabilization with Motion Compensation. Default is False.
-        tradius:(int, 1~3) 1 = Degrain1 / 2 = Degrain2 / 3 = Degrain3. Default is 2.
-        aapel:(int) Accuracy of the motion estimation. Default is 1
+        dark: (float) Strokes darkening strength. Default is 0.2.
+        thin: (int) Presharpening. Default is 10.
+        sharp: (int) Postsharpening. Default is 150.
+        smooth: (int) Postsmoothing. Default is -1
+        stabilize: (bint) Use post stabilization with Motion Compensation. Default is False.
+        tradius: (1~3) 1 = Degrain1 / 2 = Degrain2 / 3 = Degrain3. Default is 2.
+        aapel: (int) Accuracy of the motion estimation. Default is 1
             (Value can only be 1, 2 or 4.
             1 means a precision to the pixel.
             2 means a precision to half a pixel,
             4 means a precision to quarter a pixel,
             produced by spatial interpolation (better but slower).)
-        aaov:(int) Block overlap value (horizontal). Default is None.
+        aaov: (int) Block overlap value (horizontal). Default is None.
             Must be even and less than block size.(Higher = more precise & slower)
-        aablk:(int, 4, 8, 16, 32, 64, 128) Size of a block (horizontal). Default is 8.
+        aablk: (4, 8, 16, 32, 64, 128) Size of a block (horizontal). Default is 8.
             Larger blocks are less sensitive to noise, are faster, but also less accurate.
-        aatype:(string, "sangnom", "eedi2" or "nnedi3"). Default is "nnedi3".
+        aatype: ("sangnom", "eedi2" or "nnedi3"). Default is "nnedi3".
             Use Sangnom() or EEDI2() or NNEDI3() for anti-aliasing.
 
     """
@@ -1109,10 +1111,10 @@ def Soothe_mod(input, source, keep=24, radius=1, scenechange=32, use_misc=False)
     Args:
         input: Filtered clip.
         source: Source clip. Must match "input" clip.
-        keep:(int, 0~100). Minimum percent of the original sharpening to keep. Default is 24.
-        radius:(int, 1~7 (use_misc=True) or 1~12 (use_misc=False)) Temporal radius of AverageFrames. Default is 1.
-        scenechange:(int) Argument in scenechange detection. Default is 32.
-        use_misc:(bint) Whether to use miscellaneous filters. Default is False.
+        keep: (int, 0~100). Minimum percent of the original sharpening to keep. Default is 24.
+        radius: (int, 1~7 (use_misc=True) or 1~12 (use_misc=False)) Temporal radius of AverageFrames. Default is 1.
+        scenechange: (int) Argument in scenechange detection. Default is 32.
+        use_misc: (bint) Whether to use miscellaneous filters. Default is False.
 
     Examples: (in Avisynth)
         We use LimitedSharpen() as sharpener, and we'll keep at least 20% of its result:
@@ -1187,3 +1189,89 @@ def TemporalSoften(input, radius=4, scenechange=15):
     if scenechange:
         input = core.misc.SCDetect(input, scenechange/255)
     return core.misc.AverageFrames(input, [1 for i in range(2*radius + 1)], scenechange=scenechange)
+
+def FixTelecinedFades(input, mode=0, planes=None):
+    """Fix Telecined Fades filter
+
+    The algorithm was proposed by feisty2 (http://forum.doom9.org/showthread.php?t=174151).
+    Corresponding C++ code written by feisty2: https://github.com/IFeelBloated/Fix-Telecined-Fades/blob/7922a339629ed8ce93b540f3bdafb99fe97096b6/Source.cpp.
+
+    the filter gives a mathematically perfect solution to such
+    (fades were done AFTER telecine which made a picture perfect IVTC pretty much impossible) problem,
+    and it's now time to kiss "vinverse" goodbye cuz "vinverse" is old and low quality.
+    unlike vinverse which works as a dumb blurring + contra-sharpening combo and very harmful to artifacts-free frames,
+    this filter works by matching the brightness of top and bottom fields with statistical methods, and also harmless to healthy frames.
+    
+    Args:
+        input: Source clip.
+        mode: (int, 0~2) Default is 0.
+            0: adjust the brightness of both fields to match the average brightness of 2 fields.
+            1: darken the brighter field to match the brightness of the darker field
+            2: brighten the darker field to match the brightness of the brighter field
+        planes: (int []) Whether to process the corresponding plane. By default, every plane will be processed.
+            The unprocessed planes will be copied from "input".
+
+    """
+
+    core = vs.get_core()
+    funcName = 'FixTelecinedFades'
+
+    if not isinstance(input, vs.VideoNode):
+        raise TypeError(funcName + ': \"input\" must be a clip!')
+
+    if mode not in [0, 1, 2]:
+        raise ValueError(funcName + ': valid values of \"mode\" are 0, 1 or 2!')
+
+    if planes is None:
+        planes = list(range(input.format.num_planes))
+    
+    # internel function
+    def Adjust(n, f, clip, core):
+        seperated = core.std.SeparateFields(clip, tff=True)
+        topField = core.std.SelectEvery(seperated, 2, [0])
+        bottomField = core.std.SelectEvery(seperated, 2, [1])
+        
+        top_avg = f[0].props.PlaneStatsAverage
+        bottom_avg = f[1].props.PlaneStatsAverage
+        
+        if top_avg != bottom_avg:
+            if mode == 0:
+                meanSum = (top_avg + bottom_avg) / 2
+                topField = core.std.Expr([topField], ['x {} *'.format(meanSum / top_avg)])
+                bottomField = core.std.Expr([bottomField], ['x {} *'.format(meanSum / bottom_avg)])
+            elif mode == 1:
+                minSum = min(top_avg, bottom_avg)
+                if minSum == top_avg:
+                    bottomField = core.std.Expr([bottomField], ['x {} *'.format(minSum / bottom_avg)])
+                else:
+                    topField = core.std.Expr([topField], ['x {} *'.format(meanSum / top_avg)])
+            elif mode == 2:
+                maxSum = max(top_avg, bottom_avg)
+                if maxSum == top_avg:
+                    bottomField = core.std.Expr([bottomField], ['x {} *'.format(minSum / bottom_avg)])
+                else:
+                    topField = core.std.Expr([topField], ['x {} *'.format(meanSum / top_avg)])
+        
+        woven = core.std.Interleave([topField, bottomField])
+        woven = core.std.DoubleWeave(woven, tff=True).std.SelectEvery(2, [0])
+        return woven
+
+    # process
+    seperated = core.std.SeparateFields(input, tff=True)
+    topField = core.std.SelectEvery(seperated, 2, [0])
+    bottomField = core.std.SelectEvery(seperated, 2, [1])
+    
+    topField_planes = {}
+    bottomField_planes = {}
+    adjusted_planes = {}
+    for i in range(input.format.num_planes):
+        input_plane = mvf.GetPlane(input, i)
+        if i in planes:
+            topField_planes[i] = mvf.GetPlane(topField, i).std.PlaneStats()
+            bottomField_planes[i] = mvf.GetPlane(bottomField, i).std.PlaneStats()
+            adjusted_planes[i] = core.std.FrameEval(input_plane, functools.partial(Adjust, clip=input_plane, core=core), prop_src=[topField_planes[i], bottomField_planes[i]])
+        else:
+            adjusted_planes[i] = input_plane
+
+    adjusted = core.std.ShufflePlanes([adjusted_planes[i] for i in range(input.format.num_planes)], [0 for i in range(input.format.num_planes)], input.format.color_family)
+    return adjusted
