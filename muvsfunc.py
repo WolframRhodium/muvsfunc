@@ -37,7 +37,7 @@ def LDMerge(flt_h, flt_v, src, mrad=0, show=0, planes=None, convknl=1, conv_div=
         show: (bint) Whether to output gradient direction map. Default is False.
         planes: (int []) Whether to process the corresponding plane. By default, every plane will be processed.
             The unprocessed planes will be copied from the first clip, "flt_h".
-        convknl: (int, 0 or 1) Which convolution kernel for gradient direction map generation to use. Default is 1.
+        convknl: (0 or 1) Which convolution kernel for gradient direction map generation to use. Default is 1.
         conv_div: (int) Divisor in convolution filter. Default is the max value in convolution kernel.
 
     """
@@ -115,7 +115,7 @@ def Compare(src, flt, power=1.5, chroma=False, mode=2):
         flt: Filtered clip.
         power: (float) The variable in the processing kernel which controls the "strength" to increase difference. Default is 1.5.
         chroma: (bint) Whether to process chroma. Default is False.
-        mode: (int, 1 or 2) Different processing kernel. 1: non-linear; 2: linear.
+        mode: (1 or 2) Different processing kernel. 1: non-linear; 2: linear.
 
     """
 
@@ -1111,8 +1111,8 @@ def Soothe_mod(input, source, keep=24, radius=1, scenechange=32, use_misc=False)
     Args:
         input: Filtered clip.
         source: Source clip. Must match "input" clip.
-        keep: (int, 0~100). Minimum percent of the original sharpening to keep. Default is 24.
-        radius: (int, 1~7 (use_misc=True) or 1~12 (use_misc=False)) Temporal radius of AverageFrames. Default is 1.
+        keep: (0~100). Minimum percent of the original sharpening to keep. Default is 24.
+        radius: (1~7 (use_misc=True) or 1~12 (use_misc=False)) Temporal radius of AverageFrames. Default is 1.
         scenechange: (int) Argument in scenechange detection. Default is 32.
         use_misc: (bint) Whether to use miscellaneous filters. Default is False.
 
@@ -1190,10 +1190,11 @@ def TemporalSoften(input, radius=4, scenechange=15):
         input = core.misc.SCDetect(input, scenechange/255)
     return core.misc.AverageFrames(input, [1 for i in range(2*radius + 1)], scenechange=scenechange)
 
-def FixTelecinedFades(input, mode=0, planes=None):
+def FixTelecinedFades(input, mode=0, threshold=0.0, planes=None):
     """Fix Telecined Fades filter
 
-    The algorithm was proposed by feisty2 (http://forum.doom9.org/showthread.php?t=174151).
+    The main algorithm was proposed by feisty2 (http://forum.doom9.org/showthread.php?t=174151).
+    The idea of thresholding was proposed by Myrsloik (http://forum.doom9.org/showthread.php?p=1791412#post1791412).
     Corresponding C++ code written by feisty2: https://github.com/IFeelBloated/Fix-Telecined-Fades/blob/7922a339629ed8ce93b540f3bdafb99fe97096b6/Source.cpp.
 
     the filter gives a mathematically perfect solution to such
@@ -1204,10 +1205,13 @@ def FixTelecinedFades(input, mode=0, planes=None):
     
     Args:
         input: Source clip.
-        mode: (int, 0~2) Default is 0.
+        mode: (0~2) Default is 0.
             0: adjust the brightness of both fields to match the average brightness of 2 fields.
             1: darken the brighter field to match the brightness of the darker field
             2: brighten the darker field to match the brightness of the brighter field
+        threshold: (float, positive) Default is 0.
+            If the absolute difference between filtered pixel and input pixel is less than "threshold", then just copy the input pixel. 
+            The value is scaled by 8 bits.
         planes: (int []) Whether to process the corresponding plane. By default, every plane will be processed.
             The unprocessed planes will be copied from "input".
 
@@ -1224,6 +1228,9 @@ def FixTelecinedFades(input, mode=0, planes=None):
 
     if planes is None:
         planes = list(range(input.format.num_planes))
+
+    bits = input.format.bits_per_sample
+    threshold = abs(threshold) * ((1 << bits) - 1) / 255
     
     # internel function
     def Adjust(n, f, clip, core):
@@ -1237,20 +1244,26 @@ def FixTelecinedFades(input, mode=0, planes=None):
         if top_avg != bottom_avg:
             if mode == 0:
                 meanSum = (top_avg + bottom_avg) / 2
-                topField = core.std.Expr([topField], ['x {} *'.format(meanSum / top_avg)])
-                bottomField = core.std.Expr([bottomField], ['x {} *'.format(meanSum / bottom_avg)])
+                topField = core.std.Expr([topField], 
+                    ['x {scale} * x - abs {thr} > x {scale} * x ?'.format(scale=meanSum / top_avg, thr=threshold) if abs(threshold) > 0.01 else 'x {scale} *'.format(scale=meanSum / top_avg)])
+                bottomField = core.std.Expr([bottomField],
+                    ['x {scale} * x - abs {thr} > x {scale} * x ?'.format(scale=meanSum / bottom_avg, thr=threshold) if abs(threshold) > 0.01 else 'x {scale} *'.format(scale=meanSum / bottom_avg)])
             elif mode == 1:
                 minSum = min(top_avg, bottom_avg)
                 if minSum == top_avg:
-                    bottomField = core.std.Expr([bottomField], ['x {} *'.format(minSum / bottom_avg)])
+                    bottomField = core.std.Expr([bottomField],
+                        ['x {scale} * x - abs {thr} > x {scale} * x ?'.format(scale=minSum / bottom_avg, thr=threshold) if abs(threshold) > 0.01 else 'x {scale} *'.format(scale=minSum / bottom_avg)])
                 else:
-                    topField = core.std.Expr([topField], ['x {} *'.format(meanSum / top_avg)])
+                    topField = core.std.Expr([topField], 
+                        ['x {scale} * x - abs {thr} > x {scale} * x ?'.format(scale=minSum / top_avg, thr=threshold) if abs(threshold) > 0.01 else 'x {scale} *'.format(scale=minSum / top_avg)])
             elif mode == 2:
                 maxSum = max(top_avg, bottom_avg)
                 if maxSum == top_avg:
-                    bottomField = core.std.Expr([bottomField], ['x {} *'.format(minSum / bottom_avg)])
+                    bottomField = core.std.Expr([bottomField],
+                        ['x {scale} * x - abs {thr} > x {scale} * x ?'.format(scale=maxSum / bottom_avg, thr=threshold) if abs(threshold) > 0.01 else 'x {scale} *'.format(scale=maxSum / bottom_avg)])
                 else:
-                    topField = core.std.Expr([topField], ['x {} *'.format(meanSum / top_avg)])
+                    topField = core.std.Expr([topField],
+                        ['x {scale} * x - abs {thr} > x {scale} * x ?'.format(scale=maxSum / top_avg, thr=threshold) if abs(threshold) > 0.01 else 'x {scale} *'.format(scale=maxSum / top_avg)])
         
         woven = core.std.Interleave([topField, bottomField])
         woven = core.std.DoubleWeave(woven, tff=True).std.SelectEvery(2, [0])
@@ -1265,13 +1278,13 @@ def FixTelecinedFades(input, mode=0, planes=None):
     bottomField_planes = {}
     adjusted_planes = {}
     for i in range(input.format.num_planes):
-        input_plane = mvf.GetPlane(input, i)
         if i in planes:
+            input_plane = mvf.GetPlane(input, i)
             topField_planes[i] = mvf.GetPlane(topField, i).std.PlaneStats()
             bottomField_planes[i] = mvf.GetPlane(bottomField, i).std.PlaneStats()
             adjusted_planes[i] = core.std.FrameEval(input_plane, functools.partial(Adjust, clip=input_plane, core=core), prop_src=[topField_planes[i], bottomField_planes[i]])
         else:
-            adjusted_planes[i] = input_plane
+            adjusted_planes[i] = None
 
-    adjusted = core.std.ShufflePlanes([adjusted_planes[i] for i in range(input.format.num_planes)], [0 for i in range(input.format.num_planes)], input.format.color_family)
+    adjusted = core.std.ShufflePlanes([(adjusted_planes[i] if i in planes else input) for i in range(input.format.num_planes)], [(0 if i in planes else i) for i in range(input.format.num_planes)], input.format.color_family)
     return adjusted
