@@ -1190,7 +1190,7 @@ def TemporalSoften(input, radius=4, scenechange=15):
         input = core.misc.SCDetect(input, scenechange/255)
     return core.misc.AverageFrames(input, [1 for i in range(2*radius + 1)], scenechange=scenechange)
 
-def FixTelecinedFades(input, mode=0, threshold=0.0, planes=None):
+def FixTelecinedFades(input, mode=0, threshold=[0.0], color=[0.0], planes=None):
     """Fix Telecined Fades filter
 
     The main algorithm was proposed by feisty2 (http://forum.doom9.org/showthread.php?t=174151).
@@ -1209,9 +1209,14 @@ def FixTelecinedFades(input, mode=0, threshold=0.0, planes=None):
             0: adjust the brightness of both fields to match the average brightness of 2 fields.
             1: darken the brighter field to match the brightness of the darker field
             2: brighten the darker field to match the brightness of the brighter field
-        threshold: (float, positive) Default is 0.
+        threshold: (float [], positive) Default is 0.
             If the absolute difference between filtered pixel and input pixel is less than "threshold", then just copy the input pixel. 
             The value is scaled by 8 bits.
+            The last value in the list will be used for the remaining plane.
+        color: (float [], positive) Default is 0.
+            (It is difficult for me to describe the effect of this parameter.)
+            The value is scaled by 8 bits.
+            The last value in the list will be used for the remaining plane.
         planes: (int []) Whether to process the corresponding plane. By default, every plane will be processed.
             The unprocessed planes will be copied from "input".
 
@@ -1220,50 +1225,80 @@ def FixTelecinedFades(input, mode=0, threshold=0.0, planes=None):
     core = vs.get_core()
     funcName = 'FixTelecinedFades'
 
+    # set parameters
     if not isinstance(input, vs.VideoNode):
         raise TypeError(funcName + ': \"input\" must be a clip!')
+
+    bits = input.format.bits_per_sample
+
+    if isinstance(threshold, int) or isinstance(threshold, float):
+        threshold = [threshold]
+    if not isinstance(threshold, list):
+        raise TypeError(funcName + ': \"threshold\" must be a list!')
+    if len(threshold) < input.format.num_planes:
+        if len(threshold) == 0:
+            threshold = [0.0]
+        threshold_length = len(threshold)
+        for i in range(input.format.num_planes - threshold_length):
+            threshold.append(threshold[threshold_length - 1])
+    for i in range(len(threshold)):
+        threshold[i] = abs(threshold[i]) * ((1 << bits) - 1) / 255
+
+    if isinstance(color, int) or isinstance(color, float):
+        color = [color]
+    if not isinstance(color, list):
+        raise TypeError(funcName + ': \"color\" must be a list!')
+    if len(color) < input.format.num_planes:
+        if len(color) == 0:
+            color = [0.0]
+        color_length = len(color)
+        for i in range(input.format.num_planes - color_length):
+            color.append(color[color_length - 1])
+    for i in range(len(color)):
+        color[i] = abs(color[i]) * ((1 << bits) - 1) / 255
 
     if mode not in [0, 1, 2]:
         raise ValueError(funcName + ': valid values of \"mode\" are 0, 1 or 2!')
 
     if planes is None:
         planes = list(range(input.format.num_planes))
-
-    bits = input.format.bits_per_sample
-    threshold = abs(threshold) * ((1 << bits) - 1) / 255
     
     # internel function
-    def Adjust(n, f, clip, core):
+    def GetExpr(scale, color, threshold):
+        if abs(color) > 0.01:
+            flt = 'x {color} - {scale} * {color} +'.format(scale=scale, color=color)
+        else:
+            flt = 'x {scale} *'.format(scale=scale)
+        return flt if abs(threshold) < 0.01 else '{flt} x - abs {threshold} > {flt} x ?'.format(flt=flt, threshold=threshold)
+    
+    def Adjust(n, f, clip, core, threshold, color):
         seperated = core.std.SeparateFields(clip, tff=True)
         topField = core.std.SelectEvery(seperated, 2, [0])
         bottomField = core.std.SelectEvery(seperated, 2, [1])
         
         top_avg = f[0].props.PlaneStatsAverage
         bottom_avg = f[1].props.PlaneStatsAverage
+        if abs(color) > 0.01:
+            top_avg -= color / ((1 << bits) - 1)
+            bottom_avg -= color / ((1 << bits) - 1)
         
         if top_avg != bottom_avg:
             if mode == 0:
                 meanSum = (top_avg + bottom_avg) / 2
-                topField = core.std.Expr([topField], 
-                    ['x {scale} * x - abs {thr} > x {scale} * x ?'.format(scale=meanSum / top_avg, thr=threshold) if abs(threshold) > 0.01 else 'x {scale} *'.format(scale=meanSum / top_avg)])
-                bottomField = core.std.Expr([bottomField],
-                    ['x {scale} * x - abs {thr} > x {scale} * x ?'.format(scale=meanSum / bottom_avg, thr=threshold) if abs(threshold) > 0.01 else 'x {scale} *'.format(scale=meanSum / bottom_avg)])
+                topField = core.std.Expr([topField], [GetExpr(scale=meanSum / top_avg, threshold=threshold, color=color)])
+                bottomField = core.std.Expr([bottomField], [GetExpr(scale=meanSum / bottom_avg, threshold=threshold, color=color)])
             elif mode == 1:
                 minSum = min(top_avg, bottom_avg)
                 if minSum == top_avg:
-                    bottomField = core.std.Expr([bottomField],
-                        ['x {scale} * x - abs {thr} > x {scale} * x ?'.format(scale=minSum / bottom_avg, thr=threshold) if abs(threshold) > 0.01 else 'x {scale} *'.format(scale=minSum / bottom_avg)])
+                    bottomField = core.std.Expr([bottomField], [GetExpr(scale=minSum / bottom_avg, threshold=threshold, color=color)])
                 else:
-                    topField = core.std.Expr([topField], 
-                        ['x {scale} * x - abs {thr} > x {scale} * x ?'.format(scale=minSum / top_avg, thr=threshold) if abs(threshold) > 0.01 else 'x {scale} *'.format(scale=minSum / top_avg)])
+                    topField = core.std.Expr([topField], [GetExpr(scale=minSum / top_avg, threshold=threshold, color=color)])
             elif mode == 2:
                 maxSum = max(top_avg, bottom_avg)
                 if maxSum == top_avg:
-                    bottomField = core.std.Expr([bottomField],
-                        ['x {scale} * x - abs {thr} > x {scale} * x ?'.format(scale=maxSum / bottom_avg, thr=threshold) if abs(threshold) > 0.01 else 'x {scale} *'.format(scale=maxSum / bottom_avg)])
+                    bottomField = core.std.Expr([bottomField], [GetExpr(scale=maxSum / bottom_avg, threshold=threshold, color=color)])
                 else:
-                    topField = core.std.Expr([topField],
-                        ['x {scale} * x - abs {thr} > x {scale} * x ?'.format(scale=maxSum / top_avg, thr=threshold) if abs(threshold) > 0.01 else 'x {scale} *'.format(scale=maxSum / top_avg)])
+                    topField = core.std.Expr([topField], [GetExpr(scale=maxSum / top_avg, threshold=threshold, color=color)])
         
         woven = core.std.Interleave([topField, bottomField])
         woven = core.std.DoubleWeave(woven, tff=True).std.SelectEvery(2, [0])
@@ -1282,7 +1317,7 @@ def FixTelecinedFades(input, mode=0, threshold=0.0, planes=None):
             input_plane = mvf.GetPlane(input, i)
             topField_planes[i] = mvf.GetPlane(topField, i).std.PlaneStats()
             bottomField_planes[i] = mvf.GetPlane(bottomField, i).std.PlaneStats()
-            adjusted_planes[i] = core.std.FrameEval(input_plane, functools.partial(Adjust, clip=input_plane, core=core), prop_src=[topField_planes[i], bottomField_planes[i]])
+            adjusted_planes[i] = core.std.FrameEval(input_plane, functools.partial(Adjust, clip=input_plane, core=core, threshold=threshold[i], color=color[i]), prop_src=[topField_planes[i], bottomField_planes[i]])
         else:
             adjusted_planes[i] = None
 
