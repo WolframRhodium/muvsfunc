@@ -1204,18 +1204,18 @@ def FixTelecinedFades(input, mode=0, threshold=[0.0], color=[0.0], planes=None):
     this filter works by matching the brightness of top and bottom fields with statistical methods, and also harmless to healthy frames.
     
     Args:
-        input: Source clip.
+        input: Source clip. Can be 8-16 bits integer or 32 bits floating point based. Recommend to use 32 bits float format.
         mode: (0~2) Default is 0.
             0: adjust the brightness of both fields to match the average brightness of 2 fields.
             1: darken the brighter field to match the brightness of the darker field
             2: brighten the darker field to match the brightness of the brighter field
         threshold: (float [], positive) Default is 0.
             If the absolute difference between filtered pixel and input pixel is less than "threshold", then just copy the input pixel. 
-            The value is scaled by 8 bits.
+            The value is always scaled by 8 bits integer.
             The last value in the list will be used for the remaining plane.
         color: (float [], positive) Default is 0.
             (It is difficult for me to describe the effect of this parameter.)
-            The value is scaled by 8 bits.
+            The value is always scaled by 8 bits integer.
             The last value in the list will be used for the remaining plane.
         planes: (int []) Whether to process the corresponding plane. By default, every plane will be processed.
             The unprocessed planes will be copied from "input".
@@ -1230,6 +1230,7 @@ def FixTelecinedFades(input, mode=0, threshold=[0.0], color=[0.0], planes=None):
         raise TypeError(funcName + ': \"input\" must be a clip!')
 
     bits = input.format.bits_per_sample
+    isFloat = input.format.sample_type == vs.FLOAT
 
     if isinstance(threshold, int) or isinstance(threshold, float):
         threshold = [threshold]
@@ -1241,8 +1242,12 @@ def FixTelecinedFades(input, mode=0, threshold=[0.0], color=[0.0], planes=None):
         threshold_length = len(threshold)
         for i in range(input.format.num_planes - threshold_length):
             threshold.append(threshold[threshold_length - 1])
-    for i in range(len(threshold)):
-        threshold[i] = abs(threshold[i]) * ((1 << bits) - 1) / 255
+    if isFloat:
+        for i in range(len(threshold)):
+            threshold[i] = abs(threshold[i]) / 255
+    else:
+        for i in range(len(threshold)):
+            threshold[i] = abs(threshold[i]) * ((1 << bits) - 1) / 255
 
     if isinstance(color, int) or isinstance(color, float):
         color = [color]
@@ -1254,8 +1259,12 @@ def FixTelecinedFades(input, mode=0, threshold=[0.0], color=[0.0], planes=None):
         color_length = len(color)
         for i in range(input.format.num_planes - color_length):
             color.append(color[color_length - 1])
-    for i in range(len(color)):
-        color[i] = abs(color[i]) * ((1 << bits) - 1) / 255
+    if isFloat:
+        for i in range(len(color)):
+            color[i] = abs(color[i]) / 255
+    else:
+        for i in range(len(color)):
+            color[i] = abs(color[i]) * ((1 << bits) - 1) / 255
 
     if mode not in [0, 1, 2]:
         raise ValueError(funcName + ': valid values of \"mode\" are 0, 1 or 2!')
@@ -1263,13 +1272,13 @@ def FixTelecinedFades(input, mode=0, threshold=[0.0], color=[0.0], planes=None):
     if planes is None:
         planes = list(range(input.format.num_planes))
     
-    # internel function
+    # internal function
     def GetExpr(scale, color, threshold):
-        if abs(color) > 0.01:
+        if abs(color) > 0.000001:
             flt = 'x {color} - {scale} * {color} +'.format(scale=scale, color=color)
         else:
             flt = 'x {scale} *'.format(scale=scale)
-        return flt if abs(threshold) < 0.01 else '{flt} x - abs {threshold} > {flt} x ?'.format(flt=flt, threshold=threshold)
+        return flt if abs(threshold) < 0.000001 else '{flt} x - abs {threshold} > {flt} x ?'.format(flt=flt, threshold=threshold)
     
     def Adjust(n, f, clip, core, threshold, color):
         seperated = core.std.SeparateFields(clip, tff=True)
@@ -1278,9 +1287,13 @@ def FixTelecinedFades(input, mode=0, threshold=[0.0], color=[0.0], planes=None):
         
         top_avg = f[0].props.PlaneStatsAverage
         bottom_avg = f[1].props.PlaneStatsAverage
-        if abs(color) > 0.01:
-            top_avg -= color / ((1 << bits) - 1)
-            bottom_avg -= color / ((1 << bits) - 1)
+        if abs(color) > 0.000001:
+            if isFloat:
+                top_avg -= color
+                bottom_avg -= color
+            else:
+                top_avg -= color / ((1 << bits) - 1)
+                bottom_avg -= color / ((1 << bits) - 1)
         
         if top_avg != bottom_avg:
             if mode == 0:
