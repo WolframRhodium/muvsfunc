@@ -1190,7 +1190,7 @@ def TemporalSoften(input, radius=4, scenechange=15):
         input = core.misc.SCDetect(input, scenechange/255)
     return core.misc.AverageFrames(input, [1 for i in range(2*radius + 1)], scenechange=scenechange)
 
-def FixTelecinedFades(input, mode=0, threshold=[0.0], color=[0.0], planes=None):
+def FixTelecinedFades(input, mode=0, threshold=[0.0], color=[0.0], full=None, planes=None):
     """Fix Telecined Fades filter
 
     The main algorithm was proposed by feisty2 (http://forum.doom9.org/showthread.php?t=174151).
@@ -1217,6 +1217,7 @@ def FixTelecinedFades(input, mode=0, threshold=[0.0], color=[0.0], planes=None):
             (It is difficult for me to describe the effect of this parameter.)
             The value is always scaled by 8 bits integer.
             The last value in the list will be used for the remaining plane.
+        full: (bint) If not set, assume False(limited range) for Gray and YUV input, assume True(full range) for other input.
         planes: (int []) Whether to process the corresponding plane. By default, every plane will be processed.
             The unprocessed planes will be copied from "input".
 
@@ -1261,16 +1262,24 @@ def FixTelecinedFades(input, mode=0, threshold=[0.0], color=[0.0], planes=None):
             color.append(color[color_length - 1])
     if isFloat:
         for i in range(len(color)):
-            color[i] = abs(color[i]) / 255
+            color[i] = color[i] / 255
     else:
         for i in range(len(color)):
             color[i] = abs(color[i]) * ((1 << bits) - 1) / 255
 
     if mode not in [0, 1, 2]:
         raise ValueError(funcName + ': valid values of \"mode\" are 0, 1 or 2!')
+    
+    if full is None:
+        if input.format.color_family in [vs.GRAY, vs.YUV]:
+            full = False
+        else:
+            full = True
 
     if planes is None:
         planes = list(range(input.format.num_planes))
+    elif not isinstance(planes, list):
+        planes = [planes]
     
     # internal function
     def GetExpr(scale, color, threshold):
@@ -1285,54 +1294,61 @@ def FixTelecinedFades(input, mode=0, threshold=[0.0], color=[0.0], planes=None):
         topField = core.std.SelectEvery(seperated, 2, [0])
         bottomField = core.std.SelectEvery(seperated, 2, [1])
         
-        top_avg = f[0].props.PlaneStatsAverage
-        bottom_avg = f[1].props.PlaneStatsAverage
+        topAvg = f[0].props.PlaneStatsAverage
+        bottomAvg = f[1].props.PlaneStatsAverage
+        
         if abs(color) > 0.000001:
             if isFloat:
-                top_avg -= color
-                bottom_avg -= color
+                topAvg -= color
+                bottomAvg -= color
             else:
-                top_avg -= color / ((1 << bits) - 1)
-                bottom_avg -= color / ((1 << bits) - 1)
+                topAvg -= color / ((1 << bits) - 1)
+                bottomAvg -= color / ((1 << bits) - 1)
         
-        if top_avg != bottom_avg:
+        if abs(topAvg - bottomAvg) > 0.000001:
             if mode == 0:
-                meanSum = (top_avg + bottom_avg) / 2
-                topField = core.std.Expr([topField], [GetExpr(scale=meanSum / top_avg, threshold=threshold, color=color)])
-                bottomField = core.std.Expr([bottomField], [GetExpr(scale=meanSum / bottom_avg, threshold=threshold, color=color)])
+                meanAvg = (topAvg + bottomAvg) / 2
+                topField = core.std.Expr([topField], [GetExpr(scale=meanAvg / topAvg, threshold=threshold, color=color)])
+                bottomField = core.std.Expr([bottomField], [GetExpr(scale=meanAvg / bottomAvg, threshold=threshold, color=color)])
             elif mode == 1:
-                minSum = min(top_avg, bottom_avg)
-                if minSum == top_avg:
-                    bottomField = core.std.Expr([bottomField], [GetExpr(scale=minSum / bottom_avg, threshold=threshold, color=color)])
+                minAvg = min(topAvg, bottomAvg)
+                if minAvg == topAvg:
+                    bottomField = core.std.Expr([bottomField], [GetExpr(scale=minAvg / bottomAvg, threshold=threshold, color=color)])
                 else:
-                    topField = core.std.Expr([topField], [GetExpr(scale=minSum / top_avg, threshold=threshold, color=color)])
+                    topField = core.std.Expr([topField], [GetExpr(scale=minAvg / topAvg, threshold=threshold, color=color)])
             elif mode == 2:
-                maxSum = max(top_avg, bottom_avg)
-                if maxSum == top_avg:
-                    bottomField = core.std.Expr([bottomField], [GetExpr(scale=maxSum / bottom_avg, threshold=threshold, color=color)])
+                maxAvg = max(topAvg, bottomAvg)
+                if maxAvg == topAvg:
+                    bottomField = core.std.Expr([bottomField], [GetExpr(scale=maxAvg / bottomAvg, threshold=threshold, color=color)])
                 else:
-                    topField = core.std.Expr([topField], [GetExpr(scale=maxSum / top_avg, threshold=threshold, color=color)])
+                    topField = core.std.Expr([topField], [GetExpr(scale=maxAvg / topAvg, threshold=threshold, color=color)])
         
         woven = core.std.Interleave([topField, bottomField])
         woven = core.std.DoubleWeave(woven, tff=True).std.SelectEvery(2, [0])
         return woven
 
     # process
+    input_src = input
+    if not full:
+        input = core.fmtc.bitdepth(input, fulls=False, fulld=True, planes=planes)
+    
     seperated = core.std.SeparateFields(input, tff=True)
     topField = core.std.SelectEvery(seperated, 2, [0])
     bottomField = core.std.SelectEvery(seperated, 2, [1])
     
-    topField_planes = {}
-    bottomField_planes = {}
-    adjusted_planes = {}
+    topFieldPlanes = {}
+    bottomFieldPlanes = {}
+    adjustedPlanes = {}
     for i in range(input.format.num_planes):
         if i in planes:
             input_plane = mvf.GetPlane(input, i)
-            topField_planes[i] = mvf.GetPlane(topField, i).std.PlaneStats()
-            bottomField_planes[i] = mvf.GetPlane(bottomField, i).std.PlaneStats()
-            adjusted_planes[i] = core.std.FrameEval(input_plane, functools.partial(Adjust, clip=input_plane, core=core, threshold=threshold[i], color=color[i]), prop_src=[topField_planes[i], bottomField_planes[i]])
+            topFieldPlanes[i] = mvf.GetPlane(topField, i).std.PlaneStats()
+            bottomFieldPlanes[i] = mvf.GetPlane(bottomField, i).std.PlaneStats()
+            adjustedPlanes[i] = core.std.FrameEval(input_plane, functools.partial(Adjust, clip=input_plane, core=core, threshold=threshold[i], color=color[i]), prop_src=[topFieldPlanes[i], bottomFieldPlanes[i]])
+            if not full:
+                adjustedPlanes[i] = core.fmtc.bitdepth(adjustedPlanes[i], fulls=True, fulld=False)
         else:
-            adjusted_planes[i] = None
-
-    adjusted = core.std.ShufflePlanes([(adjusted_planes[i] if i in planes else input) for i in range(input.format.num_planes)], [(0 if i in planes else i) for i in range(input.format.num_planes)], input.format.color_family)
+            adjustedPlanes[i] = None
+    
+    adjusted = core.std.ShufflePlanes([(adjustedPlanes[i] if i in planes else input_src) for i in range(input.format.num_planes)], [(0 if i in planes else i) for i in range(input.format.num_planes)], input.format.color_family)
     return adjusted
