@@ -1340,7 +1340,7 @@ def FixTelecinedFades(input, mode=0, threshold=[0.0], color=[0.0], full=None, pl
 
     # process
     input_src = input
-    if not full:
+    if not full and not isFloat:
         input = core.fmtc.bitdepth(input, fulls=False, fulld=True, planes=planes)
     
     separated = core.std.SeparateFields(input, tff=True)
@@ -1360,7 +1360,7 @@ def FixTelecinedFades(input, mode=0, threshold=[0.0], color=[0.0], full=None, pl
             adjustedPlanes[i] = None
 
     adjusted = core.std.ShufflePlanes([(adjustedPlanes[i] if i in planes else input_src) for i in range(input.format.num_planes)], [(0 if i in planes else i) for i in range(input.format.num_planes)], input.format.color_family)
-    if not full:
+    if not full and not isFloat:
         adjusted = core.fmtc.bitdepth(adjusted, fulls=True, fulld=False, planes=planes)
         adjusted = core.std.ShufflePlanes([(adjusted if i in planes else input_src) for i in range(input.format.num_planes)], list(range(input.format.num_planes)), input.format.color_family)
     return adjusted
