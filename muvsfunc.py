@@ -1240,9 +1240,9 @@ def FixTelecinedFades(input, mode=0, threshold=[0.0], color=[0.0], full=None, pl
     if len(threshold) < input.format.num_planes:
         if len(threshold) == 0:
             threshold = [0.0]
-        threshold_length = len(threshold)
-        for i in range(input.format.num_planes - threshold_length):
-            threshold.append(threshold[threshold_length - 1])
+        thresholdLength = len(threshold)
+        for i in range(input.format.num_planes - thresholdLength):
+            threshold.append(threshold[thresholdLength - 1])
     if isFloat:
         for i in range(len(threshold)):
             threshold[i] = abs(threshold[i]) / 255
@@ -1257,9 +1257,9 @@ def FixTelecinedFades(input, mode=0, threshold=[0.0], color=[0.0], full=None, pl
     if len(color) < input.format.num_planes:
         if len(color) == 0:
             color = [0.0]
-        color_length = len(color)
-        for i in range(input.format.num_planes - color_length):
-            color.append(color[color_length - 1])
+        colorLength = len(color)
+        for i in range(input.format.num_planes - colorLength):
+            color.append(color[colorLength - 1])
     if isFloat:
         for i in range(len(color)):
             color[i] = color[i] / 255
@@ -1341,10 +1341,10 @@ def FixTelecinedFades(input, mode=0, threshold=[0.0], color=[0.0], full=None, pl
     adjustedPlanes = {}
     for i in range(input.format.num_planes):
         if i in planes:
-            input_plane = mvf.GetPlane(input, i)
+            inputPlane = mvf.GetPlane(input, i)
             topFieldPlanes[i] = mvf.GetPlane(topField, i).std.PlaneStats()
             bottomFieldPlanes[i] = mvf.GetPlane(bottomField, i).std.PlaneStats()
-            adjustedPlanes[i] = core.std.FrameEval(input_plane, functools.partial(Adjust, clip=input_plane, core=core, threshold=threshold[i], color=color[i]), prop_src=[topFieldPlanes[i], bottomFieldPlanes[i]])
+            adjustedPlanes[i] = core.std.FrameEval(inputPlane, functools.partial(Adjust, clip=input_plane, core=core, threshold=threshold[i], color=color[i]), prop_src=[topFieldPlanes[i], bottomFieldPlanes[i]])
             if not full:
                 adjustedPlanes[i] = core.fmtc.bitdepth(adjustedPlanes[i], fulls=True, fulld=False)
         else:
