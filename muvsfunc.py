@@ -1205,7 +1205,7 @@ def FixTelecinedFades(input, mode=0, threshold=[0.0], color=[0.0], full=None, pl
     
     Args:
         input: Source clip. Can be 8-16 bits integer or 32 bits floating point based. Recommend to use 32 bits float format.
-        mode: (0~2) Default is 0.
+        mode: (0~2 [],) Default is 0.
             0: adjust the brightness of both fields to match the average brightness of 2 fields.
             1: darken the brighter field to match the brightness of the darker field
             2: brighten the darker field to match the brightness of the brighter field
@@ -1232,6 +1232,20 @@ def FixTelecinedFades(input, mode=0, threshold=[0.0], color=[0.0], full=None, pl
 
     bits = input.format.bits_per_sample
     isFloat = input.format.sample_type == vs.FLOAT
+
+    if isinstance(mode, int):
+        mode = [mode]
+    elif not isinstance(mode, list):
+        raise TypeError(funcName + ': \"mode\" must be an int!')
+    if len(mode) < input.format.num_planes:
+        if len(mode) == 0:
+            mode = [0]
+        modeLength = len(mode)
+        for i in range(input.format.num_planes - modeLength):
+            mode.append(mode[modeLength - 1])
+    for i in mode:
+        if i not in [0, 1, 2]:
+            raise ValueError(funcName + ': valid values of \"mode\" are 0, 1 or 2!')
 
     if isinstance(threshold, int) or isinstance(threshold, float):
         threshold = [threshold]
@@ -1266,9 +1280,6 @@ def FixTelecinedFades(input, mode=0, threshold=[0.0], color=[0.0], full=None, pl
     else:
         for i in range(len(color)):
             color[i] = abs(color[i]) * ((1 << bits) - 1) / 255
-
-    if mode not in [0, 1, 2]:
-        raise ValueError(funcName + ': valid values of \"mode\" are 0, 1 or 2!')
     
     if full is None:
         if input.format.color_family in [vs.GRAY, vs.YUV]:
@@ -1289,10 +1300,10 @@ def FixTelecinedFades(input, mode=0, threshold=[0.0], color=[0.0], full=None, pl
             flt = 'x {scale} *'.format(scale=scale)
         return flt if abs(threshold) < 0.000001 else '{flt} x - abs {threshold} > {flt} x ?'.format(flt=flt, threshold=threshold)
     
-    def Adjust(n, f, clip, core, threshold, color):
-        seperated = core.std.SeparateFields(clip, tff=True)
-        topField = core.std.SelectEvery(seperated, 2, [0])
-        bottomField = core.std.SelectEvery(seperated, 2, [1])
+    def Adjust(n, f, clip, core, mode, threshold, color):
+        separated = core.std.SeparateFields(clip, tff=True)
+        topField = core.std.SelectEvery(separated, 2, [0])
+        bottomField = core.std.SelectEvery(separated, 2, [1])
         
         topAvg = f[0].props.PlaneStatsAverage
         bottomAvg = f[1].props.PlaneStatsAverage
@@ -1332,9 +1343,9 @@ def FixTelecinedFades(input, mode=0, threshold=[0.0], color=[0.0], full=None, pl
     if not full:
         input = core.fmtc.bitdepth(input, fulls=False, fulld=True, planes=planes)
     
-    seperated = core.std.SeparateFields(input, tff=True)
-    topField = core.std.SelectEvery(seperated, 2, [0])
-    bottomField = core.std.SelectEvery(seperated, 2, [1])
+    separated = core.std.SeparateFields(input, tff=True)
+    topField = core.std.SelectEvery(separated, 2, [0])
+    bottomField = core.std.SelectEvery(separated, 2, [1])
     
     topFieldPlanes = {}
     bottomFieldPlanes = {}
@@ -1344,11 +1355,12 @@ def FixTelecinedFades(input, mode=0, threshold=[0.0], color=[0.0], full=None, pl
             inputPlane = mvf.GetPlane(input, i)
             topFieldPlanes[i] = mvf.GetPlane(topField, i).std.PlaneStats()
             bottomFieldPlanes[i] = mvf.GetPlane(bottomField, i).std.PlaneStats()
-            adjustedPlanes[i] = core.std.FrameEval(inputPlane, functools.partial(Adjust, clip=input_plane, core=core, threshold=threshold[i], color=color[i]), prop_src=[topFieldPlanes[i], bottomFieldPlanes[i]])
-            if not full:
-                adjustedPlanes[i] = core.fmtc.bitdepth(adjustedPlanes[i], fulls=True, fulld=False)
+            adjustedPlanes[i] = core.std.FrameEval(inputPlane, functools.partial(Adjust, clip=inputPlane, core=core, mode=mode[i], threshold=threshold[i], color=color[i]), prop_src=[topFieldPlanes[i], bottomFieldPlanes[i]])
         else:
             adjustedPlanes[i] = None
-    
+
     adjusted = core.std.ShufflePlanes([(adjustedPlanes[i] if i in planes else input_src) for i in range(input.format.num_planes)], [(0 if i in planes else i) for i in range(input.format.num_planes)], input.format.color_family)
+    if not full:
+        adjusted = core.fmtc.bitdepth(adjusted, fulls=True, fulld=False, planes=planes)
+        adjusted = core.std.ShufflePlanes([(adjusted if i in planes else input_src) for i in range(input.format.num_planes)], list(range(input.format.num_planes)), input.format.color_family)
     return adjusted
