@@ -797,10 +797,10 @@ def Luma(input, plane=0, power=4):
     funcName = 'Luma'
 
     if not isinstance(input, vs.VideoNode):
-        raise TypeError(funcname + ': \"input\" must be a clip!')
+        raise TypeError(funcName + ': \"input\" must be a clip!')
     
     if (input.format.sample_type != vs.INTEGER):
-        raise TypeError(funcname + ': \"input\" must be of integer format!')
+        raise TypeError(funcName + ': \"input\" must be of integer format!')
         
     bits = input.format.bits_per_sample
     peak = (1 << bits) - 1
@@ -821,10 +821,10 @@ def ediaa(a):
     """
 
     core = vs.get_core()
-    funcname = 'ediaa'
+    funcName = 'ediaa'
     
     if not isinstance(a, vs.VideoNode):
-        raise TypeError(funcname + ': \"a\" must be a clip!')
+        raise TypeError(funcName + ': \"a\" must be a clip!')
 
     bits = a.format.bits_per_sample
     
@@ -845,10 +845,10 @@ def nnedi3aa(a):
     """
 
     core = vs.get_core()
-    funcname = 'nnedi3aa'
+    funcName = 'nnedi3aa'
     
     if not isinstance(a, vs.VideoNode):
-        raise TypeError(funcname + ': \"a\" must be a clip!')
+        raise TypeError(funcName + ': \"a\" must be a clip!')
 
     bits = a.format.bits_per_sample
     
@@ -869,10 +869,10 @@ def maa(input):
     """
 
     core = vs.get_core()
-    funcname = 'maa'
+    funcName = 'maa'
     
     if not isinstance(input, vs.VideoNode):
-        raise TypeError(funcname + ': \"input\" must be a clip!')
+        raise TypeError(funcName + ': \"input\" must be a clip!')
     
     w = input.width
     h = input.height
@@ -929,10 +929,10 @@ def SharpAAMcmod(orig, dark=0.2, thin=10, sharp=150, smooth=-1, stabilize=False,
     """
 
     core = vs.get_core()
-    funcname = 'SharpAAMcmod'
+    funcName = 'SharpAAMcmod'
     
     if not isinstance(orig, vs.VideoNode):
-        raise TypeError(funcname + ': \"orig\" must be a clip!')
+        raise TypeError(funcName + ': \"orig\" must be a clip!')
     
     w = orig.width
     h = orig.height
@@ -1205,7 +1205,7 @@ def FixTelecinedFades(input, mode=0, threshold=[0.0], color=[0.0], full=None, pl
     
     Args:
         input: Source clip. Can be 8-16 bits integer or 32 bits floating point based. Recommend to use 32 bits float format.
-        mode: (0~2 [],) Default is 0.
+        mode: (0~2 []) Default is 0.
             0: adjust the brightness of both fields to match the average brightness of 2 fields.
             1: darken the brighter field to match the brightness of the darker field
             2: brighten the darker field to match the brightness of the brighter field
