@@ -25,6 +25,7 @@ Functions:
     Soothe_mod
     TemporalSoften
     FixTelecinedFades
+    TCannyHelper
 '''
 
 def LDMerge(flt_h, flt_v, src, mrad=0, show=0, planes=None, convknl=1, conv_div=None):
@@ -1294,11 +1295,11 @@ def FixTelecinedFades(input, mode=0, threshold=[0.0], color=[0.0], full=None, pl
     
     # internal function
     def GetExpr(scale, color, threshold):
-        if abs(color) > 0.000001:
+        if color != 0:
             flt = 'x {color} - {scale} * {color} +'.format(scale=scale, color=color)
         else:
             flt = 'x {scale} *'.format(scale=scale)
-        return flt if abs(threshold) < 0.000001 else '{flt} x - abs {threshold} > {flt} x ?'.format(flt=flt, threshold=threshold)
+        return flt if threshold == 0 else '{flt} x - abs {threshold} > {flt} x ?'.format(flt=flt, threshold=threshold)
     
     def Adjust(n, f, clip, core, mode, threshold, color):
         separated = core.std.SeparateFields(clip, tff=True)
@@ -1308,7 +1309,7 @@ def FixTelecinedFades(input, mode=0, threshold=[0.0], color=[0.0], full=None, pl
         topAvg = f[0].props.PlaneStatsAverage
         bottomAvg = f[1].props.PlaneStatsAverage
         
-        if abs(color) > 0.000001:
+        if color != 0:
             if isFloat:
                 topAvg -= color
                 bottomAvg -= color
@@ -1316,7 +1317,7 @@ def FixTelecinedFades(input, mode=0, threshold=[0.0], color=[0.0], full=None, pl
                 topAvg -= color / ((1 << bits) - 1)
                 bottomAvg -= color / ((1 << bits) - 1)
         
-        if abs(topAvg - bottomAvg) > 0.000001:
+        if topAvg != bottomAvg:
             if mode == 0:
                 meanAvg = (topAvg + bottomAvg) / 2
                 topField = core.std.Expr([topField], [GetExpr(scale=meanAvg / topAvg, threshold=threshold, color=color)])
@@ -1364,3 +1365,46 @@ def FixTelecinedFades(input, mode=0, threshold=[0.0], color=[0.0], full=None, pl
         adjusted = core.fmtc.bitdepth(adjusted, fulls=True, fulld=False, planes=planes)
         adjusted = core.std.ShufflePlanes([(adjusted if i in planes else input_src) for i in range(input.format.num_planes)], list(range(input.format.num_planes)), input.format.color_family)
     return adjusted
+
+def TCannyHelper(input, t_h=8.0, t_l=1.0, plane=0, returnAll=False, **canny_args):
+    """A helper function for tcanny.TCanny(mode=0)
+
+    Strong edge detected by "t_h" will be highlighted in white, and weak edge detected by "t_l" will be highlighted in gray.
+
+    Args:
+        input: Source clip. Can be 8-16 bits integer or 32 bits floating point based.
+        t_h: (float) TCanny's high gradient magnitude threshold for hysteresis. Default is 8.0.
+        t_l: (float) TCanny's low gradient magnitude threshold for hysteresis. Default is 1.0.
+        plane: (int) Which plane to be processed. Default is 0.
+        returnAll: (bint) Whether to return a tuple containing every 4 temporary clips(strongEdge, weakEdge, view, tcannyOutput) or just "view" clip.
+            Default is False.
+        canny_args: (dictionary) Remaining TCanny's arguments (except "mode").
+
+    """
+
+    core = vs.get_core()
+    funcName = 'TCannyHelper'
+    
+    if not isinstance(input, vs.VideoNode):
+        raise TypeError(funcName + ': \"input\" must be a clip!')
+    
+    if input.format.color_family != vs.GRAY:
+        input = mvf.GetPlane(input, plane)
+
+    if "mode" in canny_args:
+        del canny_args["mode"]
+
+    bits = input.format.bits_per_sample
+    isFloat = input.format.sample_type == vs.FLOAT
+    
+    strongEdge = core.tcanny.TCanny(input, t_h=t_h+1e-4, t_l=t_h, mode=0, **canny_args)
+    weakEdge = core.tcanny.TCanny(input, t_h=t_l+1e-4, t_l=t_l, mode=0, **canny_args)
+    
+    expr = "x y and {peak} y {neutral} 0 ? ?".format(peak=1.0 if isFloat else (1 << bits) - 1, neutral=0.5 if isFloat else 1 << (bits - 1))
+    view = core.std.Expr([strongEdge, weakEdge], [expr])
+
+    if returnAll:
+        tcannyOutput = core.tcanny.TCanny(input, t_h=t_h, t_l=t_l, mode=0, **canny_args)
+        return (strongEdge, weakEdge, view, tcannyOutput)
+    else:
+        return view
