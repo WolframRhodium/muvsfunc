@@ -28,7 +28,7 @@ Functions:
     TCannyHelper
 '''
 
-def LDMerge(flt_h, flt_v, src, mrad=0, show=0, planes=None, convknl=1, conv_div=None):
+def LDMerge(flt_h, flt_v, src, mrad=0, show=0, planes=None, convknl=1, conv_div=None, calc_mode=0, power=1.0):
     """A filter to merge two filtered clip based on gradient direction map from source clip.
 
     Args:
@@ -38,9 +38,17 @@ def LDMerge(flt_h, flt_v, src, mrad=0, show=0, planes=None, convknl=1, conv_div=
         show: (bint) Whether to output gradient direction map. Default is False.
         planes: (int []) Whether to process the corresponding plane. By default, every plane will be processed.
             The unprocessed planes will be copied from the first clip, "flt_h".
-        convknl: (0 or 1) Which convolution kernel for gradient direction map generation to use. Default is 1.
+        convknl: (0 or 1) Which convolution kernel is used to generate gradient direction map. Default is 1.
         conv_div: (int) Divisor in convolution filter. Default is the max value in convolution kernel.
+        calc_mode: (0 or 1) Which method is used to calculate line direction map. Default is 0.
+        power: (float) Power coefficient in "calc_mode=0".
 
+    Example:
+        # Fast Anti-aliasing
+        horizontal = core.std.Convolution(clip, matrix=[1, 4, 0, 4, 1], planes=[0], mode='h')
+        vertical = core.std.Convolution(clip, matrix=[1, 4, 0, 4, 1], planes=[0], mode='v')
+        blur_src = core.tcanny.TCanny(clip, mode=-1, planes=[0]) # Eliminate noise
+        antialiasing = muf.LDMerge(horizontal, vertical, blur_src, mrad=1, planes=[0])
     """
 
     core = vs.get_core()
@@ -96,7 +104,7 @@ def LDMerge(flt_h, flt_v, src, mrad=0, show=0, planes=None, convknl=1, conv_div=
         hmap = haf.mt_inpand_multi(hmap, sw=0, sh=-mrad, planes=planes)
         vmap = haf.mt_inpand_multi(vmap, sw=-mrad, sh=0, planes=planes)
     
-    ldexpr = 'y x x * y y * + sqrt / {peak} *'.format(peak=(1 << bits) - 1)
+    ldexpr = '{peak} 1 x 0.0001 + y 0.0001 + / {power} pow + /'.format(peak=(1 << bits) - 1, power=power) if calc_mode == 0 else 'y 0.0001 + x 0.0001 + dup * y 0.0001 + dup * + 2 * sqrt / {peak} *'.format(peak=(1 << bits) - 1)
     ldmap = core.std.Expr([hmap, vmap], [(ldexpr if i in planes else '') for i in range(src.format.num_planes)])
 
     if show == 0:
@@ -1378,7 +1386,7 @@ def TCannyHelper(input, t_h=8.0, t_l=1.0, plane=0, returnAll=False, **canny_args
         plane: (int) Which plane to be processed. Default is 0.
         returnAll: (bint) Whether to return a tuple containing every 4 temporary clips(strongEdge, weakEdge, view, tcannyOutput) or just "view" clip.
             Default is False.
-        canny_args: (dictionary) Remaining TCanny's arguments (except "mode").
+        canny_args: (dictionary) Remaining TCanny's arguments (except "mode" and "planes").
 
     """
 
