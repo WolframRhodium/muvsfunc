@@ -1,5 +1,5 @@
 # SuperRes1(): Single Image Super Resolution
-# SuperRes2(): Single Image Super Resolution with Bilateral filtering
+# SuperRes2(): Single Image Super Resolution with nnedi3 upsampling
 
 # SuperRes(): Single Image Super Resolution with Bilateral filtering and user-defined resampling
 """Example of using nnedi3() as an upsampling filter:
@@ -19,24 +19,7 @@ superResolution = SuperRes(input, target_width, target_width, upsampleFilter=ups
 
 # 16bit integer clip is required
 
-def SuperRes1(lowRes, w, h, fltPass=3, **fmtc_args):
-    def computeError(input):
-        return core.std.MakeDiff(lowRes, core.fmtc.resample(input, lowRes.width, lowRes.height, **fmtc_args))
-
-    highRes = core.fmtc.resample(lowRes, w, h, **fmtc_args)
-    for i in range(fltPass):
-        highRes = core.std.MergeDiff(highRes, core.fmtc.resample(computeError(highRes), w, h, **fmtc_args))
-    return highRes
-
-def SuperRes2(lowRes, w, h, fltPass=3, bilateral_args=dict(sigmaS=3.0, sigmaR=0.02), **fmtc_args):
-    def computeError(input):
-        return core.std.MakeDiff(lowRes, core.fmtc.resample(input, lowRes.width, lowRes.height, **fmtc_args))
-
-    highRes = core.fmtc.resample(lowRes, w, h, **fmtc_args)
-    for i in range(fltPass):
-        highRes = core.std.MergeDiff(highRes, core.bilateral.Bilateral(core.fmtc.resample(computeError(highRes), w, h, **fmtc_args), ref=highRes, **bilateral_args))
-    return highRes
-
+# Main function
 def SuperRes(lowRes, w, h, fltPass=3, upsampleFilter=None, downsampleFilter=None, useBilateral=True, **bilateral_args):
     if upsampleFilter is None:
         def upsampleFilter(input):
@@ -55,3 +38,24 @@ def SuperRes(lowRes, w, h, fltPass=3, upsampleFilter=None, downsampleFilter=None
             diff = core.bilateral.Bilateral(diff, ref=highRes, **bilateral_args)
         highRes = core.std.MergeDiff(highRes, diff)
     return highRes
+
+
+# Wrap functions
+def SuperRes1(lowRes, w, h, fltPass=3, useBilateral=True, **fmtc_args):
+    from functools import partial
+
+    upsampleFilter = partial(core.fmtc.resample, w=w, h=h, **fmtc_args)
+        
+    downsampleFilter = partial(core.fmtc.resample, w=lowRes.width, h=lowRes.height, **fmtc_args)
+    
+    return SuperRes(lowRes, w, h, fltPass, upsampleFilter, downsampleFilter, useBilateral)
+
+def SuperRes2(lowRes, w, h, fltPass=3, useBilateral=True, nnedi3_args=dict(), **fmtc_args):
+    from functools import partial
+    import nnedi3_resample as nnrs
+    
+    upsampleFilter = partial(nnrs.nnedi3_resample, target_width=w, target_height=h, **nnedi3_args)
+    
+    downsampleFilter = partial(core.fmtc.resample, w=lowRes.width, h=lowRes.height, **fmtc_args)
+    
+    return SuperRes(lowRes, w, h, fltPass, upsampleFilter, downsampleFilter, useBilateral)
