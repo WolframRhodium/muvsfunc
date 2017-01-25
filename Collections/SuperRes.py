@@ -41,16 +41,16 @@ def SuperRes(lowRes, w, h, fltPass=3, upsampleFilter=None, downsampleFilter=None
 
 
 # Wrap functions
-def SuperRes1(lowRes, w, h, fltPass=3, useBilateral=True, **fmtc_args):
+def SuperRes1(lowRes, w, h, fltPass=3, useBilateral=True, bilateral_args=dict(), **fmtc_args):
     from functools import partial
 
     upsampleFilter = partial(core.fmtc.resample, w=w, h=h, **fmtc_args)
         
     downsampleFilter = partial(core.fmtc.resample, w=lowRes.width, h=lowRes.height, **fmtc_args)
     
-    return SuperRes(lowRes, w, h, fltPass, upsampleFilter, downsampleFilter, useBilateral)
+    return SuperRes(lowRes, w, h, fltPass, upsampleFilter, downsampleFilter, useBilateral, **bilateral_args)
 
-def SuperRes2(lowRes, w, h, fltPass=3, useBilateral=True, nnedi3_args=dict(), **fmtc_args):
+def SuperRes2(lowRes, w, h, fltPass=3, useBilateral=True, nnedi3_args=dict(), bilateral_args=dict(), **fmtc_args):
     from functools import partial
     import nnedi3_resample as nnrs
     
@@ -58,4 +58,4 @@ def SuperRes2(lowRes, w, h, fltPass=3, useBilateral=True, nnedi3_args=dict(), **
     
     downsampleFilter = partial(core.fmtc.resample, w=lowRes.width, h=lowRes.height, **fmtc_args)
     
-    return SuperRes(lowRes, w, h, fltPass, upsampleFilter, downsampleFilter, useBilateral)
+    return SuperRes(lowRes, w, h, fltPass, upsampleFilter, downsampleFilter, useBilateral, **bilateral_args)
