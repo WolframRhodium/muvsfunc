@@ -1,8 +1,8 @@
-# SuperRes1(): Single Image Super Resolution
-# SuperRes2(): Single Image Super Resolution with nnedi3 upsampling
+# SuperRes1(): Super Resolution
+# SuperRes2(): Super Resolution with nnedi3 upsampling
 
-# SuperRes(): Single Image Super Resolution with Bilateral filtering and user-defined resampling
-"""Example of using nnedi3() as an upsampling filter:
+# SuperRes(): Super Resolution with NLMeans filtering and user-defined resampling
+"""Example of using nnedi3() as a main upsampling filter:
 
 import nnedi3_resample as nnrs
 from functools import partial
@@ -11,7 +11,7 @@ input = ...
 target_width = ...
 target_height = ...
 upsampleFilter = partial(nnrs.nnedi3_resample, target_width=target_width, target_height=target_height)
-superResolution = SuperRes(input, target_width, target_width, upsampleFilter=upsampleFilter)
+superResolution = SuperRes(input, target_width, target_width, upsampleFilter1=upsampleFilter)
 
 """
 
@@ -20,9 +20,12 @@ superResolution = SuperRes(input, target_width, target_width, upsampleFilter=ups
 # 16bit integer clip is required
 
 # Main function
-def SuperRes(lowRes, w, h, fltPass=3, upsampleFilter=None, downsampleFilter=None, useBilateral=True, **bilateral_args):
-    if upsampleFilter is None:
-        def upsampleFilter(input):
+def SuperRes(lowRes, w, h, fltPass=3, upsampleFilter1=None, upsampleFilter2=None, downsampleFilter=None, useNLMeans=True, **knlm_args):
+    if upsampleFilter1 is None:
+        def upsampleFilter1(input):
+            return core.fmtc.resample(input, w, h)
+    if upsampleFilter2 is None:
+        def upsampleFilter2(input):
             return core.fmtc.resample(input, w, h)
     if downsampleFilter is None:
         def downsampleFilter(input):
@@ -31,31 +34,33 @@ def SuperRes(lowRes, w, h, fltPass=3, upsampleFilter=None, downsampleFilter=None
     def computeError(input):
         return core.std.MakeDiff(lowRes, downsampleFilter(input))
 
-    highRes = upsampleFilter(lowRes)
+    highRes = upsampleFilter1(lowRes)
     for i in range(fltPass):
-        diff = upsampleFilter(computeError(highRes))
-        if useBilateral:
-            diff = core.bilateral.Bilateral(diff, ref=highRes, **bilateral_args)
+        diff = upsampleFilter2(computeError(highRes))
+        if useNLMeans:
+            diff = core.knlm.KNLMeansCL(diff, rclip=highRes, **knlm_args)
         highRes = core.std.MergeDiff(highRes, diff)
     return highRes
 
 
 # Wrap functions
-def SuperRes1(lowRes, w, h, fltPass=3, useBilateral=True, bilateral_args=dict(), **fmtc_args):
+def SuperRes1(lowRes, w, h, fltPass=3, useNLMeans=True, knlm_args=dict(), **fmtc_args):
     from functools import partial
 
     upsampleFilter = partial(core.fmtc.resample, w=w, h=h, **fmtc_args)
         
     downsampleFilter = partial(core.fmtc.resample, w=lowRes.width, h=lowRes.height, **fmtc_args)
     
-    return SuperRes(lowRes, w, h, fltPass, upsampleFilter, downsampleFilter, useBilateral, **bilateral_args)
+    return SuperRes(lowRes, w, h, fltPass, upsampleFilter, upsampleFilter, downsampleFilter, useNLMeans, **knlm_args)
 
-def SuperRes2(lowRes, w, h, fltPass=3, useBilateral=True, nnedi3_args=dict(), bilateral_args=dict(), **fmtc_args):
+def SuperRes2(lowRes, w, h, fltPass=3, useNLMeans=True, nnedi3_args=dict(), knlm_args=dict(), **fmtc_args):
     from functools import partial
     import nnedi3_resample as nnrs
     
-    upsampleFilter = partial(nnrs.nnedi3_resample, target_width=w, target_height=h, **nnedi3_args)
+    upsampleFilter1 = partial(nnrs.nnedi3_resample, target_width=w, target_height=h, **nnedi3_args)
+    
+    upsampleFilter2 = partial(core.fmtc.resample, w=w, h=h, **fmtc_args)
     
     downsampleFilter = partial(core.fmtc.resample, w=lowRes.width, h=lowRes.height, **fmtc_args)
     
-    return SuperRes(lowRes, w, h, fltPass, upsampleFilter, downsampleFilter, useBilateral, **bilateral_args)
+    return SuperRes(lowRes, w, h, fltPass, upsampleFilter1, upsampleFilter2, downsampleFilter, useNLMeans, **knlm_args)
