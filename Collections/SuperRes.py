@@ -20,13 +20,13 @@ superResolution = SuperRes(input, target_width, target_width, upsampleFilter1=up
 # 16bit integer clip is required
 
 # Main function
-def SuperRes(lowRes, w, h, fltPass=3, upsampleFilter1=None, upsampleFilter2=None, downsampleFilter=None, useNLMeans=True, **knlm_args):
+def SuperRes(lowRes, width, height, fltPass=3, upsampleFilter1=None, upsampleFilter2=None, downsampleFilter=None, useNLMeans=True, **knlm_args):
     if upsampleFilter1 is None:
         def upsampleFilter1(input):
-            return core.fmtc.resample(input, w, h)
+            return core.fmtc.resample(input, width, height)
     if upsampleFilter2 is None:
         def upsampleFilter2(input):
-            return core.fmtc.resample(input, w, h)
+            return core.fmtc.resample(input, width, height)
     if downsampleFilter is None:
         def downsampleFilter(input):
             return core.fmtc.resample(input, lowRes.width, lowRes.height)
