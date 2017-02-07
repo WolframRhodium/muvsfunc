@@ -202,12 +202,7 @@ def ExInpand(input, mrad=0, mode='rectangle', planes=None):
     # internel function
     def ExInpand_process(input, mode=None, planes=None, mrad=None):
         if isinstance(mode, int):
-            if mode == 0:
-                mode = 'rectangle'
-            elif mode == 1:
-                mode = 'losange'
-            elif mode == 2:
-                mode = 'ellipse'
+            mode = ['rectangle', 'losange', 'ellipse'][mode]
         if isinstance(mode, str):
             mode = mode.lower()
             if mode not in ['rectangle', 'losange', 'ellipse']:
@@ -216,11 +211,9 @@ def ExInpand(input, mrad=0, mode='rectangle', planes=None):
             raise TypeError(funcName + ': \"mode\" must be an int in [0, 2] or a specific string in [\"rectangle\", \"losange\", \"ellipse\"]!')
         
         if isinstance(mrad, int):
-            sw = mrad
-            sh = mrad
+            sw = sh = mrad
         else:
-            sw = mrad[0]
-            sh = mrad[1]
+            sw, sh = mrad
         
         if sw * sh < 0:
             raise TypeError(funcName + ': \"mrad\" at a time must be both positive or negative!')
