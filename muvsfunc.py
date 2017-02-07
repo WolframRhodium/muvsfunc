@@ -1,9 +1,3 @@
-import vapoursynth as vs
-import havsfunc as haf
-import mvsfunc as mvf
-import functools
-import math
-
 '''
 Functions:
     LDMerge
@@ -27,6 +21,12 @@ Functions:
     FixTelecinedFades
     TCannyHelper
 '''
+
+import vapoursynth as vs
+import havsfunc as haf
+import mvsfunc as mvf
+import functools
+import math
 
 def LDMerge(flt_h, flt_v, src, mrad=0, show=0, planes=None, convknl=1, conv_div=None, calc_mode=0, power=1.0):
     """A filter to merge two filtered clip based on gradient direction map from source clip.
