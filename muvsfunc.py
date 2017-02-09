@@ -20,6 +20,7 @@ Functions:
     TemporalSoften
     FixTelecinedFades
     TCannyHelper
+    MergeChroma
 '''
 
 import vapoursynth as vs
@@ -333,8 +334,8 @@ def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=
              debug=None, thrc=None, radiusc=None, elastc=None, planes=None, ref=None):
     """GradFun3 by Firesledge v0.0.1
 
-    Port by Muonium  2016/6/18
-    Port from Dither_tools v1.27.2 (http://avisynth.nl/index.php/Dither_tools)
+    Ported by Muonium  2016/6/18
+    Ported from Dither_tools v1.27.2 (http://avisynth.nl/index.php/Dither_tools)
     Currently only smode=1 and smode=2 is implemented in VapourSynth.
     Internal calculation precision is always 16 bits.
 
@@ -1020,7 +1021,7 @@ def SharpAAMcmod(orig, dark=0.2, thin=10, sharp=150, smooth=-1, stabilize=False,
 def TEdge(input, min=0, max=65535, planes=None, rshift=0):
     """Detect edge using the kernel like TEdgeMask(type=2).
 
-    Port from https://github.com/chikuzen/GenericFilters/blob/2044dc6c25a1b402aae443754d7a46217a2fddbf/src/convolution/tedge.c
+    Ported from https://github.com/chikuzen/GenericFilters/blob/2044dc6c25a1b402aae443754d7a46217a2fddbf/src/convolution/tedge.c
 
     Args:
         input: Source clip.
@@ -1409,3 +1410,46 @@ def TCannyHelper(input, t_h=8.0, t_l=1.0, plane=0, returnAll=False, **canny_args
         return (strongEdge, weakEdge, view, tcannyOutput)
     else:
         return view
+
+def MergeChroma(clip1, clip2, weight=1.0):
+    """A function that merges the chroma from one videoclip into another. Ported from Avisynth's equivalent.
+
+    There is an optional weighting, so a percentage between the two clips can be specified.
+
+    Args:
+        clip1: The clip that has the chroma pixels merged into (the base clip).
+        clip2: The clip from which the chroma pixel data is taken (the overlay clip).
+        weight: (float) Defines how much influence the new clip should have. Range is 0.0–1.0.
+
+    """
+
+    core = vs.get_core()
+    funcName = 'MergeChroma'
+
+    if not isinstance(clip1, vs.VideoNode):
+        raise TypeError(funcName + ': \"clip1\" must be a clip!')
+
+    if not isinstance(clip2, vs.VideoNode):
+        raise TypeError(funcName + ': \"clip2\" must be a clip!')
+
+    if weight >= 1.0:
+        return core.std.ShufflePlanes([clip1, clip2], [0, 1, 2], vs.YUV)
+    elif weight <= 0.0:
+        return clip1
+    else:
+        if clip1.format.num_planes != 3:
+            raise TypeError(funcName + ': \"clip1\" must have 3 planes!')
+        if clip2.format.num_planes != 3:
+            raise TypeError(funcName + ': \"clip2\" must have 3 planes!')
+
+        clip1_u = mvf.GetPlane(clip1, 1)
+        clip2_u = mvf.GetPlane(clip2, 1)
+        output_u = core.std.Merge(clip1_u, clip2_u, weight)
+
+        clip1_v = mvf.GetPlane(clip1, 2)
+        clip2_v = mvf.GetPlane(clip2, 2)
+        output_v = core.std.Merge(clip1_v, clip2_v, weight)
+
+        output = core.std.ShufflePlanes([clip1, output_u, output_v], [0, 1, 2], vs.YUV)
+
+        return output
