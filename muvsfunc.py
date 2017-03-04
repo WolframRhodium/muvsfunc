@@ -21,6 +21,7 @@ Functions:
     FixTelecinedFades
     TCannyHelper
     MergeChroma
+    firniture
 '''
 
 import vapoursynth as vs
@@ -1450,6 +1451,65 @@ def MergeChroma(clip1, clip2, weight=1.0):
         clip2_v = mvf.GetPlane(clip2, 2)
         output_v = core.std.Merge(clip1_v, clip2_v, weight)
 
-        output = core.std.ShufflePlanes([clip1, output_u, output_v], [0, 1, 2], vs.YUV)
+        output = core.std.ShufflePlanes([clip1, output_u, output_v], [0, 0, 0], vs.YUV)
 
         return output
+
+def firniture(clip, width, height, kernel='binomial7', taps=None, gamma=False):
+    '''5 new interpolation kernels (via fmtconv)
+    
+    Proposed by *.mp4 guy (https://forum.doom9.org/showthread.php?t=166080)
+    
+    Args:
+        clip: Source clip.
+        width, height: (int) New picture width and height in pixels.
+
+        kernel: (string) Default is "binomial7".
+            "binomial5", "binomial7": A binomial windowed sinc filter with 5 or 7 taps. Should have the least ringing of any available interpolator, except perhaps "noaliasnoring4".
+            "maxflat5", "maxflat8": 5 or 8 tap interpolation that is maximally flat in the passband. In English, these filters have a sharp and relatively neutral look, but can have ringing and aliasing problems.
+            "noalias4": A 4 tap filter hand designed to be free of aliasing while having acceptable ringing and blurring characteristics. Not always a good choice, but sometimes very useful.
+            "noaliasnoring4": Derived from the "noalias4" kernel, but modified to have reduced ringing. Other attributes are slightly worse.
+            "wall7": A windowed sinc function intended to be an alternative to high-tap lanczos. [edit] removed because it wasn't actually any better.
+
+        taps: (int) Default is the last num in "kernel".
+            "taps" in fmtc.resample. This parameter is now mostly superfluous. It has been retained so that you can truncate the kernels to shorter taps then they would normally use.
+        gamma: (bool) Default is False.
+            Set to true to turn on gamma correction for the y channel.
+
+    Examples:
+        clip = muvsfunc.firniture(clip, 720, 400, kernel="noalias4", gamma=False)
+
+    '''
+
+    import nnedi3_resample as nnrs
+    
+    core = vs.get_core()
+    funcName = 'firniture'
+    
+    if not isinstance(clip, vs.VideoNode):
+        raise TypeError(funcName + ': \"clip\" must be a clip!')
+    
+    impulseCoefficents = dict(
+        binomial5=[8, 0, -589, 0, 11203, 0, -93355, 0, 606836, 1048576, 606836, 0, -93355, 0, 11203, 0, -589, 0, 8],
+        binomial7=[146, 0, -20294, 0, 744006, 0, -11528384, 0, 94148472, 0, -487836876, 0, 2551884458, 4294967296, 2551884458, 0, -487836876, 0, 94148472, 0, -11528384, 0, 744006, 0, -20294, 0, 146],
+        maxflat5=[-259, 1524, -487, -12192, 17356, 42672, -105427, -85344, 559764, 1048576, 559764, -85344, -105427, 42672, 17356, -12192, -487, 1524, -259],
+        maxflat8=[2, -26, 166, -573, 912, 412, 1524, -589, -12192, 17356, 42672, -105427, -85344, 606836, 1048576, 606836, -85344, -105427, 42672, 17356, -12192, -589, 1524, 412, 912, -573, 166, -26, 2],
+        noalias4=[-1, 2, 4, -6, -17, 7, 59, 96, 59, 7, -17, -6, 4, 2, -1],
+        noaliasnoring4=[-1, 8, 40, -114, -512, 360, 3245, 5664, 3245, 360, -512, -114, 40, 8, -1]
+        )
+    
+    if taps is None:
+        taps = int(kernel[-1])
+    
+    if clip.format.bits_per_sample != 16:
+        clip = mvf.Depth(clip, 16)
+    
+    if gamma:
+        clip = nnrs.GammaToLinear(clip)
+    
+    clip = core.fmtc.resample(clip, width, height, kernel='impulse', impulse=impulseCoefficents[kernel], kovrspl=2, taps=taps)
+    
+    if gamma:
+        clip = nnrs.LinearToGamma(clip)
+    
+    return clip
