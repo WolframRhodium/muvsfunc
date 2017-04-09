@@ -1455,7 +1455,7 @@ def MergeChroma(clip1, clip2, weight=1.0):
 
         return output
 
-def firniture(clip, width, height, kernel='binomial7', taps=None, gamma=False):
+def firniture(clip, width, height, kernel='binomial7', taps=None, gamma=False, **resample_args):
     '''5 new interpolation kernels (via fmtconv)
     
     Proposed by *.mp4 guy (https://forum.doom9.org/showthread.php?t=166080)
@@ -1469,12 +1469,12 @@ def firniture(clip, width, height, kernel='binomial7', taps=None, gamma=False):
             "maxflat5", "maxflat8": 5 or 8 tap interpolation that is maximally flat in the passband. In English, these filters have a sharp and relatively neutral look, but can have ringing and aliasing problems.
             "noalias4": A 4 tap filter hand designed to be free of aliasing while having acceptable ringing and blurring characteristics. Not always a good choice, but sometimes very useful.
             "noaliasnoring4": Derived from the "noalias4" kernel, but modified to have reduced ringing. Other attributes are slightly worse.
-            "wall7": A windowed sinc function intended to be an alternative to high-tap lanczos. [edit] removed because it wasn't actually any better.
 
         taps: (int) Default is the last num in "kernel".
             "taps" in fmtc.resample. This parameter is now mostly superfluous. It has been retained so that you can truncate the kernels to shorter taps then they would normally use.
         gamma: (bool) Default is False.
             Set to true to turn on gamma correction for the y channel.
+        resample_args: (dictionary) Remaining fmtc.resample's arguments.
 
     Examples:
         clip = muvsfunc.firniture(clip, 720, 400, kernel="noalias4", gamma=False)
@@ -1507,7 +1507,7 @@ def firniture(clip, width, height, kernel='binomial7', taps=None, gamma=False):
     if gamma:
         clip = nnrs.GammaToLinear(clip)
     
-    clip = core.fmtc.resample(clip, width, height, kernel='impulse', impulse=impulseCoefficents[kernel], kovrspl=2, taps=taps)
+    clip = core.fmtc.resample(clip, width, height, kernel='impulse', impulse=impulseCoefficents[kernel], kovrspl=2, taps=taps, **resample_args)
     
     if gamma:
         clip = nnrs.LinearToGamma(clip)
