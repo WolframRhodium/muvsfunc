@@ -366,11 +366,19 @@ def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=
     else:
         raise TypeError(funcName + ': \"thr\" must be an int or a float!')
 
+    if smode is None:
+        smode = 1
+    elif smode not in [0, 1, 2, 3]:
+        raise ValueError(funcName + ': \"smode\" must be in [0, 1, 2, 3]!')
+
     if radius is None:
-        radius = 16 if src.width > 1024 or src.height > 576 else 12
+        radius = (16 if src.width > 1024 or src.height > 576 else 12) if (smode == 1 or smode == 2) else 9
     elif isinstance(radius, int):
         if radius <= 0:
             raise ValueError(funcName + ': \"radius\" must be strictly positive.')
+        elif smode == 0 or smode == 3: # Use SmoothGrad
+            if radius > 9:
+                raise ValueError(funcName + ': \"radius\" must be in 2-9 for smode=0 or 3 !')
     else:
         raise TypeError(funcName + ': \"radius\" must be an int!')
 
@@ -389,17 +397,6 @@ def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=
 
     if lsb is None:
         lsb = False
-
-    if smode is None:
-        smode = 1
-    elif smode not in [0, 1, 2, 3]:
-        raise ValueError(funcName + ': \"smode\" must be in [0, 1, 2, 3]!')
-    if smode == 0:
-        if radius not in list(range(1, 68+1)):
-            raise ValueError(funcName + ': \"radius\" must be in 1-68 for smode=0 !')
-    elif smode == 1:
-        if radius not in list(range(1, 128+1)):
-            raise ValueError(funcName + ': \"radius\" must be in 1-128 for smode=1 !')
 
     if thr_det is None:
         thr_det = 2 + round(max(thr - 0.35, 0) / 0.3)
@@ -426,9 +423,9 @@ def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=
             raise ValueError(funcName + '\"radiusc\" must be strictly positive.')
     else:
         raise TypeError(funcName + '\"radiusc\" must be an int!')
-    if smode == 0:
-        if radiusc not in list(range(1, 68+1)):
-            raise ValueError(funcName + ': \"radiusc\" must be in 1-68 for smode=0 !')
+    if smode == 0 or smode == 3:
+        if radiusc not in list(range(2, 10)):
+            raise ValueError(funcName + ': \"radiusc\" must be in 2-9 for smode=0 or 3 !')
     elif smode == 1:
         if radiusc not in list(range(1, 128+1)):
             raise ValueError(funcName + ': \"radiusc\" must be in 1-128 for smode=1 !')
@@ -525,8 +522,7 @@ def GF3_smooth(src_16, ref_16, smode, radius, thr, elast, planes):
 
 def GF3_smoothgrad_multistage(src, ref, radius, thr, elast, planes):
     core = vs.get_core()
-    raise RuntimeError(funcName + ': SmoothGrad has not been ported to VapourSynth!')
-    '''
+
     ela_2 = max(elast * 0.83, 1.0)
     ela_3 = max(elast * 0.67, 1.0)
     r2 = radius * 2 // 3
@@ -537,18 +533,15 @@ def GF3_smoothgrad_multistage(src, ref, radius, thr, elast, planes):
     last = SmoothGrad(radius=r3, thr=thr * 0.7, elast=ela_2, ref=ref, planes=planes) if r3 >= 1 else last
     last = SmoothGrad(radius=r4, thr=thr * 0.46, elast=ela_3, ref=ref, planes=planes) if r4 >= 1 else last
     return last
-    '''
 
 def GF3_smoothgrad_multistage_3(src, radius, thr, elast, planes):
     core = vs.get_core()
-    raise RuntimeError(funcName + ': SmoothGrad has not been ported to VapourSynth!')
-    '''
+
     ref = SmoothGrad(src, radius=radius // 3, thr=thr * 0.8, elast=elast)
     last = Boxfilter(src, radius=radius, planes=planes)
     last = Boxfilter(last, radius=radius, planes=planes)
     last = mvf.LimitFilter(last, src, thr=thr * 0.6, elast=elast, ref=ref, planes=planes)
     return last
-    '''
 
 def GF3_dfttest(src, ref, radius, thr, elast, planes):
     core = vs.get_core()
