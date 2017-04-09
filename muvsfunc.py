@@ -80,7 +80,7 @@ def LDMerge(flt_h, flt_v, src, mrad=0, show=0, planes=None, convknl=1, conv_div=
         raise TypeError(funcName + '\"show\" must be an int!')
     if show not in list(range(0, 4)):
         raise ValueError(funcName + '\"show\" must be in [0, 1, 2, 3]!')
-    
+
     if planes is None:
         planes = list(range(flt_h.format.num_planes))
 
@@ -352,9 +352,9 @@ def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=
     funcName = 'GradFun3'
 
     if not isinstance(src, vs.VideoNode):
-        raise TypeError(funcName + ': \"clip\" must be a clip!')
+        raise TypeError(funcName + ': \"src\" must be a clip!')
     if src.format.color_family not in [vs.YUV, vs.GRAY, vs.YCOCG]:
-        raise TypeError(funcName + ': \"clip\" must be YUV, GRAY or YCOCG color family!')
+        raise TypeError(funcName + ': \"src\" must be YUV, GRAY or YCOCG color family!')
 
     if thr is None:
         thr = 0.35
@@ -368,15 +368,15 @@ def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=
         radius = 16 if src.width > 1024 or src.height > 576 else 12
     elif isinstance(radius, int):
         if radius <= 0:
-            raise ValueError(funcName + '\"radius\" must be strictly positive.')
+            raise ValueError(funcName + ': \"radius\" must be strictly positive.')
     else:
-        raise TypeError(funcName + '\"radius\" must be an int!')
+        raise TypeError(funcName + ': \"radius\" must be an int!')
 
     if elast is None:
         elast = 3.0
     elif isinstance(elast, int) or isinstance(elast, float):
         if elast < 1:
-            raise ValueError(funcName + ':valid range of \"elast\" is [1, +inf)!')
+            raise ValueError(funcName + ': Valid range of \"elast\" is [1, +inf)!')
     else:
         raise TypeError(funcName + ': \"elast\" must be an int or a float!')
 
@@ -391,7 +391,7 @@ def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=
     if smode is None:
         smode = 1
     elif smode not in [0, 1, 2, 3]:
-        raise ValueError(funcName + ': \"thr\" must be in [0, 1, 2, 3]!')
+        raise ValueError(funcName + ': \"smode\" must be in [0, 1, 2, 3]!')
     if smode == 0:
         if radius not in list(range(1, 68+1)):
             raise ValueError(funcName + ': \"radius\" must be in 1-68 for smode=0 !')
@@ -401,11 +401,11 @@ def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=
 
     if thr_det is None:
         thr_det = 2 + round(max(thr - 0.35, 0) / 0.3)
-    elif isinstance(thr_det, float):
+    elif isinstance(thr_det, int) or isinstance(thr_det, float):
         if thr_det <= 0.0:
             raise ValueError(funcName + '" \"thr_det\" must be strictly positive!')
     else:
-        raise TypeError(funcName + ': \"mask\" must be a float!')
+        raise TypeError(funcName + ': \"mask\" must be an int or a float!')
 
     if debug is None:
         debug = False
@@ -489,7 +489,7 @@ def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=
             dmask = core.rgvs.RemoveGrain([dmask], [11])
             if mask > 2:
                 dmask = core.std.Convolution(dmask, matrix=[1, 1, 1, 1, 1, 1, 1, 1, 1])
-        dmask = core.fmtc.bitdepth(dmask, bits=16)
+        dmask = core.fmtc.bitdepth(dmask, bits=16, fulls=True, fulld=True)
         res_16 = core.std.MaskedMerge(flt, src_16, dmask, planes=planes, first_plane=True)
     else:
         res_16 = flt
@@ -499,9 +499,9 @@ def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=
                                                    ampn=ampn, dyn=dyn, staticnoise=staticnoise, patsize=pat)
 
     if debug:
-        last = mvf.GetPlane(dmask, 0)
-        if lsb:
-            last = core.fmtc.bitdepth(last, bits=16)
+        last = dmask
+        if not lsb:
+            last = core.fmtc.bitdepth(last, bits=8, fulls=True, fulld=True)
     else:
         last = result
 
@@ -560,7 +560,7 @@ def GF3_dfttest(src, ref, radius, thr, elast, planes):
 def GF3_bilateral_multistage(src, ref, radius, thr, elast, planes):
     core = vs.get_core()
 
-    last = core.bilateral.Bilateral(src, ref=ref, sigmaS=radius / 2, sigmaR=thr / 255, planes=planes, algorithm=0) # Probably error using "thr".
+    last = core.bilateral.Bilateral(src, ref=ref, sigmaS=radius / 2, sigmaR=thr / 255, planes=planes, algorithm=0) # The use of "thr" may be wrong
 
     last = mvf.LimitFilter(last, src, thr=thr, elast=elast, planes=planes)
 
