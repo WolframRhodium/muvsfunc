@@ -22,6 +22,7 @@ Functions:
     TCannyHelper
     MergeChroma
     firniture
+    BoxFilter
 '''
 
 import vapoursynth as vs
@@ -444,7 +445,7 @@ def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=
 
     if ref is None:
         ref = src
-    elif not isinstance(src, vs.VideoNode):
+    elif not isinstance(ref, vs.VideoNode):
         raise TypeError(funcName + ': \"ref\" must be a clip!')
     if ref.format.color_family not in [vs.YUV, vs.GRAY, vs.YCOCG]:
         raise TypeError(funcName + ': \"ref\" must be YUV, GRAY or YCOCG color family!')
@@ -1513,3 +1514,33 @@ def firniture(clip, width, height, kernel='binomial7', taps=None, gamma=False, *
         clip = nnrs.LinearToGamma(clip)
     
     return clip
+
+def BoxFilter(input, radius=9, planes=None):
+    '''Box filter
+    
+    Performs a box filtering on the input clip. Box filtering consists in averaging all the pixels in a square area whose center is the output pixel. You can approximate a large gaussian filtering by cascading a few box filters.
+    
+    Args:
+        input: Input clip to be filtered.
+        radius: (int) Size of the averaged square. Its width is radius*2-1. Range is 2–9.
+        planes: (int []) Whether to process the corresponding plane. By default, every plane will be processed.
+            The unprocessed planes will be copied from the source clip, "input".
+    '''
+    
+    core = vs.get_core()
+    funcName = 'BoxFilter'
+    
+    if not isinstance(input, vs.VideoNode):
+        raise TypeError(funcName + ': \"input\" must be a clip!')
+    
+    if radius not in range(2, 10):
+        raise ValueError(funcName + ': \"radius\" must be in [2-9]!')
+    
+    if planes is None:
+        planes = list(range(input.format.num_planes))
+    
+    # process
+    if radius == 2:
+        return core.rgvs.RemoveGrain(input, [(20 if i in planes else 0) for i in range(input.format.num_planes)])
+    else:
+        return core.std.Convolution(input, [1] * (radius * 2 - 1), planes=planes, mode='v').std.Convolution([1] * (radius * 2 - 1), planes=planes, mode='h')
