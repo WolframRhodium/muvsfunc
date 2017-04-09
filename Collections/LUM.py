@@ -4,6 +4,7 @@ def lum_smoother(input, k):
 
     return haf.Clamp(input, max, min)  # or just core.rgvs.RemoveGrain(input, k - 1)
 
+
 def lum_sharper(input, l=2):
     if l not in range(1, 6):
         raise ValueError("\'l\' must be in [1, 5] !")
@@ -12,6 +13,7 @@ def lum_sharper(input, l=2):
     high1 = muf.Sort(input, l, mode='max')
 
     return core.std.Expr([input, low1, high1], ['x y z + 2 / <= x y min x z max ?'])
+
 
 def lum_filter(input, k=3, l=4):
     if (not isinstance(l, int)) or (not isinstance(l, int)) or (l < k):
@@ -24,9 +26,10 @@ def lum_filter(input, k=3, l=4):
 
     return core.std.Expr([input, low_k, low_l, high_l, high_k], ['x z a + 2 / <= x y < y x z min ? x b > b x a max ? ?', ''])
 
+
 def asymmetric_lum_filter(input, k=3, l=4, q=6, r=7):
     if (not isinstance(k, int)) or (not isinstance(l, int)) or (not isinstance(q, int)) or (not isinstance(r, int)) or (not 1 <= k <= l <= q <= r <= 9):
-        raise ValueError("\'k\', \'l\', \'q\' and \'r\' must be in [1, 9] in increasing order!")
+        raise ValueError("\'k\', \'l\', \'q\' and \'r\' must be in [1, 9] in ascending order!")
 
     order_k = muf.Sort(input, k, mode='min')
     order_l = muf.Sort(input, l, mode='min')
@@ -34,4 +37,4 @@ def asymmetric_lum_filter(input, k=3, l=4, q=6, r=7):
     order_r = muf.Sort(input, r, mode='min')
 
     return core.std.Expr([input, order_k, order_l, order_q, order_r], 
-        ['x x y > x z min x z max ? x a > x b min x a max ? + 2 / <= x y > x z min x z max ? x a > x b min x a max ? ?'])
+        ['x z a + 2 / <= x y < y x z min ? x b > b x a max ? ?'])
