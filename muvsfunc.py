@@ -1534,8 +1534,8 @@ def BoxFilter(input, radius=9, planes=None):
         planes = list(range(input.format.num_planes))
     
     # process
-    if radius == 2:
-        return core.rgvs.RemoveGrain(input, [(20 if i in planes else 0) for i in range(input.format.num_planes)])
+    if radius == 2 or radius == 3:
+        return core.std.Convolution(input, [1] * (radius * 2 - 1) * (radius * 2 - 1), planes=planes)
     else:
         return core.std.Convolution(input, [1] * (radius * 2 - 1), planes=planes, mode='v').std.Convolution([1] * (radius * 2 - 1), planes=planes, mode='h')
 
