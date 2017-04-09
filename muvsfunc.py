@@ -23,6 +23,7 @@ Functions:
     MergeChroma
     firniture
     BoxFilter
+    SmoothGrad
 '''
 
 import vapoursynth as vs
@@ -1544,3 +1545,38 @@ def BoxFilter(input, radius=9, planes=None):
         return core.rgvs.RemoveGrain(input, [(20 if i in planes else 0) for i in range(input.format.num_planes)])
     else:
         return core.std.Convolution(input, [1] * (radius * 2 - 1), planes=planes, mode='v').std.Convolution([1] * (radius * 2 - 1), planes=planes, mode='h')
+
+def SmoothGrad(input, radius=9, thr=0.25, ref=None, elast=3.0, planes=None):
+    '''Avisynth's SmoothGrad
+    
+    SmoothGrad smooths the low gradients or flat areas of a 16-bit clip. It proceeds by applying a huge blur filter and comparing the result with the input data for each pixel.
+    If the difference is below the specified threshold, the filtered version is taken into account, otherwise the input pixel remains unchanged.
+    
+    Args:
+        input: Input clip to be filtered.
+        radius: (int) Size of the averaged square. Its width is radius*2-1. Range is 2–9.
+        thr: (float) Threshold between reference data and filtered data, on an 8-bit scale.
+        ref: Reference clip for the filter output comparison. Specify here the input clip when you cascade several SmoothGrad calls.
+            When undefined, the input clip is taken as reference.
+        elast: (float) To avoid artifacts, the threshold has some kind of elasticity.
+            Value differences falling over this threshold are gradually attenuated, up to thr * elast > 1.
+        planes: (int []) Whether to process the corresponding plane. By default, every plane will be processed.
+            The unprocessed planes will be copied from the source clip, "input".
+    '''
+        
+    core = vs.get_core()
+    funcName = 'SmoothGrad'
+    
+    if not isinstance(input, vs.VideoNode):
+        raise TypeError(funcName + ': \"input\" must be a clip!')
+    
+    if radius not in range(2, 10):  # Due to std.Convolution's restriction
+        raise ValueError(funcName + ': \"radius\" must be in [2-9]!')
+    
+    if planes is None:
+        planes = list(range(input.format.num_planes))
+    
+    # process
+    smooth = BoxFilter(input, radius, planes)
+    
+    return mvf.LimitFilter(smooth, input, ref, thr, elast, planes=planes)
