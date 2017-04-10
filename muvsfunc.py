@@ -1539,7 +1539,7 @@ def BoxFilter(input, radius=9, planes=None):
     else:
         return core.std.Convolution(input, [1] * (radius * 2 - 1), planes=planes, mode='v').std.Convolution([1] * (radius * 2 - 1), planes=planes, mode='h')
 
-def SmoothGrad(input, radius=9, thr=0.25, ref=None, elast=3.0, planes=None):
+def SmoothGrad(input, radius=9, thr=0.25, ref=None, elast=3.0, planes=None, **limit_filter_args):
     '''Avisynth's SmoothGrad
     
     SmoothGrad smooths the low gradients or flat areas of a 16-bit clip. It proceeds by applying a huge blur filter and comparing the result with the input data for each pixel.
@@ -1555,6 +1555,7 @@ def SmoothGrad(input, radius=9, thr=0.25, ref=None, elast=3.0, planes=None):
             Value differences falling over this threshold are gradually attenuated, up to thr * elast > 1.
         planes: (int []) Whether to process the corresponding plane. By default, every plane will be processed.
             The unprocessed planes will be copied from the source clip, "input".
+        limit_filter_args: (dictionary) Remaining mvf.LimitFilter's arguments.
     '''
         
     core = vs.get_core()
@@ -1572,4 +1573,4 @@ def SmoothGrad(input, radius=9, thr=0.25, ref=None, elast=3.0, planes=None):
     # process
     smooth = BoxFilter(input, radius, planes)
     
-    return mvf.LimitFilter(smooth, input, ref, thr, elast, planes=planes)
+    return mvf.LimitFilter(smooth, input, ref, thr, elast, planes=planes, **limit_filter_args)
