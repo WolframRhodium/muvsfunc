@@ -335,14 +335,17 @@ def MultiRemoveGrain(input, mode=0, loop=1):
 def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=None, ampn=None,
              pat=None, dyn=None, lsb=None, staticnoise=None, smode=None, thr_det=None,
              debug=None, thrc=None, radiusc=None, elastc=None, planes=None, ref=None):
-    """GradFun3 by Firesledge v0.0.1
+    """GradFun3 by Firesledge v0.1.1
 
     Ported by Muonium  2016/6/18
     Ported from Dither_tools v1.27.2 (http://avisynth.nl/index.php/Dither_tools)
-    Currently only smode=1 and smode=2 is implemented in VapourSynth.
     Internal calculation precision is always 16 bits.
 
     Read the document of Avisynth version for more details.
+
+    Notes:
+        In this function I try to keep what original GradFun3 looks like.
+        It should be better to use Frechdachs's GradFun3 in his fvsfunc.py (https://gist.github.com/Frechdachs/353f6917d78bb99d93bfcea0f29062ed) which is more novel and powerful.
 
     Removed parameters list: 
         "dthr", "wmin", "thr_edg", "subspl", "lsb_in"
