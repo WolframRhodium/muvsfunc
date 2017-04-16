@@ -344,8 +344,10 @@ def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=
     Read the document of Avisynth version for more details.
 
     Notes:
-        In this function I try to keep what original GradFun3 looks like.
-        It should be better to use Frechdachs's GradFun3 in his fvsfunc.py (https://gist.github.com/Frechdachs/353f6917d78bb99d93bfcea0f29062ed) which is more novel and powerful.
+        1. In this function I try to keep the original look of GradFun3 in Avisynth.
+            It should be better to use Frechdachs's GradFun3 in his fvsfunc.py (https://gist.github.com/Frechdachs/353f6917d78bb99d93bfcea0f29062ed) which is more novel and powerful.
+
+        2. current smode=1 or 2 only support small "radius" (<=9).
 
     Removed parameters list: 
         "dthr", "wmin", "thr_edg", "subspl", "lsb_in"
@@ -510,7 +512,6 @@ def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=
     return last
 
 def GF3_smooth(src_16, ref_16, smode, radius, thr, elast, planes):
-    core = vs.get_core()
     funcName = 'GF3_smooth'
 
     if smode == 0:
@@ -525,8 +526,6 @@ def GF3_smooth(src_16, ref_16, smode, radius, thr, elast, planes):
         raise ValueError(funcName + ': wrong smode value!')
 
 def GF3_smoothgrad_multistage(src, ref, radius, thr, elast, planes):
-    core = vs.get_core()
-
     ela_2 = max(elast * 0.83, 1.0)
     ela_3 = max(elast * 0.67, 1.0)
     r2 = radius * 2 // 3
@@ -549,6 +548,7 @@ def GF3_smoothgrad_multistage_3(src, radius, thr, elast, planes):
 
 def GF3_dfttest(src, ref, radius, thr, elast, planes):
     core = vs.get_core()
+
     hrad = max(radius * 3 // 4, 1)
     last = core.dfttest.DFTTest(src, sigma=hrad * thr * thr * 32, sbsize=hrad * 4,
                                 sosize=hrad * 3, tbsize=1, planes=planes)
@@ -567,6 +567,7 @@ def GF3_bilateral_multistage(src, ref, radius, thr, elast, planes):
 
 def Build_gf3_range_mask(src, radius=1):
     core = vs.get_core()
+
     last = src
 
     if radius > 1:
