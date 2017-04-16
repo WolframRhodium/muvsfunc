@@ -508,6 +508,7 @@ def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=
 
 def GF3_smooth(src_16, ref_16, smode, radius, thr, elast, planes):
     core = vs.get_core()
+    funcName = 'GF3_smooth'
 
     if smode == 0:
         return GF3_smoothgrad_multistage(src_16, ref_16, radius, thr, elast, planes)
