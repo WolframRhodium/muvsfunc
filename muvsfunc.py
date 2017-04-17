@@ -24,6 +24,7 @@ Functions:
     firniture
     BoxFilter
     SmoothGrad
+    DeFilter
 '''
 
 import vapoursynth as vs
@@ -512,7 +513,7 @@ def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=
     return last
 
 def GF3_smooth(src_16, ref_16, smode, radius, thr, elast, planes):
-    funcName = 'GF3_smooth'
+    funcName = 'GradFun3'
 
     if smode == 0:
         return GF3_smoothgrad_multistage(src_16, ref_16, radius, thr, elast, planes)
@@ -1579,3 +1580,35 @@ def SmoothGrad(input, radius=9, thr=0.25, ref=None, elast=3.0, planes=None, **li
     smooth = BoxFilter(input, radius, planes)
     
     return mvf.LimitFilter(smooth, input, ref, thr, elast, planes=planes, **limit_filter_args)
+
+def DeFilter(input, fun, iter=10, planes=None, **fun_args):
+    '''Zero-order reverse filter (arXiv:1704.04037)
+
+    Args:
+        input: Input clip to be reversed.
+        fun: The function of how the input clip is filtered.
+        iter: (int) Number of iterations. Default is 10.
+        planes: (int []) Whether to process the corresponding plane. By default, every plane will be processed.
+            The unprocessed planes will be copied from the source clip, "input".
+        fun_args: (dictionary) Arguments which will be passed to fun. Alternative to functools.partial.
+
+    '''
+
+    core = vs.get_core()
+    funcName = 'DeFilter'
+
+    if not isinstance(input, vs.VideoNode):
+        raise TypeError(funcName + ': \"input\" must be a clip!')
+
+    if planes is None:
+        planes = list(range(input.format.num_planes))
+
+    # initialization
+    flt = input
+    calc_expr = 'x y + z -'
+
+    # iteration
+    for i in range(iter):
+        flt = core.std.Expr([flt, input, fun(flt, **fun_args)], [(calc_expr if i in planes else '') for i in range(input.format.num_planes)])
+    
+    return flt
