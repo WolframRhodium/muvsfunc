@@ -86,7 +86,7 @@ def LDMerge(flt_h, flt_v, src, mrad=0, show=0, planes=None, convknl=1, conv_div=
 
     if planes is None:
         planes = list(range(flt_h.format.num_planes))
-    elif if isinstance(planes, int):
+    elif isinstance(planes, int):
         planes = [planes]
 
     bits = flt_h.format.bits_per_sample
@@ -197,7 +197,7 @@ def ExInpand(input, mrad=0, mode='rectangle', planes=None):
 
     if planes is None:
         planes = list(range(input.format.num_planes))
-    elif if isinstance(planes, int):
+    elif isinstance(planes, int):
         planes = [planes]
 
     if isinstance(mrad, int):
@@ -277,7 +277,7 @@ def InDeflate(input, msmooth=0, planes=None):
 
     if planes is None:
         planes = list(range(input.format.num_planes))
-    elif if isinstance(planes, int):
+    elif isinstance(planes, int):
         planes = [planes]
 
     if isinstance(msmooth, int):
@@ -452,7 +452,7 @@ def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=
 
     if planes is None:
         planes = list(range(src.format.num_planes))
-    elif if isinstance(planes, int):
+    elif isinstance(planes, int):
         planes = [planes]
 
     if ref is None:
@@ -1051,7 +1051,7 @@ def TEdge(input, min=0, max=65535, planes=None, rshift=0):
 
     if planes is None:
         planes = list(range(input.format.num_planes))
-    elif if isinstance(planes, int):
+    elif isinstance(planes, int):
         planes = [planes]
 
     rshift = 1 << rshift
@@ -1094,7 +1094,7 @@ def Sort(input, order=1, planes=None, mode='max'):
 
     if planes is None:
         planes = list(range(input.format.num_planes))
-    elif if isinstance(planes, int):
+    elif isinstance(planes, int):
         planes = [planes]
 
     if mode == 'min':
@@ -1306,7 +1306,7 @@ def FixTelecinedFades(input, mode=0, threshold=[0.0], color=[0.0], full=None, pl
 
     if planes is None:
         planes = list(range(input.format.num_planes))
-    elif if isinstance(planes, int):
+    elif isinstance(planes, int):
         planes = [planes]
     
     # internal function
@@ -1550,7 +1550,7 @@ def BoxFilter(input, radius=9, planes=None):
     
     if planes is None:
         planes = list(range(input.format.num_planes))
-    elif if isinstance(planes, int):
+    elif isinstance(planes, int):
         planes = [planes]
     
     # process
@@ -1589,7 +1589,7 @@ def SmoothGrad(input, radius=9, thr=0.25, ref=None, elast=3.0, planes=None, **li
     
     if planes is None:
         planes = list(range(input.format.num_planes))
-    elif if isinstance(planes, int):
+    elif isinstance(planes, int):
         planes = [planes]
     
     # process
@@ -1618,7 +1618,7 @@ def DeFilter(input, fun, iter=10, planes=None, **fun_args):
 
     if planes is None:
         planes = list(range(input.format.num_planes))
-    elif if isinstance(planes, int):
+    elif isinstance(planes, int):
         planes = [planes]
 
     # initialization
