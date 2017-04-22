@@ -25,6 +25,7 @@ Functions:
     BoxFilter
     SmoothGrad
     DeFilter
+    scale (the old style in havsfunc)
 '''
 
 import vapoursynth as vs
@@ -897,7 +898,7 @@ def maa(input):
     else:
         input_src = None
 
-    mask = core.std.Convolution(input, [0, -1, 0, -1, 0, 1, 0, 1, 0], divisor=2, saturate=False).std.Binarize(haf.scale(7, bits) + 1)   
+    mask = core.std.Convolution(input, [0, -1, 0, -1, 0, 1, 0, 1, 0], divisor=2, saturate=False).std.Binarize(scale(7, bits) + 1)   
     aa_clip = core.resize.Spline36(input, w * 2, h * 2)
     aa_clip = core.sangnom.SangNom(aa_clip).std.Transpose()
     aa_clip = core.sangnom.SangNom(aa_clip).std.Transpose()
@@ -963,7 +964,7 @@ def SharpAAMcmod(orig, dark=0.2, thin=10, sharp=150, smooth=-1, stabilize=False,
     if aablk is None:
         aablk = 16 if w > 1100 else 8
     
-    m = core.std.Expr([core.std.Convolution(orig, [5, 10, 5, 0, 0, 0, -5, -10, -5], divisor=4, saturate=False), core.std.Convolution(orig, [5, 0, -5, 10, 0, -10, 5, 0, -5], divisor=4, saturate=False)], ['x y max {neutral8} / 0.86 pow {peak8} *'.format(neutral8=haf.scale(128, bits), peak8=haf.scale(255, bits))])
+    m = core.std.Expr([core.std.Convolution(orig, [5, 10, 5, 0, 0, 0, -5, -10, -5], divisor=4, saturate=False), core.std.Convolution(orig, [5, 0, -5, 10, 0, -10, 5, 0, -5], divisor=4, saturate=False)], ['x y max {neutral8} / 0.86 pow {peak8} *'.format(neutral8=scale(128, bits), peak8=scale(255, bits))])
 
     if thin == 0 and dark == 0:
         preaa = orig
@@ -1017,7 +1018,7 @@ def SharpAAMcmod(orig, dark=0.2, thin=10, sharp=150, smooth=-1, stabilize=False,
             raise ValueError(funcName + ': valid values of \"tradius\" are 1, 2 and 3!')
         
         reduc = 0.4
-        sDD = core.std.Expr([sD, sDD], ['x {neutral} - abs y {neutral} - abs < x y ?'.format(neutral=haf.scale(128, bits))]).std.Merge(sDD, 1.0 - reduc)
+        sDD = core.std.Expr([sD, sDD], ['x {neutral} - abs y {neutral} - abs < x y ?'.format(neutral=scale(128, bits))]).std.Merge(sDD, 1.0 - reduc)
     
         last = core.std.MakeDiff(orig, sDD)
     else:
@@ -1115,7 +1116,7 @@ def Sort(input, order=1, planes=None, mode='max'):
 
     return sort
 
-def Soothe_mod(input, source, keep=24, radius=1, scenechange=32, use_misc=False):
+def Soothe_mod(input, source, keep=24, radius=1, scenechange=32, use_misc=True):
     """Modified Soothe().
 
     Basd on Didée, 6th September 2005, http://forum.doom9.org/showthread.php?p=708217#post708217
@@ -1131,7 +1132,7 @@ def Soothe_mod(input, source, keep=24, radius=1, scenechange=32, use_misc=False)
         keep: (0~100). Minimum percent of the original sharpening to keep. Default is 24.
         radius: (1~7 (use_misc=True) or 1~12 (use_misc=False)) Temporal radius of AverageFrames. Default is 1.
         scenechange: (int) Argument in scenechange detection. Default is 32.
-        use_misc: (bint) Whether to use miscellaneous filters. Default is False.
+        use_misc: (bint) Whether to use miscellaneous filters. Default is True.
 
     Examples: (in Avisynth)
         We use LimitedSharpen() as sharpener, and we'll keep at least 20% of its result:
@@ -1176,8 +1177,12 @@ def Soothe_mod(input, source, keep=24, radius=1, scenechange=32, use_misc=False)
     if use_misc:
         diff2 = TemporalSoften(diff, radius, scenechange)
     else:
-        diff2 = haf.TemporalSoften(diff, radius, haf.scale(255, bits), 0, scenechange)
-    expr = 'x {neutral} - y {neutral} - * 0 < x {neutral} - {KP} * {neutral} + x {neutral} - abs y {neutral} - abs > x {KP} * y {iKP} * + x ? ?'.format(neutral=haf.scale(128, bits), KP=keep/100, iKP=1-keep/100)
+        if 'TemporalSoften' in dir(haf):
+            diff2 = haf.TemporalSoften(diff, radius, scale(255, bits), 0, scenechange)
+        else:
+            raise NameError(funcName + ': \"TemporalSoften\" has been deprecated from the latest havsfunc. If you would like to use it, copy the old function in https://github.com/HomeOfVapourSynthEvolution/havsfunc/blob/0f5e6c5c2f1e825caf17f6b7de6edd4a0e13d27d/havsfunc.py#L4300 and function set_scenechange() in the following line 4320 to havsfunc in your disk.')
+
+    expr = 'x {neutral} - y {neutral} - * 0 < x {neutral} - {KP} * {neutral} + x {neutral} - abs y {neutral} - abs > x {KP} * y {iKP} * + x ? ?'.format(neutral=scale(128, bits), KP=keep/100, iKP=1-keep/100)
     diff3 = core.std.Expr([diff, diff2], [expr])
     
     last = core.std.MakeDiff(source, diff3)
@@ -1630,3 +1635,10 @@ def DeFilter(input, fun, iter=10, planes=None, **fun_args):
         flt = core.std.Expr([flt, input, fun(flt, **fun_args)], [(calc_expr if i in planes else '') for i in range(input.format.num_planes)])
     
     return flt
+
+def scale(val, bits):
+    '''The old scale function in havsfunc.
+    
+    '''
+
+    return val * ((1 << bits) - 1) // 255
