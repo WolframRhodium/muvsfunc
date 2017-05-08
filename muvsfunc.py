@@ -625,8 +625,7 @@ def AnimeMask(input, shift=0, expr=None, mode=1, resample_args=dict(kernel='bicu
 
     if mode == -1:
         input = core.std.Invert(input)
-        shift1 = -shift1
-        shift2 = -shift2
+        shift = -shift
     
     bits = input.format.bits_per_sample
     
