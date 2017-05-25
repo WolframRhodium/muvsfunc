@@ -25,7 +25,8 @@ Functions:
     BoxFilter
     SmoothGrad
     DeFilter
-    scale (the old style in havsfunc)
+    scale (using the old expression in havsfunc)
+    ColorBarsHD
 '''
 
 import vapoursynth as vs
@@ -1641,3 +1642,88 @@ def scale(val, bits):
     '''
 
     return val * ((1 << bits) - 1) // 255
+
+def ColorBarsHD(clip=None, width=1288, height=720):
+    '''Avisynth's ColorBarsHD()
+
+    It produces a video clip containing SMPTE color bars (Rec. ITU-R BT.709 / arib std b28 v1.0) scaled to any image size.
+    By default, a 1288×720, YV24, TV range, 29.97 fps, 1 frame clip is produced.
+
+    Requirment:
+        mt_lutspa by tp7 (https://gist.githubusercontent.com/tp7/1e39044e1b660ef0a02c)
+
+    Args:
+        clip: 'clip' in std.Blankclip(). The output clip will copy its property.
+        width, height: (int) The size of the returned clip.
+            Nearest 16:9 pixel exact sizes
+            56*X x 12*Y
+             728 x  480  ntsc anamorphic
+             728 x  576  pal anamorphic
+             840 x  480
+            1008 x  576
+            1288 x  720 <- default
+            1456 x 1080  hd anamorphic
+            1904 x 1080
+
+
+    '''
+
+    core = vs.get_core()
+    funcName = 'ColorBarsHD'
+    from mt_lutspa import lutspa
+    
+    if clip is not None and not isinstance(clip, vs.VideoNode):
+        raise TypeError(funcName + ': \"clip\" must be a clip!')
+
+    c = round(width * 3 / 28)
+    d = round((width - c * 7) / 2)
+    
+    p4 = round(height / 4)
+    p23 = round(height / 12)
+    p1 = height - p23 * 2 - p4
+
+    blkclip_args = dict(format=vs.YUV444P8, length=1, fpsnum=30000, fpsden=1001)
+    
+    pattern1_colors = dict(Gray40=[104, 128, 128], White75=[180, 128, 128], Yellow=[168, 44, 136], Cyan=[145, 147, 44], Green=[134, 63, 52], Magenta=[63, 193, 204], Red=[51, 109, 212], Blue=[28, 212, 120])
+    Gray40 = core.std.BlankClip(clip, d, p1, color=pattern1_colors['Gray40'], **blkclip_args)
+    White75 = core.std.BlankClip(clip, c, p1, color=pattern1_colors['White75'], **blkclip_args)
+    Yellow = core.std.BlankClip(clip, c, p1, color=pattern1_colors['Yellow'], **blkclip_args)
+    Cyan = core.std.BlankClip(clip, c, p1, color=pattern1_colors['Cyan'], **blkclip_args)
+    Green = core.std.BlankClip(clip, c, p1, color=pattern1_colors['Green'], **blkclip_args)
+    Magenta = core.std.BlankClip(clip, c, p1, color=pattern1_colors['Magenta'], **blkclip_args)
+    Red = core.std.BlankClip(clip, c, p1, color=pattern1_colors['Red'], **blkclip_args)
+    Blue = core.std.BlankClip(clip, c, p1, color=pattern1_colors['Blue'], **blkclip_args)
+    pattern1 = core.std.StackHorizontal([Gray40, White75, Yellow, Cyan, Green, Magenta, Red, Blue, Gray40])
+    
+    pattern2_colors = dict(Cyan100=[188, 154, 16], plusI=[16, 98, 161], White75=[180, 128, 128], Blue100=[32, 240, 118])
+    Cyan100 = core.std.BlankClip(clip, d, p23, color=pattern2_colors['Cyan100'], **blkclip_args)
+    plusI = core.std.BlankClip(clip, c, p23, color=pattern2_colors['plusI'], **blkclip_args)
+    White75 = core.std.BlankClip(clip, c*6, p23, color=pattern2_colors['White75'], **blkclip_args)
+    Blue100 = core.std.BlankClip(clip, d, p23, color=pattern2_colors['Blue100'], **blkclip_args)
+    pattern2 = core.std.StackHorizontal([Cyan100, plusI, White75, Blue100])
+    
+    pattern3_colors = dict(Yellow100=[219, 16, 138], Red100=[63, 102, 240])
+    Yellow100 = core.std.BlankClip(clip, d, p23, color=pattern3_colors['Yellow100'], **blkclip_args)
+    Y_Ramp_tmp = core.std.BlankClip(clip, c*7, 1, color=[0, 128, 128], **blkclip_args)
+    Y_Ramp = lutspa(Y_Ramp_tmp, mode='absolute', y_expr='220 x * {c} 7 * / 16 +'.format(c=c), chroma='copy')
+    Y_Ramp = core.resize.Point(Y_Ramp, c*7, p23)
+    Red100 = core.std.BlankClip(clip, d, p23, color=pattern3_colors['Red100'], **blkclip_args)
+    pattern3 = core.std.StackHorizontal([Yellow100, Y_Ramp, Red100])
+    
+    pattern4_colors = dict(Gray15=[49, 128, 128], Black0=[16, 128, 128], White100=[235, 128, 128], Black_neg2=[12, 128, 128], Black_pos2=[20, 128, 128], Black_pos4=[25, 128, 128])
+    Gray15 = core.std.BlankClip(clip, d, p4, color=pattern4_colors['Gray15'], **blkclip_args)
+    Black0_1 = core.std.BlankClip(clip, round(c*3/2), p4, color=pattern4_colors['Black0'], **blkclip_args)
+    White100 = core.std.BlankClip(clip, c*2, p4, color=pattern4_colors['White100'], **blkclip_args)
+    Black0_2 = core.std.BlankClip(clip, round(c*5/6), p4, color=pattern4_colors['Black0'], **blkclip_args)
+    Black_neg2 = core.std.BlankClip(clip, round(c/3), p4, color=pattern4_colors['Black_neg2'], **blkclip_args)
+    Black0_3 = core.std.BlankClip(clip, round(c/3), p4, color=pattern4_colors['Black0'], **blkclip_args)
+    Black_pos2 = core.std.BlankClip(clip, round(c/3), p4, color=pattern4_colors['Black_pos2'], **blkclip_args)
+    Black0_4 = Black0_3
+    Black_pos4 = core.std.BlankClip(clip, round(c/3), p4, color=pattern4_colors['Black_pos4'], **blkclip_args)
+    Black0_5 = core.std.BlankClip(clip, c, p4, color=pattern4_colors['Black0'], **blkclip_args)
+    pattern4 = core.std.StackHorizontal([Gray15, Black0_1, White100, Black0_2, Black_neg2, Black0_3, Black_pos2, Black0_4, Black_pos4, Black0_5, Gray15])
+    
+    #pattern = core.std.StackVertical([pattern1, pattern2, pattern3, pattern4])
+    #return pattern1, pattern2, pattern3, pattern4
+    pattern = core.std.StackVertical([pattern1, pattern2, pattern3, pattern4])
+    return pattern
