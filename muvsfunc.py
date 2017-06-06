@@ -125,6 +125,7 @@ def LDMerge(flt_h, flt_v, src, mrad=0, show=0, planes=None, convknl=1, conv_div=
     elif show == 3:
         return vmap
 
+
 def Compare(src, flt, power=1.5, chroma=False, mode=2):
     """A filter to check the difference of source clip and filtered clip.
 
@@ -169,6 +170,7 @@ def Compare(src, flt, power=1.5, chroma=False, mode=2):
         diff = core.std.Expr([src, flt], [expr[mode]] if chroma else [expr[mode], '{neutral}'.format(neutral=32768)])
 
     return diff
+
 
 def ExInpand(input, mrad=0, mode='rectangle', planes=None):
     """A filter to use std.Maximum()/std.Minimum() and their mix conveniently.
@@ -258,6 +260,7 @@ def ExInpand(input, mrad=0, mode='rectangle', planes=None):
 
     return clip
 
+
 def InDeflate(input, msmooth=0, planes=None):
     """A filter to use std.Inflate()/std.Deflate() and their mix conveniently.
 
@@ -304,6 +307,7 @@ def InDeflate(input, msmooth=0, planes=None):
     
     return clip
 
+
 def MultiRemoveGrain(input, mode=0, loop=1):
     """A filter to use rgvs.RemoveGrain() and their mix conveniently.
 
@@ -340,6 +344,7 @@ def MultiRemoveGrain(input, mode=0, loop=1):
         raise TypeError(funcName + ': \"mode\" must be an int, a list of ints or a list of a list of ints!')
 
     return clip
+
 
 def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=None, ampn=None,
              pat=None, dyn=None, lsb=None, staticnoise=None, smode=None, thr_det=None,
@@ -390,9 +395,6 @@ def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=
     elif isinstance(radius, int):
         if radius <= 0:
             raise ValueError(funcName + ': \"radius\" must be strictly positive.')
-        elif smode == 0 or smode == 3: # Use SmoothGrad
-            if radius > 9:
-                raise ValueError(funcName + ': \"radius\" must be in 2-9 for smode=0 or 3 !')
     else:
         raise TypeError(funcName + ': \"radius\" must be an int!')
 
@@ -522,6 +524,7 @@ def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=
 
     return last
 
+
 def GF3_smooth(src_16, ref_16, smode, radius, thr, elast, planes):
     funcName = 'GradFun3'
 
@@ -536,6 +539,7 @@ def GF3_smooth(src_16, ref_16, smode, radius, thr, elast, planes):
     else:
         raise ValueError(funcName + ': wrong smode value!')
 
+
 def GF3_smoothgrad_multistage(src, ref, radius, thr, elast, planes):
     ela_2 = max(elast * 0.83, 1.0)
     ela_3 = max(elast * 0.67, 1.0)
@@ -548,6 +552,7 @@ def GF3_smoothgrad_multistage(src, ref, radius, thr, elast, planes):
     last = SmoothGrad(radius=r4, thr=thr * 0.46, elast=ela_3, ref=ref, planes=planes) if r4 >= 1 else last
     return last
 
+
 def GF3_smoothgrad_multistage_3(src, radius, thr, elast, planes):
     core = vs.get_core()
 
@@ -556,6 +561,7 @@ def GF3_smoothgrad_multistage_3(src, radius, thr, elast, planes):
     last = Boxfilter(last, radius=radius, planes=planes)
     last = mvf.LimitFilter(last, src, thr=thr * 0.6, elast=elast, ref=ref, planes=planes)
     return last
+
 
 def GF3_dfttest(src, ref, radius, thr, elast, planes):
     core = vs.get_core()
@@ -567,6 +573,7 @@ def GF3_dfttest(src, ref, radius, thr, elast, planes):
 
     return last
 
+
 def GF3_bilateral_multistage(src, ref, radius, thr, elast, planes):
     core = vs.get_core()
 
@@ -575,6 +582,7 @@ def GF3_bilateral_multistage(src, ref, radius, thr, elast, planes):
     last = mvf.LimitFilter(last, src, thr=thr, elast=elast, planes=planes)
 
     return last
+
 
 def Build_gf3_range_mask(src, radius=1):
     core = vs.get_core()
@@ -597,6 +605,7 @@ def Build_gf3_range_mask(src, radius=1):
         last = core.std.Expr([last], [exp2])
 
     return last
+
 
 def AnimeMask(input, shift=0, expr=None, mode=1, resample_args=dict(kernel='bicubic')):
     """A filter to generate edge/ringing mask for anime based on gradient operator.
@@ -648,6 +657,7 @@ def AnimeMask(input, shift=0, expr=None, mode=1, resample_args=dict(kernel='bicu
 
     return mask
 
+
 def AnimeMask2(input, r=1.2, expr=None, mode=1):
     """Yet another filter to generate edge/ringing mask for anime.
 
@@ -691,6 +701,7 @@ def AnimeMask2(input, r=1.2, expr=None, mode=1):
         mask = core.fmtc.bitdepth(mask, bits=bits, fulls=True, fulld=True, dmode=1)
 
     return mask
+
 
 def PolygonExInpand(input, shift=0, shape=0, mixmode=0, noncentral=False, step=1, amp=1, fmtc_args=dict(), resample_args=dict(kernel='bilinear')):
     """ A filter to process mask based on resampling kernel.
@@ -797,6 +808,7 @@ def PolygonExInpand(input, shift=0, shape=0, mixmode=0, noncentral=False, step=1
 
     return core.std.Invert(mask5) if invert else mask5
 
+
 def Luma(input, plane=0, power=4):
     """ std.Lut() implementation of Luma() in Histogram() filter.
 
@@ -821,11 +833,13 @@ def Luma(input, plane=0, power=4):
     
     clip = mvf.GetPlane(input, plane)
     
+
     def calc_luma(x):
         p = x << power
         return (peak - (p & peak)) if (p & (peak + 1)) else (p & peak)
     
     return core.std.Lut(clip, function=calc_luma)
+
 
 def ediaa(a):
     """Suggested by Mystery Keeper in "Denoise of tv-anime" thread
@@ -851,6 +865,7 @@ def ediaa(a):
     else:
         return core.fmtc.bitdepth(last, bits=bits)
 
+
 def nnedi3aa(a):
     """Using nnedi3 (Emulgator):
 
@@ -874,7 +889,8 @@ def nnedi3aa(a):
         return last
     else:
         return core.fmtc.bitdepth(last, bits=bits)
-    
+
+
 def maa(input):
     """ Anti-aliasing with edge masking by martino, mask using "sobel" taken from Kintaro's useless filterscripts and modded by thetoof for spline36
 
@@ -909,6 +925,7 @@ def maa(input):
         return last
     else:
         return core.std.ShufflePlanes([last, input_src], planes=list(range(input_src.format.num_planes)), colorfamily=input_src.format.color_family)
+
 
 def SharpAAMcmod(orig, dark=0.2, thin=10, sharp=150, smooth=-1, stabilize=False, tradius=2, aapel=1, aaov=None, aablk=None, aatype='nnedi3'):
     """High quality MoComped AntiAliasing script.
@@ -1029,6 +1046,7 @@ def SharpAAMcmod(orig, dark=0.2, thin=10, sharp=150, smooth=-1, stabilize=False,
     else:
         return core.std.ShufflePlanes([last, orig_src], planes=list(range(orig_src.format.num_planes)), colorfamily=orig_src.format.color_family)
 
+
 def TEdge(input, min=0, max=65535, planes=None, rshift=0):
     """Detect edge using the kernel like TEdgeMask(type=2).
 
@@ -1067,6 +1085,7 @@ def TEdge(input, min=0, max=65535, planes=None, rshift=0):
     calcexpr = 'x x * y y * + {rshift} / sqrt'.format(rshift=rshift)
     expr = '{calc} {max} > {peak} {calc} {min} < {floor} {calc} ? ?'.format(calc=calcexpr, max=max, peak=peak, min=min, floor=floor)
     return core.std.Expr([gx, gy], [(expr if i in planes else '') for i in range(input.format.num_planes)])
+
 
 def Sort(input, order=1, planes=None, mode='max'):
     """Simple filter to get nth large value in 3x3.
@@ -1115,6 +1134,7 @@ def Sort(input, order=1, planes=None, mode='max'):
         sort = core.std.Minimum(input, planes=planes)
 
     return sort
+
 
 def Soothe_mod(input, source, keep=24, radius=1, scenechange=32, use_misc=True):
     """Modified Soothe().
@@ -1192,6 +1212,7 @@ def Soothe_mod(input, source, keep=24, radius=1, scenechange=32, use_misc=True):
     else:
         return core.std.ShufflePlanes([last, source_src], planes=list(range(source_src.format.num_planes)), colorfamily=source_src.format.color_family)
 
+
 def TemporalSoften(input, radius=4, scenechange=15):
     """TemporalSoften filter without thresholding using Miscellaneous filters.
 
@@ -1211,6 +1232,7 @@ def TemporalSoften(input, radius=4, scenechange=15):
     if scenechange:
         input = core.misc.SCDetect(input, scenechange/255)
     return core.misc.AverageFrames(input, [1 for i in range(2*radius + 1)], scenechange=scenechange)
+
 
 def FixTelecinedFades(input, mode=0, threshold=[0.0], color=[0.0], full=None, planes=None):
     """Fix Telecined Fades filter
@@ -1322,6 +1344,7 @@ def FixTelecinedFades(input, mode=0, threshold=[0.0], color=[0.0], full=None, pl
             flt = 'x {scale} *'.format(scale=scale)
         return flt if threshold == 0 else '{flt} x - abs {threshold} > {flt} x ?'.format(flt=flt, threshold=threshold)
     
+
     def Adjust(n, f, clip, core, mode, threshold, color):
         separated = core.std.SeparateFields(clip, tff=True)
         topField = core.std.SelectEvery(separated, 2, [0])
@@ -1387,6 +1410,7 @@ def FixTelecinedFades(input, mode=0, threshold=[0.0], color=[0.0], full=None, pl
         adjusted = core.std.ShufflePlanes([(adjusted if i in planes else input_src) for i in range(input.format.num_planes)], list(range(input.format.num_planes)), input.format.color_family)
     return adjusted
 
+
 def TCannyHelper(input, t_h=8.0, t_l=1.0, plane=0, returnAll=False, **canny_args):
     """A helper function for tcanny.TCanny(mode=0)
 
@@ -1430,6 +1454,7 @@ def TCannyHelper(input, t_h=8.0, t_l=1.0, plane=0, returnAll=False, **canny_args
     else:
         return view
 
+
 def MergeChroma(clip1, clip2, weight=1.0):
     """A function that merges the chroma from one videoclip into another. Ported from Avisynth's equivalent.
 
@@ -1472,6 +1497,7 @@ def MergeChroma(clip1, clip2, weight=1.0):
         output = core.std.ShufflePlanes([clip1, output_u, output_v], [0, 0, 0], vs.YUV)
 
         return output
+
 
 def firniture(clip, width, height, kernel='binomial7', taps=None, gamma=False, **resample_args):
     '''5 new interpolation kernels (via fmtconv)
@@ -1532,6 +1558,7 @@ def firniture(clip, width, height, kernel='binomial7', taps=None, gamma=False, *
     
     return clip
 
+
 def BoxFilter(input, radius=9, planes=None):
     '''Box filter
     
@@ -1550,19 +1577,23 @@ def BoxFilter(input, radius=9, planes=None):
     if not isinstance(input, vs.VideoNode):
         raise TypeError(funcName + ': \"input\" must be a clip!')
     
-    if radius not in range(2, 10):
-        raise ValueError(funcName + ': \"radius\" must be in [2-9]!')
-    
     if planes is None:
         planes = list(range(input.format.num_planes))
     elif isinstance(planes, int):
         planes = [planes]
     
     # process
-    if radius == 2 or radius == 3:
-        return core.std.Convolution(input, [1] * (radius * 2 - 1) * (radius * 2 - 1), planes=planes)
+    if core.std.get_functions().__contains__('BoxBlur'):
+        if radius == 2:
+            return core.std.Convolution(input, [1] * (radius * 2 - 1) * (radius * 2 - 1), planes=planes)
+        else:
+            return core.std.BoxBlur(input, hradius=radius-1, vradius=radius-1, planes=planes)
     else:
-        return core.std.Convolution(input, [1] * (radius * 2 - 1), planes=planes, mode='v').std.Convolution([1] * (radius * 2 - 1), planes=planes, mode='h')
+        if radius == 2 or radius == 3:
+            return core.std.Convolution(input, [1] * (radius * 2 - 1) * (radius * 2 - 1), planes=planes)
+        else:
+            return core.std.Convolution(input, [1] * (radius * 2 - 1), planes=planes, mode='v').std.Convolution([1] * (radius * 2 - 1), planes=planes, mode='h')
+
 
 def SmoothGrad(input, radius=9, thr=0.25, ref=None, elast=3.0, planes=None, **limit_filter_args):
     '''Avisynth's SmoothGrad
@@ -1602,6 +1633,7 @@ def SmoothGrad(input, radius=9, thr=0.25, ref=None, elast=3.0, planes=None, **li
     
     return mvf.LimitFilter(smooth, input, ref, thr, elast, planes=planes, **limit_filter_args)
 
+
 def DeFilter(input, fun, iter=10, planes=None, **fun_args):
     '''Zero-order reverse filter (arXiv:1704.04037)
 
@@ -1636,12 +1668,14 @@ def DeFilter(input, fun, iter=10, planes=None, **fun_args):
     
     return flt
 
+
 def scale(val, bits):
     '''The old scale function in havsfunc.
     
     '''
 
     return val * ((1 << bits) - 1) // 255
+
 
 def ColorBarsHD(clip=None, width=1288, height=720):
     '''Avisynth's ColorBarsHD()
