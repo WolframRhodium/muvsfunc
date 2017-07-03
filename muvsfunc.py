@@ -557,8 +557,8 @@ def GF3_smoothgrad_multistage_3(src, radius, thr, elast, planes):
     core = vs.get_core()
 
     ref = SmoothGrad(src, radius=radius // 3, thr=thr * 0.8, elast=elast)
-    last = Boxfilter(src, radius=radius, planes=planes)
-    last = Boxfilter(last, radius=radius, planes=planes)
+    last = BoxFilter(src, radius=radius, planes=planes)
+    last = BoxFilter(last, radius=radius, planes=planes)
     last = mvf.LimitFilter(last, src, thr=thr * 0.6, elast=elast, ref=ref, planes=planes)
     return last
 
