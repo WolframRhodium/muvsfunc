@@ -505,7 +505,7 @@ def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=
         if mask > 1:
             dmask = core.rgvs.RemoveGrain([dmask], [11])
             if mask > 2:
-                dmask = core.std.Convolution(dmask, matrix=[1, 1, 1, 1, 1, 1, 1, 1, 1])
+                dmask = core.std.Convolution(dmask, matrix=[1]*9)
         dmask = core.fmtc.bitdepth(dmask, bits=16, fulls=True, fulld=True)
         res_16 = core.std.MaskedMerge(flt, src_16, dmask, planes=planes, first_plane=True)
     else:
@@ -1230,8 +1230,14 @@ def TemporalSoften(input, radius=4, scenechange=15):
         raise TypeError(funcName + ': \"input\" must be a clip!')
 
     if scenechange:
-        input = core.misc.SCDetect(input, scenechange/255)
-    return core.misc.AverageFrames(input, [1 for i in range(2*radius + 1)], scenechange=scenechange)
+        if 'SCDetect' in dir(haf):
+            input = haf.SCDetect(input, scenechange / 255)
+        elif 'set_scenechange' in dir(haf):
+            input = haf.set_scenechange(input, scenechange)
+        else:
+            raise AttributeError('module \"havsfunc\" has no attribute \"SCDetect\"!')
+
+    return core.misc.AverageFrames(input, [1 for i in range(2 * radius + 1)], scenechange=scenechange)
 
 
 def FixTelecinedFades(input, mode=0, threshold=[0.0], color=[0.0], full=None, planes=None):
@@ -1761,3 +1767,225 @@ def ColorBarsHD(clip=None, width=1288, height=720):
     #return pattern1, pattern2, pattern3, pattern4
     pattern = core.std.StackVertical([pattern1, pattern2, pattern3, pattern4])
     return pattern
+
+
+def SeeSaw(clp, denoised=None, NRlimit=2, NRlimit2=None, Sstr=1.5, Slimit=None, Spower=4, SdampLo=None, SdampHi=24, Szp=18, bias=49, Smode=None, sootheT=49, sootheS=0, ssx=1.0, ssy=None):
+    """Avisynth's SeeSaw v0.3e (http://avisynth.nl/images/SeeSaw.avs)
+
+    (Full Name: "Denoiser-and-Sharpener-are-riding-the-SeeSaw" )
+
+    This function provides a (simple) implementation of the "crystality sharpen" principle.
+    In conjunction with a user-specified denoised clip, the aim is to enhance
+    weak detail, hopefully without oversharpening or creating jaggies on strong
+    detail, and produce a result that is temporally stable without detail shimmering, 
+    while keeping everything within reasonable bitrate requirements.
+    This is done by intermixing source, denoised source and a modified sharpening process,
+    in a seesaw-like manner.
+
+    This version is considered alpha.
+
+    Args:
+        clp: Input clip; the noisy source.
+        deonised: Input clip; denoised clip.
+            You're very much encouraged to feed your own custom denoised clip into SeeSaw.
+            If the "denoised" clip parameter is omitted, a simple "spatial pressdown" filter is used.
+        NRlimit: (int) Absolute limit for pixel change by denoising. Default is 2.
+        NRlimit2: (int) Limit for intermediate denoising. Default is NRlimit+1.
+        Sstr: (float) Sharpening strength (don't touch this too much). Default is 1.5.
+        Slimit: (int) Positive: absolute limit for pixel change by sharpening. 
+            Negative: pixel's sharpening difference is reduced to diff = pow(diff,1/abs(limit)).
+            Default is NRlimit+2.
+        Spower: (float) Exponent for modified sharpener. Default is 4.
+        Szp: (float) Zero point - below: overdrive sharpening - above: reduced sharpening. Default is 16+2.
+        SdampLo: (float) Reduces overdrive sharpening for very small changes. Default is Spower+1.
+        SdampHi: (float) Further reduces sharpening for big sharpening changes. Try 15~30. "0" disables. Default is 24.
+        bias: (float) Bias towards detail ( >= 50 ), or towards calm result ( < 50 ). Default is 49.
+        Smode: (int) RemoveGrain mode used in the modified sharpening function (sharpen2).
+            Default: ssx<1.35 ? 11 : ssx<1.51 ? 20 : 19
+        sootheT: (int) 0=minimum, 100=maximum soothing of sharpener's temporal instability.
+            (-100 .. -1 : will chain 2 instances of temporal soothing.)
+            Default is 49.
+        sootheS: (int) 0=minimum, 100=maximum smoothing of sharpener's spatial effect. Default is 0.
+        ssx, ssy: (int) SeeSaw doesn't require supersampling urgently, if at all, small values ~1.25 seem to be enough. Default is 1.0.
+
+    Usage: (in Avisynth)
+        a = TheNoisySource
+        b = a.YourPreferredDenoising()
+        SeeSaw( a, b, [parameters] )
+
+    """
+
+    core = vs.get_core()
+    funcName = 'SeeSaw'
+    
+    if not isinstance(clp, vs.VideoNode) or clp.format.color_family not in [vs.GRAY, vs.YUV, vs.YCOCG]:
+        raise TypeError(funcName + ': \"clp\" must be a Gray or YUV clip!')
+    
+    isGray = clp.format.color_family == vs.GRAY
+    bits = clp.format.bits_per_sample
+    
+    if NRlimit2 is None:
+        NRlimit2 = NRlimit + 1
+    
+    if Slimit is None:
+        Slimit = NRlimit + 2
+    
+    if SdampLo is None:
+        SdampLo = Spower + 1
+    
+    if Smode is None:
+        if ssx < 1.35:
+            Smode = 11
+        elif ssx < 1.51:
+            Smode = 20
+        else:
+            Smode = 19
+    
+    if ssy is None:
+        ssy = ssx
+    
+    Szrp = Szp / pow(Sstr, 0.25) / pow((ssx + ssy) / 2, 0.5)
+    SdampLo = SdampLo / pow(Sstr, 0.25) / pow((ssx + ssy) / 2, 0.5)
+
+    ox = clp.width
+    oy = clp.height
+    xss = haf.m4(ox * ssx)
+    yss = haf.m4(oy * ssy)
+    NRL = scale(NRlimit, bits)
+    NRL2 = scale(NRlimit2, bits)
+    NRLL = scale(round(NRlimit2 * 100 / bias - 1), bits)
+    SLIM = scale(abs(Slimit), bits)
+    multiple = scale(1, bits)
+    neutral = scale(128, bits)
+    peak = scale(255, bits)
+
+    if denoised is None:
+        dnexpr = 'x {NRL} + y < x {NRL} + x {NRL} - y > x {NRL} - y ? ?'.format(NRL=NRL)
+        denoised = core.std.Expr([clp, core.std.Median(clp, [0])], [dnexpr] if isGray else [dnexpr, ''])
+    else:
+        if not isinstance(denoised, vs.VideoNode):
+            raise TypeError(funcName + ': \"denoised\" must be a clip!')
+        if denoised.format.id != clp.format.id:
+            raise TypeError(funcName + ': \"denoised\" the same format as \"clp\"!')
+        if denoised.width != clp.width or denoised.height != clp.height:
+            raise ValueError(funcName + ': clip \"denoised\" must be of the same size as \"clp\"!')
+
+    if not isGray:
+        clp_src = clp
+        clp = mvf.GetPlane(clp)
+        denoised_src = denoised
+        denoised = mvf.GetPlane(denoised)
+    
+    NRdiff = core.std.MakeDiff(clp, denoised)
+
+    tameexpr = 'x {NRLL} + y < x {NRL2} + x {NRLL} - y > x {NRL2} - x {BIAS1} * y {BIAS2} * + 100 / ? ?'.format(NRLL=NRLL, NRL2=NRL2, BIAS1=bias, BIAS2=100-bias)
+    tame = core.std.Expr([clp, denoised], [tameexpr])
+    
+    head = SeeSaw_sharpen2(tame, Sstr, Spower, Szp, SdampLo, SdampHi, 4)
+
+    if ssx == 1 and ssy == 1:
+        last = core.rgvs.Repair(SeeSaw_sharpen2(tame, Sstr, Spower, Szp, SdampLo, SdampHi, Smode), head, [1])
+    else:
+        last = core.rgvs.Repair(SeeSaw_sharpen2(tame.fmtc.resample(xss, yss, kernel='lanczos').fmtc.bitdepth(bits=bits), Sstr, Spower, Szp, SdampLo, SdampHi, Smode), head.fmtc.resample(xss, yss, kernel='bicubic', a1=-0.2, a2=0.6).fmtc.bitdepth(bits=bits), [1]).fmtc.resample(ox, oy, kernel='lanczos').fmtc.bitdepth(bits=bits)
+        
+    last = SeeSaw_SootheSS(last, tame, sootheT, sootheS)
+    sharpdiff = core.std.MakeDiff(tame, last)
+
+    if NRlimit == 0:
+        last = clp
+    else:
+        NRdiff = core.std.MakeDiff(clp, denoised)
+        last = core.std.Expr([clp, NRdiff], ['y {neutral} {NRL} + > x {NRL} - y {neutral} {NRL} - < x {NRL} + x y {neutral} - - ? ?'.format(neutral=neutral, NRL=NRL)])
+    
+    if Slimit >= 0:
+        limitexpr = 'y {neutral} {SLIM} + > x {SLIM} - y {neutral} {SLIM} - < x {SLIM} + x y {neutral} - - ? ?'.format(neutral=neutral, SLIM=SLIM)
+        last = core.std.Expr([last, sharpdiff], [limitexpr])
+    else:
+        limitexpr = 'y {neutral} = x x y {neutral} - abs {multiple} / 1 {SLIM} / pow {multiple} * y {neutral} - y {neutral} - abs / * - ?'.format(neutral=neutral, SLIM=SLIM, multiple=multiple)
+        last = core.std.Expr([last, sharpdiff], [limitexpr])
+
+    return last if isGray else core.std.ShufflePlanes([last, clp_src], list(range(clp_src.format.num_planes)), clp_src.format.color_family)
+
+
+def SeeSaw_sharpen2(clp, strength, power, zp, lodmp, hidmp, rgmode):
+    """Modified sharpening function from SeeSaw()
+
+    """
+
+    core = vs.get_core()
+    funcName = 'SeeSaw_sharpen2'
+    
+    if not isinstance(clp, vs.VideoNode) or clp.format.color_family not in [vs.GRAY, vs.YUV, vs.YCOCG]:
+        raise TypeError(funcName + ': \"clp\" must be a Gray or YUV clip!')
+    
+    isGray = clp.format.color_family == vs.GRAY
+    bits = clp.format.bits_per_sample
+    multiple = scale(1, bits)
+    neutral = scale(128, bits)
+    peak = scale(255, bits)
+
+    power = int(power)
+    if power <= 0:
+        raise ValueError(funcName + ': Power must be integer value 1 or more')
+    power = 1 / power
+
+    # copied from havsfunc
+    def get_lut1(x):
+        if x == neutral:
+            return x
+        else:
+            tmp1 = abs(x - neutral) / multiple
+            tmp2 = tmp1 ** 2
+            tmp3 = zp ** 2
+            return min(max(math.floor(neutral + (tmp1 / zp) ** power * zp * (strength * multiple) * (1 if x > neutral else -1) * (tmp2 * (tmp3 + lodmp) / ((tmp2 + lodmp) * tmp3)) * ((1 + (0 if hidmp == 0 else (zp / hidmp) ** 4)) / (1 + (0 if hidmp == 0 else (tmp1 / hidmp) ** 4))) + 0.5), 0), peak)
+            
+    method = clp.rgvs.RemoveGrain([rgmode] if isGray else [rgmode, 0])
+    sharpdiff = core.std.MakeDiff(clp, method, [0]).std.Lut(function=get_lut1, planes=[0])
+    return core.std.MergeDiff(clp, sharpdiff, [0])
+
+
+def SeeSaw_SootheSS(sharp, orig, sootheT=25, sootheS=0):
+    """Soothe() function to stabilze sharpening from SeeSaw()
+
+    """
+
+    core = vs.get_core()
+    funcName = 'SeeSaw_SootheSS'
+    
+    if not isinstance(sharp, vs.VideoNode) or sharp.format.color_family not in [vs.GRAY, vs.YUV, vs.YCOCG]:
+        raise TypeError(funcName + ': \"sharp\" must be a Gray or YUV clip!')
+
+    if not isinstance(orig, vs.VideoNode):
+        raise TypeError(funcName + ': \"orig\" must be a clip!')
+    if orig.format.id != sharp.format.id:
+        raise TypeError(funcName + ': \"orig\" the same format as \"sharp\"!')
+    if orig.width != sharp.width or orig.height != sharp.height:
+        raise ValueError(funcName + ': clip \"orig\" must be of the same size as \"sharp\"!')
+
+    sootheT = max(min(sootheT, 100), -100)
+    sootheS = max(min(sootheS, 100), 0)
+    ST = 100 - abs(sootheT)
+    SSPT = 100 - abs(sootheS)
+    last = core.std.MakeDiff(orig, sharp, [0])
+    
+    neutral = 1 << (sharp.format.bits_per_sample - 1)
+    isGray = sharp.format.color_family == vs.GRAY
+
+    if not isGray:
+        sharp_src = sharp
+        sharp = mvf.GetPlane(sharp)
+        orig_src = orig
+        orig = mvf.GetPlane(orig)
+    
+    expr1 = 'x {neutral} < y {neutral} < xor x {neutral} - 100 / {SSPT} * {neutral} + x {neutral} - abs y {neutral} - abs > x {SSPT} * y {i} * + 100 / x ? ?'.format(neutral=neutral, SSPT=SSPT, i=100-SSPT)
+    expr2 = 'x {neutral} < y {neutral} < xor x {neutral} - 100 / {ST} * {neutral} + x {neutral} - abs y {neutral} - abs > x {ST} * y {i} * + 100 / x ? ?'.format(neutral=neutral, ST=ST, i=100-ST)
+
+    if sootheS != 0:
+        last = core.std.Expr([last, core.std.Convolution(last, [1]*9)], [expr1])
+    if sootheT != 0:
+        last = core.std.Expr([last, TemporalSoften(last, 1, 0)], [expr2])
+    if sootheT <= -1:
+        last = core.std.Expr([last, TemporalSoften(last, 1, 0)], [expr2])
+
+    last = core.std.MakeDiff(orig, last, [0])
+    return last if isGray else core.std.ShufflePlanes([last, orig_src], list(range(orig_src.format.num_planes)), orig_src.format.color_family)
