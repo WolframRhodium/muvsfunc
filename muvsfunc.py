@@ -27,6 +27,8 @@ Functions:
     DeFilter
     scale (using the old expression in havsfunc)
     ColorBarsHD
+    SeeSaw
+    abcxyz
 '''
 
 import vapoursynth as vs
@@ -1770,7 +1772,9 @@ def ColorBarsHD(clip=None, width=1288, height=720):
 
 
 def SeeSaw(clp, denoised=None, NRlimit=2, NRlimit2=None, Sstr=1.5, Slimit=None, Spower=4, SdampLo=None, SdampHi=24, Szp=18, bias=49, Smode=None, sootheT=49, sootheS=0, ssx=1.0, ssy=None):
-    """Avisynth's SeeSaw v0.3e (http://avisynth.nl/images/SeeSaw.avs)
+    """Avisynth's SeeSaw v0.3e
+
+    Author: Didée (http://avisynth.nl/images/SeeSaw.avs)
 
     (Full Name: "Denoiser-and-Sharpener-are-riding-the-SeeSaw" )
 
@@ -1989,3 +1993,48 @@ def SeeSaw_SootheSS(sharp, orig, sootheT=25, sootheS=0):
 
     last = core.std.MakeDiff(orig, last, [0])
     return last if isGray else core.std.ShufflePlanes([last, orig_src], list(range(orig_src.format.num_planes)), orig_src.format.color_family)
+
+
+def abcxyz(clp, rad=3.0, ss=1.5):
+    """Reduces halo artifacts that can occur when sharpening.
+
+    Author: Didée (http://avisynth.nl/images/Abcxyz_MT2.avsi)
+
+    Args:
+        clp: Input clip.
+        rad: (float) Radius for halo removal. Default is 3.0.
+        ss: (float) Radius for supersampling / ss=1.0 -> no supersampling. Range: 1.0 - ???. Default is 1.5
+
+    """
+
+    core = vs.get_core()
+    funcName = 'abcxyz'
+    
+    if not isinstance(clp, vs.VideoNode) or clp.format.color_family not in [vs.GRAY, vs.YUV, vs.YCOCG]:
+        raise TypeError(funcName + ': \"clp\" must be a Gray or YUV clip!')
+
+    ox = clp.width
+    oy = clp.height
+    
+    isGray = clp.format.color_family == vs.GRAY
+    bits = clp.format.bits_per_sample
+    
+    if not isGray:
+        clp_src = clp
+        clp = mvf.GetPlane(clp)
+
+    x = core.resize.Bicubic(clp, haf.m4(ox/rad), haf.m4(oy/rad)).resize.Bicubic(ox, oy, filter_param_a=1, filter_param_b=0)
+    y = core.std.Expr([clp, x], ['x {a} + y < x {a} + x {b} - y > x {b} - y ? ? x y - abs * x {c} x y - abs - * + {c} /'.format(a=scale(8, bits), b=scale(24, bits), c=scale(32, bits))])
+    z1 = core.rgvs.Repair(clp, y, [1])
+
+    if ss != 1:
+        maxbig = core.std.Maximum(y).resize.Bicubic(haf.m4(ox*ss), haf.m4(oy*ss))
+        minbig = core.std.Minimum(y).resize.Bicubic(haf.m4(ox*ss), haf.m4(oy*ss))
+        z2 = core.resize.Lanczos(clp, haf.m4(ox*ss), haf.m4(oy*ss))
+        z2 = core.std.Expr([z2, maxbig, minbig], ['x y min z max']).resize.Lanczos(ox, oy)
+        z1 = z2  # for simplicity
+    
+    if not isGray:
+        z1 = core.std.ShufflePlanes([z1, clp_src], list(range(clp_src.format.num_planes)), clp_src.format.color_family)
+    
+    return z1
