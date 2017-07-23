@@ -29,6 +29,8 @@ Functions:
     ColorBarsHD
     SeeSaw
     abcxyz
+    Sharpen
+    Blur
 '''
 
 import vapoursynth as vs
@@ -938,6 +940,8 @@ def SharpAAMcmod(orig, dark=0.2, thin=10, sharp=150, smooth=-1, stabilize=False,
     
     Developed in the "fine anime antialiasing thread".
 
+    Only the first plane (luma) will be processed.
+
     Args:
         orig: Source clip. Only the first plane will be processed.
         dark: (float) Strokes darkening strength. Default is 0.2.
@@ -1188,10 +1192,10 @@ def Soothe_mod(input, source, keep=24, radius=1, scenechange=32, use_misc=True):
     
     if use_misc:
         if not isinstance(radius, int) or (not(1 <= radius <= 12)):
-            raise ValueError(funcName + ': \'radius\' have not a correct value! [1-12]')
+            raise ValueError(funcName + ': \'radius\' have not a correct value! [1 ~ 12]')
     else:
         if not isinstance(radius, int) or (not(1 <= radius <= 7)):
-            raise ValueError(funcName + ': \'radius\' have not a correct value! [1-7]')
+            raise ValueError(funcName + ': \'radius\' have not a correct value! [1 ~ 7]')
     
     bits = source.format.bits_per_sample
     
@@ -1629,7 +1633,7 @@ def SmoothGrad(input, radius=9, thr=0.25, ref=None, elast=3.0, planes=None, **li
         raise TypeError(funcName + ': \"input\" must be a clip!')
     
     if radius not in range(2, 10):  # Due to std.Convolution's restriction
-        raise ValueError(funcName + ': \"radius\" must be in [2-9]!')
+        raise ValueError(funcName + ': \"radius\" must be in [2 ~ 9]!')
     
     if planes is None:
         planes = list(range(input.format.num_planes))
@@ -1788,6 +1792,8 @@ def SeeSaw(clp, denoised=None, NRlimit=2, NRlimit2=None, Sstr=1.5, Slimit=None, 
 
     This version is considered alpha.
 
+    Only the first plane (luma) will be processed.
+
     Args:
         clp: Input clip; the noisy source.
         deonised: Input clip; denoised clip.
@@ -1914,6 +1920,8 @@ def SeeSaw(clp, denoised=None, NRlimit=2, NRlimit2=None, Sstr=1.5, Slimit=None, 
 def SeeSaw_sharpen2(clp, strength, power, zp, lodmp, hidmp, rgmode):
     """Modified sharpening function from SeeSaw()
 
+    Only the first plane (luma) will be processed.
+
     """
 
     core = vs.get_core()
@@ -1950,6 +1958,8 @@ def SeeSaw_sharpen2(clp, strength, power, zp, lodmp, hidmp, rgmode):
 
 def SeeSaw_SootheSS(sharp, orig, sootheT=25, sootheS=0):
     """Soothe() function to stabilze sharpening from SeeSaw()
+
+    Only the first plane (luma) will be processed.
 
     """
 
@@ -2000,6 +2010,8 @@ def abcxyz(clp, rad=3.0, ss=1.5):
 
     Author: Didée (http://avisynth.nl/images/Abcxyz_MT2.avsi)
 
+    Only the first plane (luma) will be processed.
+
     Args:
         clp: Input clip.
         rad: (float) Radius for halo removal. Default is 3.0.
@@ -2038,3 +2050,94 @@ def abcxyz(clp, rad=3.0, ss=1.5):
         z1 = core.std.ShufflePlanes([z1, clp_src], list(range(clp_src.format.num_planes)), clp_src.format.color_family)
     
     return z1
+
+
+def Sharpen(clip, amountH=1.0, amountV=None, planes=None):
+    """Avisynth's internel filter Sharpen()
+
+    Simple 3x3-kernel sharpening filter.
+
+    Args: 
+        clip: Input clip.
+        amountH, amountV: (float) Sharpen uses the kernel is [(1-2^amount)/2, 2^amount, (1-2^amount)/2].
+            A value of 1.0 gets you a (-1/2, 2, -1/2) for example.
+            Negative Sharpen actually blurs the image.
+            The allowable range for Sharpen is from -1.58 to +1.0.
+            If \"amountV\" is not set manually, it will be set to \"amountH\".
+            Default is 1.0.
+        planes: (int []) Whether to process the corresponding plane. By default, every plane will be processed.
+            The unprocessed planes will be copied from the source clip, "clip".
+
+    """
+
+    core = vs.get_core()
+    funcName = 'Sharpen'
+    
+    if not isinstance(clip, vs.VideoNode):
+        raise TypeError(funcName + ': \"clip\" is not a clip!')
+
+    if amountH < -1.5849625 or amountH > 1:
+        raise ValueError(funcName + ': \'amountH\' have not a correct value! [-1.58 ~ 1]')
+
+    if amountV is None:
+        amountV = amountH
+    else:
+        if amountV < -1.5849625 or amountV > 1:
+            raise ValueError(funcName + ': \'amountV\' have not a correct value! [-1.58 ~ 1]')
+
+    if planes is None:
+        planes = list(range(clip.format.num_planes))
+
+    center_weight_v = math.floor(2 ** (amountV - 1) * 1023 + 0.5)
+    outer_weight_v = math.floor((0.25 - 2 ** (amountV - 2)) * 1023 + 0.5)
+    center_weight_h = math.floor(2 ** (amountH - 1) * 1023 + 0.5)
+    outer_weight_h = math.floor((0.25 - 2 ** (amountH - 2)) * 1023 + 0.5)
+
+    conv_mat_v = [outer_weight_v, center_weight_v, outer_weight_v]
+    conv_mat_h = [outer_weight_h, center_weight_h, outer_weight_h]
+
+    if math.fabs(amountH) >= 0.00002201361136: # log2(1+1/65536)
+        clip = core.std.Convolution(clip, conv_mat_v, planes=planes, mode='v')
+
+    if math.fabs(amountV) >= 0.00002201361136:
+        clip = core.std.Convolution(clip, conv_mat_h, planes=planes, mode='h')
+
+    return clip
+
+
+def Blur(clip, amountH=1.0, amountV=None, planes=None):
+    """Avisynth's internel filter Blur()
+
+    Simple 3x3-kernel blurring filter.
+    
+    In fact Blur(n) is just an alias for Sharpen(-n).
+
+    Args: 
+        clip: Input clip.
+        amountH, amountV: (float) Blur uses the kernel is [(1-1/2^amount)/2, 1/2^amount, (1-1/2^amount)/2].
+            A value of 1.0 gets you a (1/4, 1/2, 1/4) for example.
+            Negative Blur actually sharpens the image.
+            The allowable range for Blur is from -1.0 to +1.58.
+            If \"amountV\" is not set manually, it will be set to \"amountH\".
+            Default is 1.0.
+        planes: (int []) Whether to process the corresponding plane. By default, every plane will be processed.
+            The unprocessed planes will be copied from the source clip, "clip".
+
+    """
+
+    core = vs.get_core()
+    funcName = 'Blur'
+    
+    if not isinstance(clip, vs.VideoNode):
+        raise TypeError(funcName + ': \"clip\" is not a clip!')
+
+    if amountH < 0 or amountH > 1:
+        raise ValueError(funcName + ': \'amountH\' have not a correct value! [-1 ~ 1.58]')
+
+    if amountV is None:
+        amountV = amountH
+    else:
+        if amountV < 0 or amountV > 1:
+            raise ValueError(funcName + ': \'amountV\' have not a correct value! [-1 ~ 1.58]')
+
+    return Sharpen(clip, -amountH, -amountV, planes)
