@@ -31,6 +31,7 @@ Functions:
     abcxyz
     Sharpen
     Blur
+    BlindDeHalo3
 '''
 
 import vapoursynth as vs
@@ -44,14 +45,22 @@ def LDMerge(flt_h, flt_v, src, mrad=0, show=0, planes=None, convknl=1, conv_div=
 
     Args:
         flt_h, flt_v: Two filtered clip.
+
         src: Source clip. Must matc the filtered clip.
+
         mrad: (int) Expanding of gradient direction map. Default is 0.
+
         show: (bint) Whether to output gradient direction map. Default is False.
+
         planes: (int []) Whether to process the corresponding plane. By default, every plane will be processed.
             The unprocessed planes will be copied from the first clip, "flt_h".
+
         convknl: (0 or 1) Which convolution kernel is used to generate gradient direction map. Default is 1.
+
         conv_div: (int) Divisor in convolution filter. Default is the max value in convolution kernel.
+
         calc_mode: (0 or 1) Which method is used to calculate line direction map. Default is 0.
+
         power: (float) Power coefficient in "calc_mode=0".
 
     Example:
@@ -60,6 +69,7 @@ def LDMerge(flt_h, flt_v, src, mrad=0, show=0, planes=None, convknl=1, conv_div=
         vertical = core.std.Convolution(clip, matrix=[1, 4, 0, 4, 1], planes=[0], mode='v')
         blur_src = core.tcanny.TCanny(clip, mode=-1, planes=[0]) # Eliminate noise
         antialiasing = muf.LDMerge(horizontal, vertical, blur_src, mrad=1, planes=[0])
+
     """
 
     core = vs.get_core()
@@ -135,9 +145,13 @@ def Compare(src, flt, power=1.5, chroma=False, mode=2):
 
     Args:
         src: Source clip.
+
         flt: Filtered clip.
+
         power: (float) The variable in the processing kernel which controls the "strength" to increase difference. Default is 1.5.
+
         chroma: (bint) Whether to process chroma. Default is False.
+
         mode: (1 or 2) Different processing kernel. 1: non-linear; 2: linear.
 
     """
@@ -181,6 +195,7 @@ def ExInpand(input, mrad=0, mode='rectangle', planes=None):
 
     Args:
         input: Source clip.
+
         mrad: (int []) How many times to use std.Maximum()/std.Minimum(). Default is 0.
             Positive value indicates to use std.Maximum().
             Negative value indicates to use std.Minimum().
@@ -190,8 +205,10 @@ def ExInpand(input, mrad=0, mode='rectangle', planes=None):
                 mrad=[2, -1] is equvalant to clip.std.Maximum().std.Maximum().std.Minimum()
                 mrad=[[2, 1], [2, -1]] is equivalant to
                     haf.mt_expand_multi(clip, sw=2, sh=1).std.Maximum().std.Maximum().std.Minimum()
+
         mode: (0:"rectangle", 1:"losange" or 2:"ellipse", int or string). Default is "rectangle"
             The shape of the kernel.
+
         planes: (int []) Whether to process the corresponding plane. By default, every plane will be processed.
             The unprocessed planes will be copied from "input".
 
@@ -270,6 +287,7 @@ def InDeflate(input, msmooth=0, planes=None):
 
     Args:
         input: Source clip.
+
         msmooth: (int []) How many times to use std.Inflate()/std.Deflate(). Default is 0.
             The behaviour is the same as "mode" in ExInpand(). 
 
@@ -499,7 +517,7 @@ def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=
     # Edge/detail mask
     td_lo = max(thr_det * 0.75, 1.0)
     td_hi = max(thr_det, 1.0)
-    mexpr = 'x {tl} - {th} {tl} - / 255 *'.format(tl=td_lo - 0.0001, th=td_hi+ 0.0001)
+    mexpr = 'x {tl} - {th} {tl} - / 255 *'.format(tl=td_lo - 0.0001, th=td_hi + 0.0001)
 
     if mask > 0:
         dmask = mvf.GetPlane(src_8, 0)
@@ -618,9 +636,13 @@ def AnimeMask(input, shift=0, expr=None, mode=1, resample_args=dict(kernel='bicu
 
     Args:
         input: Source clip. Only the First plane will be processed.
+
         shift: (float, -1.5 ~ 1.5) Location of mask. Default is 0.
+
         expr: (string) Subsequent processing in std.Expr(). Default is "".
+
         mode: (-1 or 1) Different kernel. Typically, -1 is for edge, 1 is for ringing. Default is 1.
+
         resample_args: (dictinary) Which kernel is used to shift the mask. Default is dict(kernel='bicubic').
 
     """
@@ -669,8 +691,11 @@ def AnimeMask2(input, r=1.2, expr=None, mode=1):
 
     Args:
         input: Source clip. Only the First plane will be processed.
+
         r: (float, positive) Radius of resampling coefficient. Default is 1.2.
+
         expr: (string) Subsequent processing in std.Expr(). Default is "".
+
         mode: (-1 or 1) Different kernel. Typically, -1 is for edge, 1 is for ringing. Default is 1.
 
     """
@@ -712,14 +737,22 @@ def PolygonExInpand(input, shift=0, shape=0, mixmode=0, noncentral=False, step=1
 
     Args:
         input: Source clip. Only the First plane will be processed.
+
         shift: (float) How far to expand/inpand. Default is 0.
+
         shape: (int, 0:losange, 1:square, 2:octagon) The shape of expand/inpand kernel. Default is 0.
+
         mixmode: (int, 0:max, 1:arithmetic mean, 2:quadratic mean)
             Method used to calculate the mix of different mask. Default is 0.
+
         noncentral: (bint) Whether to calculate center pixel in mix process.
+
         step: (float) How far each step of expand/inpand. Default is 1.
+
         amp: (float) Linear multiple to strengthen the final mask. Default is 1.
+
         fmtc_args: (dictinary) Extra arguments of fmtc. Default is dict().
+
         resample_args: (dictinary) Controls which kernel is used to shift the mask. Default is dict(kernel='bilinear').
 
     """
@@ -818,7 +851,9 @@ def Luma(input, plane=0, power=4):
 
     Args:
         input: Source clip. Only the First plane will be processed.
+
         plane: (int) Which plane to be processed. Default is 0.
+
         power: (int) Coefficient in processing. Default is 4.
 
     """
@@ -938,28 +973,38 @@ def SharpAAMcmod(orig, dark=0.2, thin=10, sharp=150, smooth=-1, stabilize=False,
     "normal" sharpening and line darkening with optional temporal stabilization of these edges.
     Part of AnimeIVTC.
     
-    Developed in the "fine anime antialiasing thread".
+    Author: thetoof. Developed in the "fine anime antialiasing thread".
 
     Only the first plane (luma) will be processed.
 
     Args:
         orig: Source clip. Only the first plane will be processed.
+
         dark: (float) Strokes darkening strength. Default is 0.2.
+
         thin: (int) Presharpening. Default is 10.
+
         sharp: (int) Postsharpening. Default is 150.
-        smooth: (int) Postsmoothing. Default is -1
+
+        smooth: (int) Postsmoothing. Default is -1.
+
         stabilize: (bint) Use post stabilization with Motion Compensation. Default is False.
+
         tradius: (1~3) 1 = Degrain1 / 2 = Degrain2 / 3 = Degrain3. Default is 2.
+
         aapel: (int) Accuracy of the motion estimation. Default is 1
             (Value can only be 1, 2 or 4.
             1 means a precision to the pixel.
             2 means a precision to half a pixel,
             4 means a precision to quarter a pixel,
             produced by spatial interpolation (better but slower).)
+
         aaov: (int) Block overlap value (horizontal). Default is None.
             Must be even and less than block size.(Higher = more precise & slower)
+
         aablk: (4, 8, 16, 32, 64, 128) Size of a block (horizontal). Default is 8.
             Larger blocks are less sensitive to noise, are faster, but also less accurate.
+
         aatype: ("sangnom", "eedi2" or "nnedi3"). Default is "nnedi3".
             Use Sangnom() or EEDI2() or NNEDI3() for anti-aliasing.
 
@@ -1060,10 +1105,14 @@ def TEdge(input, min=0, max=65535, planes=None, rshift=0):
 
     Args:
         input: Source clip.
+
         min: (int) If output pixel value is lower than this, it will be zero. Default is 0.
+
         max: (int) If output pixel value is same or higher than this, it will be maximum value of the format. Default is 65535.
+
         planes: (int []) Whether to process the corresponding plane. By default, every plane will be processed.
             The unprocessed planes will be copied from "input".
+
         rshift: (int) Shift the output values to right by this count before clamp. Default is 0.
 
     """
@@ -1098,9 +1147,12 @@ def Sort(input, order=1, planes=None, mode='max'):
 
     Args:
         input: Source clip.
+
         order: (int) The order of value to get in 3x3 neighbourhood. Default is 1.
+
         planes: (int []) Whether to process the corresponding plane. By default, every plane will be processed.
             The unprocessed planes will be copied from "input".
+
         mode: ("max" or "min") How to measure order. Default is "max".
 
     """
@@ -1154,10 +1206,15 @@ def Soothe_mod(input, source, keep=24, radius=1, scenechange=32, use_misc=True):
 
     Args:
         input: Filtered clip.
+
         source: Source clip. Must match "input" clip.
+
         keep: (0~100). Minimum percent of the original sharpening to keep. Default is 24.
+
         radius: (1~7 (use_misc=True) or 1~12 (use_misc=False)) Temporal radius of AverageFrames. Default is 1.
+
         scenechange: (int) Argument in scenechange detection. Default is 32.
+
         use_misc: (bint) Whether to use miscellaneous filters. Default is True.
 
     Examples: (in Avisynth)
@@ -1261,19 +1318,24 @@ def FixTelecinedFades(input, mode=0, threshold=[0.0], color=[0.0], full=None, pl
     
     Args:
         input: Source clip. Can be 8-16 bits integer or 32 bits floating point based. Recommend to use 32 bits float format.
+
         mode: (0~2 []) Default is 0.
             0: adjust the brightness of both fields to match the average brightness of 2 fields.
             1: darken the brighter field to match the brightness of the darker field
             2: brighten the darker field to match the brightness of the brighter field
+
         threshold: (float [], positive) Default is 0.
             If the absolute difference between filtered pixel and input pixel is less than "threshold", then just copy the input pixel. 
             The value is always scaled by 8 bits integer.
             The last value in the list will be used for the remaining plane.
+
         color: (float [], positive) Default is 0.
             (It is difficult for me to describe the effect of this parameter.)
             The value is always scaled by 8 bits integer.
             The last value in the list will be used for the remaining plane.
+
         full: (bint) If not set, assume False(limited range) for Gray and YUV input, assume True(full range) for other input.
+
         planes: (int []) Whether to process the corresponding plane. By default, every plane will be processed.
             The unprocessed planes will be copied from "input".
 
@@ -1430,11 +1492,16 @@ def TCannyHelper(input, t_h=8.0, t_l=1.0, plane=0, returnAll=False, **canny_args
 
     Args:
         input: Source clip. Can be 8-16 bits integer or 32 bits floating point based.
+
         t_h: (float) TCanny's high gradient magnitude threshold for hysteresis. Default is 8.0.
+
         t_l: (float) TCanny's low gradient magnitude threshold for hysteresis. Default is 1.0.
+
         plane: (int) Which plane to be processed. Default is 0.
+
         returnAll: (bint) Whether to return a tuple containing every 4 temporary clips(strongEdge, weakEdge, view, tcannyOutput) or just "view" clip.
             Default is False.
+
         canny_args: (dictionary) Remaining TCanny's arguments (except "mode" and "planes").
 
     """
@@ -1474,7 +1541,9 @@ def MergeChroma(clip1, clip2, weight=1.0):
 
     Args:
         clip1: The clip that has the chroma pixels merged into (the base clip).
+
         clip2: The clip from which the chroma pixel data is taken (the overlay clip).
+
         weight: (float) Defines how much influence the new clip should have. Range is 0.0–1.0.
 
     """
@@ -1518,6 +1587,7 @@ def firniture(clip, width, height, kernel='binomial7', taps=None, gamma=False, *
     
     Args:
         clip: Source clip.
+
         width, height: (int) New picture width and height in pixels.
 
         kernel: (string) Default is "binomial7".
@@ -1528,8 +1598,10 @@ def firniture(clip, width, height, kernel='binomial7', taps=None, gamma=False, *
 
         taps: (int) Default is the last num in "kernel".
             "taps" in fmtc.resample. This parameter is now mostly superfluous. It has been retained so that you can truncate the kernels to shorter taps then they would normally use.
+
         gamma: (bool) Default is False.
             Set to true to turn on gamma correction for the y channel.
+
         resample_args: (dictionary) Remaining fmtc.resample's arguments.
 
     Examples:
@@ -1578,9 +1650,12 @@ def BoxFilter(input, radius=9, planes=None):
     
     Args:
         input: Input clip to be filtered.
+
         radius: (int) Size of the averaged square. Its width is radius*2-1. Range is 2–9.
+
         planes: (int []) Whether to process the corresponding plane. By default, every plane will be processed.
             The unprocessed planes will be copied from the source clip, "input".
+
     '''
     
     core = vs.get_core()
@@ -1615,15 +1690,22 @@ def SmoothGrad(input, radius=9, thr=0.25, ref=None, elast=3.0, planes=None, **li
     
     Args:
         input: Input clip to be filtered.
+
         radius: (int) Size of the averaged square. Its width is radius*2-1. Range is 2–9.
+
         thr: (float) Threshold between reference data and filtered data, on an 8-bit scale.
+
         ref: Reference clip for the filter output comparison. Specify here the input clip when you cascade several SmoothGrad calls.
             When undefined, the input clip is taken as reference.
+
         elast: (float) To avoid artifacts, the threshold has some kind of elasticity.
             Value differences falling over this threshold are gradually attenuated, up to thr * elast > 1.
+
         planes: (int []) Whether to process the corresponding plane. By default, every plane will be processed.
             The unprocessed planes will be copied from the source clip, "input".
+
         limit_filter_args: (dictionary) Remaining mvf.LimitFilter's arguments.
+
     '''
         
     core = vs.get_core()
@@ -1651,10 +1733,14 @@ def DeFilter(input, fun, iter=10, planes=None, **fun_args):
 
     Args:
         input: Input clip to be reversed.
+
         fun: The function of how the input clip is filtered.
+
         iter: (int) Number of iterations. Default is 10.
+
         planes: (int []) Whether to process the corresponding plane. By default, every plane will be processed.
             The unprocessed planes will be copied from the source clip, "input".
+
         fun_args: (dictionary) Arguments which will be passed to fun. Alternative to functools.partial.
 
     '''
@@ -1796,26 +1882,40 @@ def SeeSaw(clp, denoised=None, NRlimit=2, NRlimit2=None, Sstr=1.5, Slimit=None, 
 
     Args:
         clp: Input clip; the noisy source.
+
         deonised: Input clip; denoised clip.
             You're very much encouraged to feed your own custom denoised clip into SeeSaw.
             If the "denoised" clip parameter is omitted, a simple "spatial pressdown" filter is used.
+
         NRlimit: (int) Absolute limit for pixel change by denoising. Default is 2.
+
         NRlimit2: (int) Limit for intermediate denoising. Default is NRlimit+1.
+
         Sstr: (float) Sharpening strength (don't touch this too much). Default is 1.5.
+
         Slimit: (int) Positive: absolute limit for pixel change by sharpening. 
             Negative: pixel's sharpening difference is reduced to diff = pow(diff,1/abs(limit)).
             Default is NRlimit+2.
+
         Spower: (float) Exponent for modified sharpener. Default is 4.
+
         Szp: (float) Zero point - below: overdrive sharpening - above: reduced sharpening. Default is 16+2.
+
         SdampLo: (float) Reduces overdrive sharpening for very small changes. Default is Spower+1.
+
         SdampHi: (float) Further reduces sharpening for big sharpening changes. Try 15~30. "0" disables. Default is 24.
+
         bias: (float) Bias towards detail ( >= 50 ), or towards calm result ( < 50 ). Default is 49.
+
         Smode: (int) RemoveGrain mode used in the modified sharpening function (sharpen2).
             Default: ssx<1.35 ? 11 : ssx<1.51 ? 20 : 19
+
         sootheT: (int) 0=minimum, 100=maximum soothing of sharpener's temporal instability.
             (-100 .. -1 : will chain 2 instances of temporal soothing.)
             Default is 49.
+
         sootheS: (int) 0=minimum, 100=maximum smoothing of sharpener's spatial effect. Default is 0.
+
         ssx, ssy: (int) SeeSaw doesn't require supersampling urgently, if at all, small values ~1.25 seem to be enough. Default is 1.0.
 
     Usage: (in Avisynth)
@@ -2014,7 +2114,9 @@ def abcxyz(clp, rad=3.0, ss=1.5):
 
     Args:
         clp: Input clip.
+
         rad: (float) Radius for halo removal. Default is 3.0.
+
         ss: (float) Radius for supersampling / ss=1.0 -> no supersampling. Range: 1.0 - ???. Default is 1.5
 
     """
@@ -2037,6 +2139,7 @@ def abcxyz(clp, rad=3.0, ss=1.5):
 
     x = core.resize.Bicubic(clp, haf.m4(ox/rad), haf.m4(oy/rad)).resize.Bicubic(ox, oy, filter_param_a=1, filter_param_b=0)
     y = core.std.Expr([clp, x], ['x {a} + y < x {a} + x {b} - y > x {b} - y ? ? x y - abs * x {c} x y - abs - * + {c} /'.format(a=scale(8, bits), b=scale(24, bits), c=scale(32, bits))])
+
     z1 = core.rgvs.Repair(clp, y, [1])
 
     if ss != 1:
@@ -2059,12 +2162,14 @@ def Sharpen(clip, amountH=1.0, amountV=None, planes=None):
 
     Args: 
         clip: Input clip.
+
         amountH, amountV: (float) Sharpen uses the kernel is [(1-2^amount)/2, 2^amount, (1-2^amount)/2].
             A value of 1.0 gets you a (-1/2, 2, -1/2) for example.
             Negative Sharpen actually blurs the image.
             The allowable range for Sharpen is from -1.58 to +1.0.
             If \"amountV\" is not set manually, it will be set to \"amountH\".
             Default is 1.0.
+
         planes: (int []) Whether to process the corresponding plane. By default, every plane will be processed.
             The unprocessed planes will be copied from the source clip, "clip".
 
@@ -2114,12 +2219,14 @@ def Blur(clip, amountH=1.0, amountV=None, planes=None):
 
     Args: 
         clip: Input clip.
+
         amountH, amountV: (float) Blur uses the kernel is [(1-1/2^amount)/2, 1/2^amount, (1-1/2^amount)/2].
             A value of 1.0 gets you a (1/4, 1/2, 1/4) for example.
             Negative Blur actually sharpens the image.
             The allowable range for Blur is from -1.0 to +1.58.
             If \"amountV\" is not set manually, it will be set to \"amountH\".
             Default is 1.0.
+
         planes: (int []) Whether to process the corresponding plane. By default, every plane will be processed.
             The unprocessed planes will be copied from the source clip, "clip".
 
@@ -2141,3 +2248,130 @@ def Blur(clip, amountH=1.0, amountV=None, planes=None):
             raise ValueError(funcName + ': \'amountV\' have not a correct value! [-1 ~ 1.58]')
 
     return Sharpen(clip, -amountH, -amountV, planes)
+
+
+def BlindDeHalo3(clp, rx=3.0, ry=3.0, strength=125, lodamp=0, hidamp=0, sharpness=0, tweaker=0, PPmode=0, PPlimit=None, interlaced=False):
+    """Avisynth's BlindDeHalo3() version: 3_MT2
+
+    This script removes the light & dark halos from too strong "Edge Enhancement".
+
+    Author: Didée (https://forum.doom9.org/attachment.php?attachmentid=5599&d=1143030001)
+
+    Only the first plane (luma) will be processed.
+
+    Args:
+        clp: Input clip.
+
+        rx, ry: (float) The radii to use for the [quasi-] Gaussian blur, on which the halo removal is based. Default is 3.0.
+
+        strength: (int) The overall strength of the halo removal effect. Default is 125.
+
+        lodamp, hidamp: (float) With these two values, one can reduce the basic effect on areas that would change only little anyway (lodamp),
+            and/or on areas that would change very much (hidamp).
+            lodamp does a reasonable job in keeping more detail in affected areas.
+            hidamp is intended to keep rather small areas that are very bright or very dark from getting processed too strong.
+            Works OK on sources that contain only weak haloing - for sources with strong over sharpening,
+                it should not be used, mostly. (Usage has zero impact on speed.)
+            Range: 0.0 to ??? (try 4.0 as a start)
+            Default is 0.0.
+
+        sharpness: (float) By setting this bigger than 0.0, the affected areas will come out with better sharpness.
+            However, strength must be chosen somewhat bigger as well, then, to get the same effect than without.
+            (This is the same as initial version's "maskblur" option.)
+            Range: 0.0 to 1.58.
+            Default is 0.
+
+        tweaker: (float) May be used to get a stronger effect, separately from altering "strength".
+            (Also in accordance to initial version's working methodology. I had no better idea for naming this parameter.)
+            Range: 0.0 - 1.00.
+            Default is 0.
+
+        PPmode: (int) When set to "1" or "2", a second cleaning operation after the basic halo removal is done.
+            This deals with:
+                a) Removing/reducing those corona lines that sometimes are left over by BlindDeHalo
+                b) Improving on mosquito noise, if some is present.
+            PPmode=1 uses a simple Gaussian blur for post-cleaning. PPmode=2 uses a 3*3 average, with zero weighting of the center pixel.
+            Also, PPmode can be "-1" or "-2". In this case, the main dehaloing step is completely discarded, and *only* the PP cleaning is done.
+            This has less effect on halos, but can deal for sources containing more mosquito noise than halos.
+            Default is 0.
+
+        PPlimit: (int) Can be used to make the PP routine change no pixel by more than [PPlimit].
+            I'm not sure if this makes much sense in this context. However the option is there - you never know what it might be good for.
+            Default is 0.
+
+        interlaced: (bool) As formerly, this is intended for sources that were originally interlaced, but then made progressive by deinterlacing.
+            It aims in particular at clips that made their way through Restore24.
+            Default is False.
+
+    """
+
+    core = vs.get_core()
+    funcName = 'BlindDeHalo3r'
+    
+    if not isinstance(clp, vs.VideoNode):
+        raise TypeError(funcName + ': \"clp\" is not a clip!')
+
+    if PPlimit is None:
+        PPlimit = 4 if (abs(PPmode) == 3) else 0
+
+    bits = clp.format.bits_per_sample
+    isGray = clp.format.color_family == vs.GRAY
+    neutral = 1 << (bits - 1)
+
+    if not isGray:
+        clp_src = clp
+        clp = mvf.GetPlane(clp)
+
+    sharpness = min(sharpness, 1.58)
+    tweaker = min(tweaker, 1.0)
+    strength *= 1 + sharpness * 0.25
+    RR = (rx + ry) / 2
+    ST = strength / 100
+    LD = scale(lodamp, bits)
+    HD = hidamp ** 2
+    TWK0 = 'x y - {i} /'.format(i=12 / ST / RR)
+    TWK = 'x y - {i} / abs'.format(i=12 / ST / RR)
+    TWK_HLIGHT = 'x y - abs {i} < {neutral} {TWK} {neutral} {TWK} - {TWK} {neutral} / * + {TWK0} {TWK} {LD} + / * {neutral} {TWK} - {j} / dup * {neutral} {TWK} - {j} / dup * {HD} + / * {neutral} + ?'.format(i=scale(1, bits), neutral=neutral, TWK=TWK, TWK0=TWK0, LD=LD, j=scale(20, bits), HD=HD)
+
+    i = clp if not interlaced else core.std.SeparateFields(clp, tff=True)
+    oxi = i.width
+    oyi = i.height
+    sm = core.resize.Bicubic(i, haf.m4(oxi/rx), haf.m4(oyi/ry))
+    mm = core.std.Expr([sm.std.Maximum(), sm.std.Minimum()], ['x y - 4 *']).std.Maximum().std.Deflate().std.Convolution([1]*9).std.Inflate().resize.Bicubic(oxi, oyi, filter_param_a=1, filter_param_b=0).std.Inflate()
+    sm = core.resize.Bicubic(sm, oxi, oyi, filter_param_a=1, filter_param_b=0)
+    smd = core.std.Expr([Sharpen(i, tweaker), sm], [TWK_HLIGHT])
+    if sharpness != 0:
+        smd = Blur(smd, sharpness)
+    clean = core.std.Expr([i, smd], ['x y {neutral} - -'.format(neutral=neutral)])
+    clean = core.std.MaskedMerge(i, clean, mm)
+
+    if PPmode != 0:
+        LL = scale(PPlimit, bits)
+        LIM = 'x {LL} + y < x {LL} + x {LL} - y > x {LL} - y ? ?'.format(LL=LL)
+
+        base = i if PPmode < 0 else clean
+        small = core.resize.Bicubic(base, haf.m4(oxi / math.sqrt(rx * 1.5)), haf.m4(oyi / math.sqrt(ry * 1.5)))
+        ex1 = Blur(small.std.Maximum(), 0.5)
+        in1 = Blur(small.std.Minimum(), 0.5)
+        hull = core.std.Expr([ex1.std.Maximum().rgvs.RemoveGrain(11), ex1, in1, in1.std.Minimum().rgvs.RemoveGrain(11)], ['x y - {i} - 5 * z a - {i} - 5 * max'.format(i=scale(1, bits))]).resize.Bicubic(oxi, oyi, filter_param_a=1, filter_param_b=0)
+
+        if abs(PPmode) == 1:
+            postclean = core.std.MaskedMerge(base, small.resize.Bicubic(oxi, oyi, filter_param_a=1, filter_param_b=0), hull)
+        elif abs(PPmode) == 2:
+            postclean = core.std.MaskedMerge(base, base.rgvs.RemoveGrain(19), hull)
+        elif abs(PPmode) == 3:
+            postclean = core.std.maskedMerge(base, base.rgvs.RemoveGrain(4), hull)
+        else:
+            raise ValueError(funcName + ': \"PPmode\" must be in [-3 ... 3]!')
+    else:
+        postclean = clean
+
+    if PPlimit != 0:
+        postclean = core.std.Expr([base, postclean], [LIM])
+
+    last = haf.Weave(postclean, tff=True) if interlaced else postclean
+
+    if not isGray:
+        last = core.std.ShufflePlanes([last, clp_src], list(range(clp_src.format.num_planes)), clp_src.format.color_family)
+
+    return last
