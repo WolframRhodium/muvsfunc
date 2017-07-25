@@ -574,9 +574,9 @@ def GF3_smoothgrad_multistage(src, ref, radius, thr, elast, planes):
     r3 = radius * 3 // 3
     r4 = radius * 4 // 4
     last = src
-    last = SmoothGrad(radius=r2, thr=thr, elast=elast, ref=ref, planes=planes) if r2 >= 1 else last
-    last = SmoothGrad(radius=r3, thr=thr * 0.7, elast=ela_2, ref=ref, planes=planes) if r3 >= 1 else last
-    last = SmoothGrad(radius=r4, thr=thr * 0.46, elast=ela_3, ref=ref, planes=planes) if r4 >= 1 else last
+    last = SmoothGrad(last, radius=r2, thr=thr, elast=elast, ref=ref, planes=planes) if r2 >= 1 else last
+    last = SmoothGrad(last, radius=r3, thr=thr * 0.7, elast=ela_2, ref=ref, planes=planes) if r3 >= 1 else last
+    last = SmoothGrad(last, radius=r4, thr=thr * 0.46, elast=ela_3, ref=ref, planes=planes) if r4 >= 1 else last
     return last
 
 
@@ -2247,13 +2247,13 @@ def Blur(clip, amountH=1.0, amountV=None, planes=None):
     if not isinstance(clip, vs.VideoNode):
         raise TypeError(funcName + ': \"clip\" is not a clip!')
 
-    if amountH < 0 or amountH > 1:
+    if amountH < -1 or amountH > 1.5849625:
         raise ValueError(funcName + ': \'amountH\' have not a correct value! [-1 ~ 1.58]')
 
     if amountV is None:
         amountV = amountH
     else:
-        if amountV < 0 or amountV > 1:
+        if amountV < -1 or amountV > 1.5849625:
             raise ValueError(funcName + ': \'amountV\' have not a correct value! [-1 ~ 1.58]')
 
     return Sharpen(clip, -amountH, -amountV, planes)
