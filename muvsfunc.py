@@ -32,6 +32,7 @@ Functions:
     Sharpen
     Blur
     BlindDeHalo3
+    dfttestMC
 '''
 
 import vapoursynth as vs
@@ -81,16 +82,16 @@ def LDMerge(flt_h, flt_v, src, mrad=0, show=0, planes=None, convknl=1, conv_div=
     if not isinstance(flt_h, vs.VideoNode):
         raise TypeError(funcName + ': \"flt_h\" must be a clip!')
     if src.format.id != flt_h.format.id:
-        raise ValueError(funcName + ': \"flt_h\" must be of the same format as the src clip!')
+        raise ValueError(funcName + ': \"flt_h\" must be of the same format as \"src\"!')
     if src.width != flt_h.width or src.height != flt_h.height:
-        raise ValueError(funcName + ': \"flt_h\" must be of the same size as the src clip!')
+        raise ValueError(funcName + ': \"flt_h\" must be of the same size as \"src\"!')
     
     if not isinstance(flt_v, vs.VideoNode):
         raise TypeError(funcName + ': \"flt_v\" must be a clip!')
     if src.format.id != flt_v.format.id:
-        raise ValueError(funcName + ': \"flt_v\" must be of the same format as the src clip!')
+        raise ValueError(funcName + ': \"flt_v\" must be of the same format as \"src\"!')
     if src.width != flt_v.width or src.height != flt_v.height:
-        raise ValueError(funcName + ': \"flt_v\" must be of the same size as the src clip!')   
+        raise ValueError(funcName + ': \"flt_v\" must be of the same size as \"src\"!')
         
     if not isinstance(mrad, int):
         raise TypeError(funcName + '\"mrad\" must be an int!')
@@ -166,7 +167,9 @@ def Compare(src, flt, power=1.5, chroma=False, mode=2):
     if not isinstance(flt, vs.VideoNode):
         raise TypeError(funcName + ': \"flt\" must be a clip!')
     if src.format.id != flt.format.id:
-        raise TypeError(funcName + ': \"src\" and \"flt\" must have the same format')
+        raise ValueError(funcName + ': \"flt\" must be of the same format as \"src\"!')
+    if src.width != flt.width or src.height != flt.height:
+        raise ValueError(funcName + ': \"flt\" must be of the same size as \"src\"!')
     if mode not in [1, 2]:
         raise ValueError(funcName + ': \"mode\" must be in [1, 2]!')
 
@@ -487,6 +490,8 @@ def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=
         raise TypeError(funcName + ': \"ref\" must be a clip!')
     if ref.format.color_family not in [vs.YUV, vs.GRAY, vs.YCOCG]:
         raise TypeError(funcName + ': \"ref\" must be YUV, GRAY or YCOCG color family!')
+    if src.width != ref.width or src.height != ref.height:
+        raise ValueError(funcName + ': \"ref\" must be of the same size as \"src\"!')
 
     bits = src.format.bits_per_sample
     src_16 = core.fmtc.bitdepth(src, bits=16, planes=planes) if bits < 16 else src
@@ -1243,7 +1248,9 @@ def Soothe_mod(input, source, keep=24, radius=1, scenechange=32, use_misc=True):
         source_src = None
 
     if input.format.id != source.format.id:
-        raise TypeError(funcName + ': \"input\" and \"source\" must have the same format')
+        raise ValueError(funcName + ': \"source\" must be of the same format as \"input\"!')
+    if input.width != source.width or input.height != source.height:
+        raise ValueError(funcName + ': \"source\" must be of the same size as \"input\"!')
     
     keep = max(min(keep, 100), 0)
     
@@ -1978,7 +1985,7 @@ def SeeSaw(clp, denoised=None, NRlimit=2, NRlimit2=None, Sstr=1.5, Slimit=None, 
         if denoised.format.id != clp.format.id:
             raise TypeError(funcName + ': \"denoised\" the same format as \"clp\"!')
         if denoised.width != clp.width or denoised.height != clp.height:
-            raise ValueError(funcName + ': clip \"denoised\" must be of the same size as \"clp\"!')
+            raise ValueError(funcName + ': \"denoised\" must be of the same size as \"clp\"!')
 
     if not isGray:
         clp_src = clp
@@ -2074,7 +2081,7 @@ def SeeSaw_SootheSS(sharp, orig, sootheT=25, sootheS=0):
     if orig.format.id != sharp.format.id:
         raise TypeError(funcName + ': \"orig\" the same format as \"sharp\"!')
     if orig.width != sharp.width or orig.height != sharp.height:
-        raise ValueError(funcName + ': clip \"orig\" must be of the same size as \"sharp\"!')
+        raise ValueError(funcName + ': \"orig\" must be of the same size as \"sharp\"!')
 
     sootheT = max(min(sootheT, 100), -100)
     sootheS = max(min(sootheS, 100), 0)
@@ -2106,7 +2113,9 @@ def SeeSaw_SootheSS(sharp, orig, sootheT=25, sootheS=0):
 
 
 def abcxyz(clp, rad=3.0, ss=1.5):
-    """Reduces halo artifacts that can occur when sharpening.
+    """Avisynth's abcxyz()
+
+    Reduces halo artifacts that can occur when sharpening.
 
     Author: Didée (http://avisynth.nl/images/Abcxyz_MT2.avsi)
 
@@ -2306,7 +2315,7 @@ def BlindDeHalo3(clp, rx=3.0, ry=3.0, strength=125, lodamp=0, hidamp=0, sharpnes
     """
 
     core = vs.get_core()
-    funcName = 'BlindDeHalo3r'
+    funcName = 'BlindDeHalo3'
     
     if not isinstance(clp, vs.VideoNode):
         raise TypeError(funcName + ': \"clp\" is not a clip!')
@@ -2360,7 +2369,7 @@ def BlindDeHalo3(clp, rx=3.0, ry=3.0, strength=125, lodamp=0, hidamp=0, sharpnes
         elif abs(PPmode) == 2:
             postclean = core.std.MaskedMerge(base, base.rgvs.RemoveGrain(19), hull)
         elif abs(PPmode) == 3:
-            postclean = core.std.maskedMerge(base, base.rgvs.RemoveGrain(4), hull)
+            postclean = core.std.MaskedMerge(base, base.std.Median(), hull)
         else:
             raise ValueError(funcName + ': \"PPmode\" must be in [-3 ... 3]!')
     else:
@@ -2375,3 +2384,116 @@ def BlindDeHalo3(clp, rx=3.0, ry=3.0, strength=125, lodamp=0, hidamp=0, sharpnes
         last = core.std.ShufflePlanes([last, clp_src], list(range(clp_src.format.num_planes)), clp_src.format.color_family)
 
     return last
+
+
+def dfttestMC(input, pp=None, mc=2, mdg=False, planes=None, sigma=None, sbsize=None, sosize=None, tbsize=None, mdgSAD=None, thSAD=None, thSCD1=None, thSCD2=None, pel=None, blksize=None, search=None, searchparam=None, overlap=2, dct=None, **dfttest_params):
+    """Avisynth's dfttestMC
+
+    Motion-compensated dfttest
+    Aka: Really Really Really Slow
+
+    Author: thewebchat (https://forum.doom9.org/showthread.php?p=1295788#post1295788)
+
+    Notes:
+        \"lsb\" and \"dither\" are removed. The output always has the same bitdepth as input.
+        "Y", "U" and "V" are replaced by "planes".
+        "dfttest_params" is removed. Additional arguments will be passed to DFTTest by keyword arguments.
+        mc can be 0, and the function will simply be a pure dfttest().
+
+    Args:
+        
+        input: Input clip.
+        pp: (clip) Clip to calculate vectors from. Default is \"input\".
+        mc: (int) Number of frames in each direction to compensate. Range: 0 ~ 5. Default is 2.
+        mdg: (bool) Run MDeGrain before dfttest. Default is False.
+        mdgSAD: (int) thSAD for MDeGrain. Default is undefined.
+
+        dfttest's sigma, sbsize, sosize and tbsize re supported. Extra dfttest parameters may be passed via "dfttest_params".
+        pel, thSCD, thSAD, blksize, overlap, dct, search, and searchparam are also supported.
+
+        sigma is the main control of dfttest strength.
+        tbsize should not be set higher than mc * 2 + 1.
+
+    """
+
+    core = vs.get_core()
+    funcName = 'dfttestMC'
+
+    if not isinstance(input, vs.VideoNode) or input.format.color_family not in [vs.GRAY, vs.YUV, vs.YCOCG]:
+        raise TypeError(funcName + ': \"input\" must be a Gray or YUV clip!')
+
+    if pp is not None:
+        if not isinstance(pp, vs.VideoNode):
+            raise TypeError(funcName + ': \"pp\" must be a clip!')
+        if input.format.id != pp.format.id:
+            raise ValueError(funcName + ': \"pp\" must be of the same format as \"input\"!')
+        if input.width != pp.width or input.height != pp.height:
+            raise ValueError(funcName + ': \"flt_h\" must be of the same size as \"input\"!')
+
+    if dfttest_params is None:
+        dfttest_params = {}
+
+    mc = min(mc, 5)
+
+    if planes is None:
+        planes = list(range(input.format.num_planes))
+    elif not isinstance(planes, dict):
+        planes = [planes]
+
+    Y = 0 in planes
+    U = 1 in planes
+    V = 2 in planes
+
+    chroma = U or V
+    
+    if not Y and U and not V:
+        plane = 1
+    elif not Y and not U and V:
+        plane = 2
+    elif not Y and chroma:
+        plane = 3
+    elif Y and chroma:
+        plane = 4
+    else:
+        plane = 0
+
+
+    pp_enabled = pp is not None
+    pp_super = haf.DitherLumaRebuild(pp if pp_enabled else input, s0=1, chroma=chroma).mv.Super(pel=pel, chroma=chroma)
+    super = haf.DitherLumaRebuild(input, s0=1, chroma=chroma).mv.Super(pel=pel, chroma=chroma) if pp_enabled else pp_super
+
+    analysis_args = dict(chroma=chroma, search=search, searchparam=searchparam, overlap=overlap, blksize=blksize, dct=dct)
+    bvec = []
+    fvec = []
+
+    for i in range(1, mc+1):
+        bvec.append(core.mv.Analyse(pp_super, delta=i, isb=True, **analysis_args))
+        fvec.append(core.mv.Analyse(pp_super, delta=i, isb=False, **analysis_args))
+
+    if mdg:
+        degrain_args = dict(thSAD=mdgSAD, plane=plane, thSCD1=thSCD1, thSCD2=thSCD2)
+        if mc >= 3:
+            degrained = core.mv.Degrain3(input, super, bvec[0], fvec[0], bvec[1], fvec[1], bvec[2], fvec[2], **degrain_args)
+        elif mc == 2:
+            degrained = core.mv.Degrain2(input, super, bvec[0], fvec[0], bvec[1], fvec[1], **degrain_args)
+        elif mc == 1:
+            degrained = core.mv.Degrain1(input, super, bvec[0], fvec[0], **degrain_args)
+        else:
+            degrained = input
+    else:
+        degrained = input
+
+    degrained_super = haf.DitherLumaRebuild(degrained, s0=1, chroma=chroma).mv.Super(pel=pel, levels=1, chroma=chroma) if mdg else super
+    compensate_args = dict(thsad=thSAD, thscd1=thSCD1, thscd2=thSCD2)
+    bclip = []
+    fclip = []
+    for i in range(1, mc+1):
+        bclip.append(core.mv.Compensate(degrained, degrained_super, bvec[i-1], **compensate_args))
+        fclip.append(core.mv.Compensate(degrained, degrained_super, fvec[i-1], **compensate_args))
+
+    fclip.reverse()
+    interleaved = core.std.Interleave(fclip + [degrained] + bclip) if mc >= 1 else degrained
+
+    filtered = core.dfttest.DFTTest(interleaved, sigma=sigma, sbsize=sbsize, sosize=sosize, tbsize=tbsize, **dfttest_params)
+
+    return core.std.SelectEvery(filtered, mc * 2 + 1, mc) if mc > 1 else filtered
