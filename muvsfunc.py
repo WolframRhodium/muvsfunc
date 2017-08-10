@@ -495,7 +495,7 @@ def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=
 
     bits = src.format.bits_per_sample
     src_16 = core.fmtc.bitdepth(src, bits=16, planes=planes) if bits < 16 else src
-    src_8 = core.fmtc.bitdepth(src, bits=8, planes=[0]) if bits != 8 else src
+    src_8 = core.fmtc.bitdepth(src, bits=8, dmode=1, planes=[0]) if bits != 8 else src
     ref_16 = core.fmtc.bitdepth(ref, bits=16, planes=planes) if ref.format.bits_per_sample < 16 else ref
 
     # Main debanding
