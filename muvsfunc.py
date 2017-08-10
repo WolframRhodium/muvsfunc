@@ -384,7 +384,7 @@ def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=
 
     Notes:
         1. In this function I try to keep the original look of GradFun3 in Avisynth.
-            It should be better to use Frechdachs's GradFun3 in his fvsfunc.py (https://gist.github.com/Frechdachs/353f6917d78bb99d93bfcea0f29062ed) which is more novel and powerful.
+            It should be better to use Frechdachs's GradFun3 in his fvsfunc.py (https://github.com/Irrational-Encoding-Wizardry/fvsfunc) which is more novel and powerful.
 
         2. current smode=1 or 2 only support small "radius" (<=9).
 
@@ -2430,11 +2430,13 @@ def dfttestMC(input, pp=None, mc=2, mdg=False, planes=None, sigma=None, sbsize=N
         if input.width != pp.width or input.height != pp.height:
             raise ValueError(funcName + ': \"flt_h\" must be of the same size as \"input\"!')
 
+    # Set default options. Most external parameters are passed valueless.
     if dfttest_params is None:
         dfttest_params = {}
 
     mc = min(mc, 5)
 
+    # Set chroma parameters.
     if planes is None:
         planes = list(range(input.format.num_planes))
     elif not isinstance(planes, dict):
@@ -2457,11 +2459,12 @@ def dfttestMC(input, pp=None, mc=2, mdg=False, planes=None, sigma=None, sbsize=N
     else:
         plane = 0
 
-
+    # Prepare supersampled clips.
     pp_enabled = pp is not None
     pp_super = haf.DitherLumaRebuild(pp if pp_enabled else input, s0=1, chroma=chroma).mv.Super(pel=pel, chroma=chroma)
     super = haf.DitherLumaRebuild(input, s0=1, chroma=chroma).mv.Super(pel=pel, chroma=chroma) if pp_enabled else pp_super
 
+    # Motion vector search.
     analysis_args = dict(chroma=chroma, search=search, searchparam=searchparam, overlap=overlap, blksize=blksize, dct=dct)
     bvec = []
     fvec = []
@@ -2470,6 +2473,7 @@ def dfttestMC(input, pp=None, mc=2, mdg=False, planes=None, sigma=None, sbsize=N
         bvec.append(core.mv.Analyse(pp_super, delta=i, isb=True, **analysis_args))
         fvec.append(core.mv.Analyse(pp_super, delta=i, isb=False, **analysis_args))
 
+    # Optional MDegrain.
     if mdg:
         degrain_args = dict(thSAD=mdgSAD, plane=plane, thSCD1=thSCD1, thSCD2=thSCD2)
         if mc >= 3:
@@ -2483,6 +2487,7 @@ def dfttestMC(input, pp=None, mc=2, mdg=False, planes=None, sigma=None, sbsize=N
     else:
         degrained = input
 
+    # Motion Compensation.
     degrained_super = haf.DitherLumaRebuild(degrained, s0=1, chroma=chroma).mv.Super(pel=pel, levels=1, chroma=chroma) if mdg else super
     compensate_args = dict(thsad=thSAD, thscd1=thSCD1, thscd2=thSCD2)
     bclip = []
@@ -2491,9 +2496,11 @@ def dfttestMC(input, pp=None, mc=2, mdg=False, planes=None, sigma=None, sbsize=N
         bclip.append(core.mv.Compensate(degrained, degrained_super, bvec[i-1], **compensate_args))
         fclip.append(core.mv.Compensate(degrained, degrained_super, fvec[i-1], **compensate_args))
 
+    # Create compensated clip.
     fclip.reverse()
     interleaved = core.std.Interleave(fclip + [degrained] + bclip) if mc >= 1 else degrained
 
+    # Perform dfttest.
     filtered = core.dfttest.DFTTest(interleaved, sigma=sigma, sbsize=sbsize, sosize=sosize, tbsize=tbsize, **dfttest_params)
 
     return core.std.SelectEvery(filtered, mc * 2 + 1, mc) if mc > 1 else filtered
