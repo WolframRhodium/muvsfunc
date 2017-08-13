@@ -404,9 +404,6 @@ def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=
 
     if thr is None:
         thr = 0.35
-    elif isinstance(thr, int) or isinstance(thr, float):
-        if thr < 0.1 or thr > 10.0:
-            raise ValueError(funcName + ': \"thr\" must be in [0.1, 10.0]!')
     else:
         raise TypeError(funcName + ': \"thr\" must be an int or a float!')
 
@@ -454,8 +451,6 @@ def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=
 
     if thrc is None:
         thrc = thr
-    elif thrc < 0.1 or thrc > 10.0:
-        raise ValueError(funcName + ': \"thrc\" must be in [0.1, 10.0]!')
 
     if radiusc is None:
         radiusc = radius
@@ -464,12 +459,6 @@ def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=
             raise ValueError(funcName + '\"radiusc\" must be strictly positive.')
     else:
         raise TypeError(funcName + '\"radiusc\" must be an int!')
-    if smode == 0 or smode == 3:
-        if radiusc not in list(range(2, 10)):
-            raise ValueError(funcName + ': \"radiusc\" must be in 2-9 for smode=0 or 3 !')
-    elif smode == 1:
-        if radiusc not in list(range(1, 128+1)):
-            raise ValueError(funcName + ': \"radiusc\" must be in 1-128 for smode=1 !')
 
     if elastc is None:
         elastc = elast
@@ -1650,7 +1639,7 @@ def firniture(clip, width, height, kernel='binomial7', taps=None, gamma=False, *
     return clip
 
 
-def BoxFilter(input, radius=9, planes=None):
+def BoxFilter(input, radius=16, planes=None):
     '''Box filter
     
     Performs a box filtering on the input clip. Box filtering consists in averaging all the pixels in a square area whose center is the output pixel. You can approximate a large gaussian filtering by cascading a few box filters.
@@ -1720,9 +1709,6 @@ def SmoothGrad(input, radius=9, thr=0.25, ref=None, elast=3.0, planes=None, **li
     
     if not isinstance(input, vs.VideoNode):
         raise TypeError(funcName + ': \"input\" must be a clip!')
-    
-    if radius not in range(2, 10):  # Due to std.Convolution's restriction
-        raise ValueError(funcName + ': \"radius\" must be in [2 ~ 9]!')
     
     if planes is None:
         planes = list(range(input.format.num_planes))
