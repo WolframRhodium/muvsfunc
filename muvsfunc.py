@@ -2307,7 +2307,7 @@ def BlindDeHalo3(clp, rx=3.0, ry=3.0, strength=125, lodamp=0, hidamp=0, sharpnes
         raise TypeError(funcName + ': \"clp\" is not a clip!')
 
     if PPlimit is None:
-        PPlimit = 4 if (abs(PPmode) == 3) else 0
+        PPlimit = 4 if abs(PPmode) == 3 else 0
 
     bits = clp.format.bits_per_sample
     isGray = clp.format.color_family == vs.GRAY
@@ -2461,7 +2461,7 @@ def dfttestMC(input, pp=None, mc=2, mdg=False, planes=None, sigma=None, sbsize=N
 
     # Optional MDegrain.
     if mdg:
-        degrain_args = dict(thSAD=mdgSAD, plane=plane, thSCD1=thSCD1, thSCD2=thSCD2)
+        degrain_args = dict(thsad=mdgSAD, plane=plane, thscd1=thSCD1, thscd2=thSCD2)
         if mc >= 3:
             degrained = core.mv.Degrain3(input, super, bvec[0], fvec[0], bvec[1], fvec[1], bvec[2], fvec[2], **degrain_args)
         elif mc == 2:
