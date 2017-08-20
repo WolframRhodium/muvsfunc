@@ -33,6 +33,9 @@ Functions:
     Blur
     BlindDeHalo3
     dfttestMC
+    TurnLeft
+    TurnRight
+    BalanceBorders
 '''
 
 import vapoursynth as vs
@@ -2490,3 +2493,147 @@ def dfttestMC(input, pp=None, mc=2, mdg=False, planes=None, sigma=None, sbsize=N
     filtered = core.dfttest.DFTTest(interleaved, sigma=sigma, sbsize=sbsize, sosize=sosize, tbsize=tbsize, **dfttest_params)
 
     return core.std.SelectEvery(filtered, mc * 2 + 1, mc) if mc > 1 else filtered
+
+
+def TurnLeft(clip):
+    """Avisynth's internel function TurnLeft()"""
+    core = vs.get_core()
+
+    return core.std.Transpose(clip).std.FlipVertical()
+
+
+def TurnRight(clip):
+    """Avisynth's internel function TurnRight()"""
+    core = vs.get_core()
+
+    return core.std.FlipVertical(clip).std.Transpose()
+
+
+def BalanceTopBorder(c, cTop, thresh, blur):
+    """BalanceBorders()'s helper function"""
+    core = vs.get_core()
+
+    cWidth = c.width
+    cHeight = c.height
+    cTop = min(cTop, cHeight - 1)
+    blurWidth = max(4, math.floor(cWidth / blur))
+    
+    c2 = mvf.PointPower(c, 1, 1)
+
+    last = core.std.CropRel(c2, 0, 0, cTop*2, (cHeight - cTop - 1) * 2)
+    last = core.resize.Point(last, cWidth * 2, cTop * 2)
+    last = core.resize.Bilinear(last, blurWidth * 2, cTop * 2)
+    last = core.std.Convolution(last, [1, 1, 1], mode='h')
+    last = core.resize.Bilinear(last, cWidth * 2, cTop * 2)
+    referenceBlur = last
+
+    original = core.std.CropRel(c2, 0, 0, 0, (cHeight - cTop) * 2)
+
+    last = original
+    last = core.resize.Bilinear(last, blurWidth * 2, cTop * 2)
+    last = core.std.Convolution(last, [1, 1, 1], mode='h')
+    last = core.resize.Bilinear(last, cWidth * 2, cTop * 2)
+    originalBlur = last
+
+    """
+    balanced = core.std.Expr([original, originalBlur, referenceBlur], ['z y - x +'])
+    difference = core.std.MakeDiff(balanced, original)
+
+    tp = scale(128 + thresh, c.format.bits_per_sample)
+    tm = scale(128 - thresh, c.format.bits_per_sample)
+    difference = core.std.Expr([difference], ['x {tp} min {tm} max'.format(tp=tp, tm=tm)])
+
+    last = core.std.MergeDiff(original, difference)
+    """
+    tp = scale(thresh, c.format.bits_per_sample)
+    tm = -tp
+    last = core.std.Expr([original, originalBlur, referenceBlur], ['z y - {tp} min {tm} max x +'.format(tp=tp, tm=tm)])
+
+    return core.std.StackVertical([last, core.std.CropRel(c2, 0, 0, cTop * 2, 0)]).resize.Point(cWidth, cHeight)
+
+
+def BalanceBorders(c, cTop=0, cBottom=0, cLeft=0, cRight=0, thresh=128, blur=999):
+    """Avisynth's BalanceBorders() Version: v0.2
+
+    Author: PL (https://www.dropbox.com/s/v8fm6om7hm1dz0b/BalanceBorders.avs)
+
+    The following documentaion is mostly translated by Google Translate from Russian.
+
+    The function changes the values of the edge pixels of the clip,
+    so that they are "more similar" to the neighboring ones, 
+    which, perhaps, will prevent the "strong" use of Crop () to remove the "unpleasant edges"
+    that are not very different from the "main" image.
+
+    Args:
+        c: Input clip. The image area "in the middle" does not change during processing.
+            The clip can be any format, which differs from Avisynth's equivalent.
+        cTop, cBotteom, cLeft, cRight: (int) The number of variable pixels on each side.
+            There will not be anything very terrible if you specify values that are greater than the minimum required in your case,
+            but to achieve a good result, "it is better not to" ...
+            Range: 2~inf for RGB input. For YUV or YCbCr input, the minimum accepted value varies depending on chroma subsampling.
+                For YV24, the it's also 2~inf. For YV12, the it's 4~inf. Default is 0.
+        thresh: Threshold of acceptable changes for local color matching in 8 bit scale.
+            Range: 0~128. Recommend: [0~16 or 128]. Default is 128.
+        blur: Degree of blur for local color matching. 
+            Smaller values give a more accurate color match,
+            larger values give a more accurate picture transfer.
+            Range: 1~inf. Recommend: [1~20 or 999]. Default is 999.
+
+    Notes:
+        1) At default values ​​of thresh = 128 blur = 999,
+            you will get a series of pixels that have been changed only by selecting the color for each row in its entirety, without local selection;
+            The colors of neighboring pixels may be very different in some places, but there will be no change in the nature of the picture.
+
+            And with thresh = 128 and blur = 1 you get almost the same rows of pixels,
+            i.e. The colors between them will coincide completely, but the original pattern will be lost.
+
+        2) Beware of using a large number of pixels to change in combination with a high level of "thresh",
+        and a small "blur" that can lead to unwanted artifacts "in a clean place".
+        For each function call, try to set as few pixels as possible to change and as low a threshold as possible "thresh" (when using blur 0..16).
+
+    Examples:
+        The variant of several calls of the order:
+        last = muf.BalanceBorders(last, 7, 6, 4, 4)                      # "General" color matching
+        last = muf.BalanceBorders(last, 5, 5, 4, 4, thresh=2,   blur=10) # Very slightly changes a large area (with a "margin")
+        last = muf.BalanceBorders(last, 3, 3, 2, 2, thresh=8,   blur=4)  # Slightly changes the "main problem area"
+
+    """
+
+    core = vs.get_core()
+    funcName = 'BalanceBorders'
+
+    if not isinstance(c, vs.VideoNode):
+        raise TypeError(funcName + ': \"input\" must be a clip!')
+
+    if c.format.sample_type != vs.INTEGER:
+        raise TypeError(funcname+': \"clip\" must be integer format!')
+
+    if blur <= 0:
+        raise ValueError(funcName + ': \'blur\' have not a correct value! (0 ~ inf]')
+
+    if thresh <= 0:
+        raise ValueError(funcName + ': \'thresh\' have not a correct value! (0 ~ inf]')
+
+    last = c
+
+    if cTop > 0:
+        last = BalanceTopBorder(last, cTop, thresh, blur)
+
+    last = TurnRight(last)
+
+    if cLeft > 0:
+        last = BalanceTopBorder(last, cLeft, thresh, blur)
+
+    last = TurnRight(last)
+
+    if cBottom > 0:
+        last = BalanceTopBorder(last, cBottom, thresh, blur)
+
+    last = TurnRight(last)
+
+    if cRight > 0:
+        last = BalanceTopBorder(last, cRight, thresh, blur)
+
+    last = TurnRight(last)
+
+    return last
