@@ -36,6 +36,7 @@ Functions:
     TurnLeft
     TurnRight
     BalanceBorders
+    DisplayHistogram
 '''
 
 import vapoursynth as vs
@@ -2559,7 +2560,7 @@ def BalanceBorders(c, cTop=0, cBottom=0, cLeft=0, cRight=0, thresh=128, blur=999
 
     The following documentaion is mostly translated by Google Translate from Russian.
 
-    The function changes the values of the edge pixels of the clip,
+    The function changes the values of the extreme pixels of the clip,
     so that they are "more similar" to the neighboring ones, 
     which, perhaps, will prevent the "strong" use of Crop () to remove the "unpleasant edges"
     that are not very different from the "main" image.
@@ -2588,14 +2589,14 @@ def BalanceBorders(c, cTop=0, cBottom=0, cLeft=0, cRight=0, thresh=128, blur=999
             i.e. The colors between them will coincide completely, but the original pattern will be lost.
 
         2) Beware of using a large number of pixels to change in combination with a high level of "thresh",
-        and a small "blur" that can lead to unwanted artifacts "in a clean place".
-        For each function call, try to set as few pixels as possible to change and as low a threshold as possible "thresh" (when using blur 0..16).
+            and a small "blur" that can lead to unwanted artifacts "in a clean place".
+            For each function call, try to set as few pixels as possible to change and as low a threshold as possible "thresh" (when using blur 0..16).
 
     Examples:
         The variant of several calls of the order:
         last = muf.BalanceBorders(last, 7, 6, 4, 4)                      # "General" color matching
-        last = muf.BalanceBorders(last, 5, 5, 4, 4, thresh=2,   blur=10) # Very slightly changes a large area (with a "margin")
-        last = muf.BalanceBorders(last, 3, 3, 2, 2, thresh=8,   blur=4)  # Slightly changes the "main problem area"
+        last = muf.BalanceBorders(last, 5, 5, 4, 4, thresh=2, blur=10) # Very slightly changes a large area (with a "margin")
+        last = muf.BalanceBorders(last, 3, 3, 2, 2, thresh=8, blur=4)  # Slightly changes the "main problem area"
 
     """
 
@@ -2603,10 +2604,10 @@ def BalanceBorders(c, cTop=0, cBottom=0, cLeft=0, cRight=0, thresh=128, blur=999
     funcName = 'BalanceBorders'
 
     if not isinstance(c, vs.VideoNode):
-        raise TypeError(funcName + ': \"input\" must be a clip!')
+        raise TypeError(funcName + ': \"c\" must be a clip!')
 
     if c.format.sample_type != vs.INTEGER:
-        raise TypeError(funcname+': \"clip\" must be integer format!')
+        raise TypeError(funcname+': \"c\" must be integer format!')
 
     if blur <= 0:
         raise ValueError(funcName + ': \'blur\' have not a correct value! (0 ~ inf]')
@@ -2637,3 +2638,44 @@ def BalanceBorders(c, cTop=0, cBottom=0, cLeft=0, cRight=0, thresh=128, blur=999
     last = TurnRight(last)
 
     return last
+
+
+def DisplayHistogram(clip, factor=None):
+    """ A simple function to display the histogram of an image.
+
+    The right and bottom of the output is the histogram along the horizontal/vertical axis,
+    with the left(bottom) side of the graph represents luma=0 and the right(above) side represents luma=255.
+    The bottom right is hist.Levels().
+
+    More details of the graphs can be found at http://avisynth.nl/index.php/Histogram.
+
+    Args:
+        clip: Input clip. Must be constant format 8..16 bit integer YUV input.
+            If the input's bitdepth is not 8, input will be converted to 8 bit before passing to hist.Levels().
+        factor: hist.Levels()'s argument.
+            It specifies how the histograms are displayed, exaggerating the vertical scale.
+            It is specified as percentage of the total population (that is number of luma or chroma pixels in a frame).
+            Range: 0~100. Default is 100.
+
+    """
+
+    core = vs.get_core()
+    funcName = 'DisplayHistogram'
+
+    if not isinstance(clip, vs.VideoNode):
+        raise TypeError(funcName + ': \"clip\" must be a clip!')
+
+    if clip.format.sample_type != vs.INTEGER or clip.format.bits_per_sample > 16 or clip.format.color_family != vs.YUV:
+        raise TypeError(funcname+': \"clip\" must be 8..16 integer YUV format!')
+
+    histogram_v = core.hist.Classic(clip)
+
+    clip_8 = mvf.Depth(clip, 8)
+    levels = core.hist.Levels(clip_8, factor=factor).std.CropRel(left=clip.width, right=0, top=0, bottom=clip.height - 256)
+    if clip.format.bits_per_sample != 8:
+        levels = mvf.Depth(levels, clip.format.bits_per_sample)
+    histogram_h = TurnLeft(core.hist.Classic(clip.std.Transpose()).std.CropRel(left=clip.height))
+
+    bottom = core.std.StackHorizontal([histogram_h, levels])
+
+    return core.std.StackVertical([histogram_v, bottom])
