@@ -1670,14 +1670,21 @@ def BoxFilter(input, radius=16, planes=None):
         planes = [planes]
     
     # process
-    if core.std.get_functions().__contains__('BoxBlur'):
-        if radius == 2:
+    if radius == 1:
+        return input
+
+    if input.format.sample_type == vs.FLOAT:
+        if core.version_number() < 33:
+            raise NotImplementedError(funcName + ': Please update your VapourSynth. Convolution on float sample has not yet been implemented on current version.')
+        elif radius == 2 or radius == 3:
             return core.std.Convolution(input, [1] * (radius * 2 - 1) * (radius * 2 - 1), planes=planes)
         else:
-            return core.std.BoxBlur(input, hradius=radius-1, vradius=radius-1, planes=planes)
-    else:
+            return core.std.Convolution(input, [1] * (radius * 2 - 1), planes=planes, mode='v').std.Convolution([1] * (radius * 2 - 1), planes=planes, mode='h')
+    else: # input.format.sample_type == vs.INTEGER
         if radius == 2 or radius == 3:
             return core.std.Convolution(input, [1] * (radius * 2 - 1) * (radius * 2 - 1), planes=planes)
+        elif core.std.get_functions().__contains__('BoxBlur'):
+            return core.std.BoxBlur(input, hradius=radius-1, vradius=radius-1, planes=planes)
         else:
             return core.std.Convolution(input, [1] * (radius * 2 - 1), planes=planes, mode='v').std.Convolution([1] * (radius * 2 - 1), planes=planes, mode='h')
 
