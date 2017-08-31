@@ -37,6 +37,7 @@ Functions:
     TurnRight
     BalanceBorders
     DisplayHistogram
+    GuidedFilter
 '''
 
 import vapoursynth as vs
@@ -731,7 +732,7 @@ def AnimeMask2(input, r=1.2, expr=None, mode=1):
 
 
 def PolygonExInpand(input, shift=0, shape=0, mixmode=0, noncentral=False, step=1, amp=1, fmtc_args=dict(), resample_args=dict(kernel='bilinear')):
-    """ A filter to process mask based on resampling kernel.
+    """A filter to process mask based on resampling kernel.
 
     Args:
         input: Source clip. Only the First plane will be processed.
@@ -845,7 +846,7 @@ def PolygonExInpand(input, shift=0, shape=0, mixmode=0, noncentral=False, step=1
 
 
 def Luma(input, plane=0, power=4):
-    """ std.Lut() implementation of Luma() in Histogram() filter.
+    """std.Lut() implementation of Luma() in Histogram() filter.
 
     Args:
         input: Source clip. Only the First plane will be processed.
@@ -929,7 +930,7 @@ def nnedi3aa(a):
 
 
 def maa(input):
-    """ Anti-aliasing with edge masking by martino, mask using "sobel" taken from Kintaro's useless filterscripts and modded by thetoof for spline36
+    """Anti-aliasing with edge masking by martino, mask using "sobel" taken from Kintaro's useless filterscripts and modded by thetoof for spline36
 
     Read the document of Avisynth version for more details.
 
@@ -1668,21 +1669,21 @@ def BoxFilter(input, radius=16, planes=None):
         planes = list(range(input.format.num_planes))
     elif isinstance(planes, int):
         planes = [planes]
-    
-    # process
+
     if radius == 1:
         return input
-
+    
+    # process
     if input.format.sample_type == vs.FLOAT:
         if core.version_number() < 33:
             raise NotImplementedError(funcName + ': Please update your VapourSynth. Convolution on float sample has not yet been implemented on current version.')
         elif radius == 2 or radius == 3:
-            return core.std.Convolution(input, [1] * (radius * 2 - 1) * (radius * 2 - 1), planes=planes)
+            return core.std.Convolution(input, [1] * ((radius * 2 - 1) * (radius * 2 - 1)), planes=planes)
         else:
             return core.std.Convolution(input, [1] * (radius * 2 - 1), planes=planes, mode='v').std.Convolution([1] * (radius * 2 - 1), planes=planes, mode='h')
     else: # input.format.sample_type == vs.INTEGER
         if radius == 2 or radius == 3:
-            return core.std.Convolution(input, [1] * (radius * 2 - 1) * (radius * 2 - 1), planes=planes)
+            return core.std.Convolution(input, [1] * ((radius * 2 - 1) * (radius * 2 - 1)), planes=planes)
         elif core.std.get_functions().__contains__('BoxBlur'):
             return core.std.BoxBlur(input, hradius=radius-1, vradius=radius-1, planes=planes)
         else:
@@ -2425,7 +2426,7 @@ def dfttestMC(input, pp=None, mc=2, mdg=False, planes=None, sigma=None, sbsize=N
         if input.format.id != pp.format.id:
             raise ValueError(funcName + ': \"pp\" must be of the same format as \"input\"!')
         if input.width != pp.width or input.height != pp.height:
-            raise ValueError(funcName + ': \"flt_h\" must be of the same size as \"input\"!')
+            raise ValueError(funcName + ': \"pp\" must be of the same size as \"input\"!')
 
     # Set default options. Most external parameters are passed valueless.
     if dfttest_params is None:
@@ -2580,9 +2581,9 @@ def BalanceBorders(c, cTop=0, cBottom=0, cLeft=0, cRight=0, thresh=128, blur=999
             but to achieve a good result, "it is better not to" ...
             Range: 2~inf for RGB input. For YUV or YCbCr input, the minimum accepted value varies depending on chroma subsampling.
                 For YV24, the it's also 2~inf. For YV12, the it's 4~inf. Default is 0.
-        thresh: Threshold of acceptable changes for local color matching in 8 bit scale.
+        thresh: (int) Threshold of acceptable changes for local color matching in 8 bit scale.
             Range: 0~128. Recommend: [0~16 or 128]. Default is 128.
-        blur: Degree of blur for local color matching. 
+        blur: (int) Degree of blur for local color matching. 
             Smaller values give a more accurate color match,
             larger values give a more accurate picture transfer.
             Range: 1~inf. Recommend: [1~20 or 999]. Default is 999.
@@ -2648,7 +2649,7 @@ def BalanceBorders(c, cTop=0, cBottom=0, cLeft=0, cRight=0, thresh=128, blur=999
 
 
 def DisplayHistogram(clip, factor=None):
-    """ A simple function to display the histogram of an image.
+    """A simple function to display the histogram of an image.
 
     The right and bottom of the output is the histogram along the horizontal/vertical axis,
     with the left(bottom) side of the graph represents luma=0 and the right(above) side represents luma=255.
@@ -2659,7 +2660,7 @@ def DisplayHistogram(clip, factor=None):
     Args:
         clip: Input clip. Must be constant format 8..16 bit integer YUV input.
             If the input's bitdepth is not 8, input will be converted to 8 bit before passing to hist.Levels().
-        factor: hist.Levels()'s argument.
+        factor: (float) hist.Levels()'s argument.
             It specifies how the histograms are displayed, exaggerating the vertical scale.
             It is specified as percentage of the total population (that is number of luma or chroma pixels in a frame).
             Range: 0~100. Default is 100.
@@ -2686,3 +2687,130 @@ def DisplayHistogram(clip, factor=None):
     bottom = core.std.StackHorizontal([histogram_h, levels])
 
     return core.std.StackVertical([histogram_v, bottom])
+
+
+def GuidedFilter(input, guidance=None, radius=4, regulation=0.01, fast=True, subsampling_ratio=4, kernel1='point', kernel2='bilinear', use_fmtc=False, **depth_args):
+    """Fast edge-preserving smoothing algorithm with a wide range of applications
+
+    Author: Kaiming He et al.
+
+    The guided filter computes the filtering output by considering the content of a guidance image.
+
+    It can be used as an edge-preserving smoothing operator like the popular bilateral filter,
+    but it has better behaviors near edges.
+
+    The guided filter is also a more generic concept beyond smoothing: 
+    It can transfer the structures of the guidance image to the filtering output,
+    enabling new filtering applications like detail enhancement, HDR compression, 
+    image matting/feathering, dehazing, joint upsampling, etc.
+
+    All the calculation inside are done at 32bit float.
+
+    Args:
+        input: Input clip.
+        guidance: (clip) Guidance clip used to compute the coefficient of the linear translation on 'input'.
+            It must has the same clip properties as 'input'.
+            If it is None, it will be set to input, with duplicate calculations being omitted.
+            Default is None.
+        radius: (int) Box filter's radius.
+            Range: Limited by std.Convolution. In VS R38 or newer, it is 0-12.
+            Default is 4.
+        regulation: (float) A criterion for judging whether a patch has high variance and should be preserved, or is flat and should be smoothed.
+            Similar to the range variance in the bilateral filter.
+            Default is 0.01.
+        fast: (bool) Whether to use fast guided filter.
+            This method subsamples the filtering input image and the guidance image,
+            computes the local linear coefficients, and upsamples these coefficients.
+            The upsampled coefficients are adopted on the original guidance image to produce the output.
+            This method reduces the time complexity from O(N) to O(N^2) for a subsampling ratio s.
+            Default is True.
+        subsampling_ratio: (float) Only works when fast=True.
+            Generally should be no less than 'radius'.
+            Default is 4.
+        kernel1, kernel2: (string) Subsampling/upsampling kernels.
+            Default is 'point'and 'bilinear'.
+        use_fmtc: (bool) Whether to use fmtconv in subsampling and upsampling.
+            Default is False.
+            Note that fmtconv's point subsampling may causes pixel shift.
+        depth_args: (dict) Additional arguments passed to mvf.Depth().
+            Default is None.
+
+    Ref:
+        [1] K. He, J. Sun, and X. Tang. Guided image filtering. TPAMI, 35(6):1397–1409, 2013.
+        [2] K. He, J. Sun. Fast Guided Filter. CoRR abs/1505.00996 (2015)
+
+    """
+
+    core = vs.get_core()
+    funcName = 'GuidedFilter'
+
+    if not isinstance(input, vs.VideoNode):
+        raise TypeError(funcName + ': \"input\" must be a clip!')
+
+    # Get clip's properties
+    bits = input.format.bits_per_sample
+    sampleType = input.format.sample_type
+    width = input.width
+    height = input.height
+
+    if guidance is not None:
+        if not isinstance(guidance, vs.VideoNode):
+            raise TypeError(funcName + ': \"guidance\" must be a clip!')
+        if input.format.id != guidance.format.id:
+            raise ValueError(funcName + ': \"guidance\" must be of the same format as \"input\"!')
+        if input.width != guidance.width or input.height != guidance.height:
+            raise ValueError(funcName + ': \"guidance\" must be of the same size as \"input\"!')
+    
+    # Bitdepth conversion and variable names modification to correspond to the paper
+    p = mvf.Depth(input, depth=32, sample=vs.FLOAT, **depth_args)
+    I = mvf.Depth(guidance, depth=32, sample=vs.FLOAT, **depth_args) if guidance is not None else p
+    r = radius
+    eps = regulation
+    s = subsampling_ratio
+
+    # Back up guidence image
+    I_src = I
+
+    # Fast guided filter's subsampling
+    if fast:
+        down_w = round(width / s + 0.5)
+        down_h = round(height / s + 0.5)
+        if use_fmtc:
+            p = core.fmtc.resample(p, down_w, down_h, kernel=kernel1)
+            I = core.fmtc.resample(I, down_w, down_h, kernel=kernel1) if guidance is not None else p
+        else: # use zimg
+            w = round(width / s)
+            h = round(height / s)
+            p = eval('core.resize.{kernel}(p, {w}, {h})'.format(kernel=kernel1.capitalize(), w=down_w, h=down_h))
+            I = eval('core.resize.{kernel}(I, {w}, {h})'.format(kernel=kernel1.capitalize(), w=down_w, h=down_h)) if guidance is not None else p
+        r = round(r / s)
+    
+    # Compute local linear coefficients. As the width of BoxFilter in this module is (radius*2-1) rather than (radius*2+1), conversion is required
+    mean_p = BoxFilter(p, radius=r+1)
+    mean_I = BoxFilter(I, radius=r+1) if guidance is not None else mean_p
+    corr_I = BoxFilter(core.std.Expr([I], ['x dup *']), radius=r+1)
+    corr_Ip = BoxFilter(core.std.Expr([I, p], ['x y *']), radius=r+1) if guidance is not None else corr_I
+
+    var_I = core.std.Expr([corr_I, mean_I], ['x y dup * -'])
+    cov_Ip = core.std.Expr([corr_Ip, mean_I, mean_p], ['x y z * -']) if guidance is not None else var_I
+    
+    a = core.std.Expr([cov_Ip, var_I], ['x y {} + /'.format(eps)])
+    b = core.std.Expr([mean_p, a, mean_I], ['x y z * -'])
+    
+    mean_a = BoxFilter(a, radius=r+1)
+    mean_b = BoxFilter(b, radius=r+1)
+    
+    # Fast guided filter's upsampling
+    if fast:
+        if use_fmtc:
+            mean_a = core.fmtc.resample(mean_a, width, height, kernel=kernel2)
+            mean_b = core.fmtc.resample(mean_b, width, height, kernel=kernel2)
+        else:
+            mean_a = eval('core.resize.{kernel}(mean_a, {w}, {h})'.format(kernel=kernel2.capitalize(), w=width, h=height))
+            mean_b = eval('core.resize.{kernel}(mean_b, {w}, {h})'.format(kernel=kernel2.capitalize(), w=width, h=height))
+
+    # Linear translation
+    q = core.std.Expr([mean_a, I_src, mean_b], ['x y * z +'])
+    
+    # Final bitdepth conversion
+    return mvf.Depth(q, depth=bits, sample=sampleType, **depth_args)
