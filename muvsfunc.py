@@ -2689,7 +2689,7 @@ def DisplayHistogram(clip, factor=None):
     return core.std.StackVertical([histogram_v, bottom])
 
 
-def GuidedFilter(input, guidance=None, radius=4, regulation=0.01, use_gauss=False, fast=True, subsampling_ratio=4, kernel1='point', kernel1_args=None, kernel2='bilinear', kernel2_args=None, use_fmtc=False, **depth_args):
+def GuidedFilter(input, guidance=None, radius=4, regulation=0.01, use_gauss=False, fast=True, subsampling_ratio=4, use_fmtc1=False, kernel1='point', kernel1_args=None, use_fmtc2=False, kernel2='bilinear', kernel2_args=None, **depth_args):
     """Guided Filter - fast edge-preserving smoothing algorithm
 
     Author: Kaiming He et al. (http://kaiminghe.com/eccv10/)
@@ -2712,8 +2712,9 @@ def GuidedFilter(input, guidance=None, radius=4, regulation=0.01, use_gauss=Fals
             It must has the same clip properties as 'input'.
             If it is None, it will be set to input, with duplicate calculations being omitted.
             Default is None.
-        radius: (int) Box filter's radius.
-            Range: Limited by std.Convolution. In VS R38 or newer, it is 0-12.
+        radius: (int) Box / Gaussian filter's radius.
+            If box filter is used, the range of radius is 1 ~ 12(fast=False) or 1 ~ 12*subsampling_ratio in VapourSynth R38 or newer because of the limitation of std.Convolution().
+            For gaussian filter, the radius can be much larger, even reaching the width/height of the clip.
             Default is 4.
         regulation: (float) A criterion for judging whether a patch has high variance and should be preserved, or is flat and should be smoothed.
             Similar to the range variance in the bilateral filter.
@@ -2734,13 +2735,13 @@ def GuidedFilter(input, guidance=None, radius=4, regulation=0.01, use_gauss=Fals
         subsampling_ratio: (float) Only works when fast=True.
             Generally should be no less than 'radius'.
             Default is 4.
+        use_fmtc1, use_fmtc2: (bool) Whether to use fmtconv in subsampling / upsampling.
+            Default is False.
+            Note that fmtconv's point subsampling may causes pixel shift.
         kernel1, kernel2: (string) Subsampling/upsampling kernels.
             Default is 'point'and 'bilinear'.
         kernel1_args, kernel2_args: (dict) Additional parameters passed to resizers.
             Default is None.
-        use_fmtc: (bool) Whether to use fmtconv in subsampling and upsampling.
-            Default is False.
-            Note that fmtconv's point subsampling may causes pixel shift.
         depth_args: (dict) Additional arguments passed to mvf.Depth().
             Default is None.
 
@@ -2782,25 +2783,25 @@ def GuidedFilter(input, guidance=None, radius=4, regulation=0.01, use_gauss=Fals
     eps = regulation
     s = subsampling_ratio
 
-    # Select kernel shape. As the width of BoxFilter in this module is (radius*2-1) rather than (radius*2+1), radius should be be incremented by one.
-    Filter = functools.partial(core.tcanny.TCanny, sigma=r/2 * math.sqrt(2), mode=-1) if use_gauss else functools.partial(BoxFilter, radius=r+1)
-
-    # Back up guidence image
+    # Back up guidance image
     I_src = I
 
     # Fast guided filter's subsampling
     if fast:
         down_w = round(width / s + 0.5)
         down_h = round(height / s + 0.5)
-        if use_fmtc:
+        if use_fmtc1:
             p = core.fmtc.resample(p, down_w, down_h, kernel=kernel1, **kernel1_args)
             I = core.fmtc.resample(I, down_w, down_h, kernel=kernel1, **kernel1_args) if guidance is not None else p
         else: # use zimg
-            w = round(width / s)
-            h = round(height / s)
             p = eval('core.resize.{kernel}(p, {w}, {h}, **kernel1_args)'.format(kernel=kernel1.capitalize(), w=down_w, h=down_h))
             I = eval('core.resize.{kernel}(I, {w}, {h}, **kernel1_args)'.format(kernel=kernel1.capitalize(), w=down_w, h=down_h)) if guidance is not None else p
-        r = round(r / s)
+
+        r = round(r / s + 0.5)
+
+    # Select kernel shape. As the width of BoxFilter in this module is (radius*2-1) rather than (radius*2+1), radius should be be incremented by one.
+    Filter = functools.partial(core.tcanny.TCanny, sigma=r/2 * math.sqrt(2), mode=-1) if use_gauss else functools.partial(BoxFilter, radius=r+1)
+
     
     # Compute local linear coefficients.
     mean_p = Filter(p)
@@ -2819,10 +2820,10 @@ def GuidedFilter(input, guidance=None, radius=4, regulation=0.01, use_gauss=Fals
     
     # Fast guided filter's upsampling
     if fast:
-        if use_fmtc:
+        if use_fmtc2:
             mean_a = core.fmtc.resample(mean_a, width, height, kernel=kernel2, **kernel2_args)
             mean_b = core.fmtc.resample(mean_b, width, height, kernel=kernel2, **kernel2_args)
-        else:
+        else: # use zimg
             mean_a = eval('core.resize.{kernel}(mean_a, {w}, {h}, **kernel2_args)'.format(kernel=kernel2.capitalize(), w=width, h=height))
             mean_b = eval('core.resize.{kernel}(mean_b, {w}, {h}, **kernel2_args)'.format(kernel=kernel2.capitalize(), w=width, h=height))
 
