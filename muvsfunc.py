@@ -38,6 +38,7 @@ Functions:
     BalanceBorders
     DisplayHistogram
     GuidedFilter
+    GuidedFilterColor
 '''
 
 import vapoursynth as vs
@@ -2828,6 +2829,164 @@ def GuidedFilter(input, guidance=None, radius=4, regulation=0.01, use_gauss=Fals
 
     # Linear translation
     q = core.std.Expr([mean_a, I_src, mean_b], ['x y * z +'])
+    
+    # Final bitdepth conversion
+    return mvf.Depth(q, depth=bits, sample=sampleType, **depth_args)
+
+
+def GuidedFilterColor(input, guidance, radius=4, regulation=0.01, use_gauss=False, fast=True, subsampling_ratio=4, use_fmtc1=False, kernel1='point', kernel1_args=None, use_fmtc2=False, kernel2='bilinear', kernel2_args=None, **depth_args):
+    """Guided Filter Color - fast edge-preserving smoothing algorithm using a color image as the guidance
+
+    Author: Kaiming He et al. (http://kaiminghe.com/eccv10/)
+
+    Most of the description of the guided filter can be found in the documentation of native guided filter above.
+    
+    A color guidance image can better preserve the edges that are not distinguishable in gray-scale.
+    
+    It is also essential in the matting/feathering and dehazing applications,
+    because the local linear model is more likely to be valid in the RGB color space than in gray-scale.
+
+    Args:
+        input: Input clip. It should be a gray-scale/single channel image.
+        guidance: Guidance clip used to compute the coefficient of the linear translation on 'input'.
+            It must has no subsampling for the second and third plane in horizontal/vertical direction, e.g. RGB or YUV444.
+        
+        Descriptions of other parameter can be found in the documentation of native guided filter above.
+
+    Ref:
+        [1] K. He, J. Sun, and X. Tang. Guided image filtering. TPAMI, 35(6):1397–1409, 2013.
+        [2] K. He, J. Sun. Fast Guided Filter. CoRR abs/1505.00996 (2015)
+
+    """
+
+    core = vs.get_core()
+    funcName = 'GuidedFilterColor'
+
+    if not isinstance(input, vs.VideoNode) or input.format.num_planes > 1:
+        raise TypeError(funcName + ': \"input\" must be a gray-scale/single channel clip!')
+
+    # Get clip's properties
+    bits = input.format.bits_per_sample
+    sampleType = input.format.sample_type
+    width = input.width
+    height = input.height
+
+    if not isinstance(guidance, vs.VideoNode) or guidance.format.subsampling_w != 0 or guidance.format.subsampling_h != 0:
+        raise TypeError(funcName + ': \"guidance\" must be a RGB or YUV444 clip!')
+    if input.width != guidance.width or input.height != guidance.height:
+        raise ValueError(funcName + ': \"guidance\" must be of the same size as \"input\"!')
+
+    if kernel1_args is None:
+        kernel1_args = {}
+    if kernel2_args is None:
+        kernel2_args = {}
+
+    # Bitdepth conversion and variable names modification to correspond to the paper
+    p = mvf.Depth(input, depth=32, sample=vs.FLOAT, **depth_args)
+    I = mvf.Depth(guidance, depth=32, sample=vs.FLOAT, **depth_args)
+    r = radius
+    eps = regulation
+    s = subsampling_ratio
+
+    # Back up guidance image
+    I_src_r = mvf.GetPlane(I, 0)
+    I_src_g = mvf.GetPlane(I, 1)
+    I_src_b = mvf.GetPlane(I, 2)
+
+    # Fast guided filter's subsampling
+    if fast:
+        down_w = round(width / s + 0.5)
+        down_h = round(height / s + 0.5)
+        if use_fmtc1:
+            p = core.fmtc.resample(p, down_w, down_h, kernel=kernel1, **kernel1_args)
+            I = core.fmtc.resample(I, down_w, down_h, kernel=kernel1, **kernel1_args)
+        else: # use zimg
+            p = eval('core.resize.{kernel}(p, {w}, {h}, **kernel1_args)'.format(kernel=kernel1.capitalize(), w=down_w, h=down_h))
+            I = eval('core.resize.{kernel}(I, {w}, {h}, **kernel1_args)'.format(kernel=kernel1.capitalize(), w=down_w, h=down_h)) if guidance is not None else p
+
+        r = round(r / s + 0.5)
+
+    # Select kernel shape. As the width of BoxFilter in this module is (radius*2-1) rather than (radius*2+1), radius should be be incremented by one.
+    Filter = functools.partial(core.tcanny.TCanny, sigma=r/2 * math.sqrt(2), mode=-1) if use_gauss else functools.partial(BoxFilter, radius=r+1)
+
+    # Seperate planes
+    I_r = mvf.GetPlane(I, 0)
+    I_g = mvf.GetPlane(I, 1)
+    I_b = mvf.GetPlane(I, 2)
+
+    # Compute local linear coefficients.
+    mean_p = Filter(p)
+
+    mean_I_r = Filter(I_r)
+    mean_I_g = Filter(I_g)
+    mean_I_b = Filter(I_b)
+
+    corr_I_rr = Filter(core.std.Expr([I_r], ['x dup *']))
+    corr_I_rg = Filter(core.std.Expr([I_r, I_g], ['x y *']))
+    corr_I_rb = Filter(core.std.Expr([I_r, I_b], ['x y *']))
+    corr_I_gg = Filter(core.std.Expr([I_g], ['x dup *']))
+    corr_I_gb = Filter(core.std.Expr([I_g, I_b], ['x y *']))
+    corr_I_bb = Filter(core.std.Expr([I_b], ['x dup *']))
+
+    corr_Ip_r = Filter(core.std.Expr([I_r, p], ['x y *']))
+    corr_Ip_g = Filter(core.std.Expr([I_g, p], ['x y *']))
+    corr_Ip_b = Filter(core.std.Expr([I_b, p], ['x y *']))
+
+    var_I_rr = core.std.Expr([corr_I_rr, mean_I_r], ['x y dup * - {} +'.format(eps)])
+    var_I_gg = core.std.Expr([corr_I_gg, mean_I_g], ['x y dup * - {} +'.format(eps)])
+    var_I_bb = core.std.Expr([corr_I_bb, mean_I_b], ['x y dup * - {} +'.format(eps)])
+
+    cov_I_rg = core.std.Expr([corr_I_rg, mean_I_r, mean_I_g], ['x y z * -'])
+    cov_I_rb = core.std.Expr([corr_I_rb, mean_I_r, mean_I_b], ['x y z * -'])
+    cov_I_gb = core.std.Expr([corr_I_gb, mean_I_g, mean_I_b], ['x y z * -'])
+
+    cov_Ip_r = core.std.Expr([corr_Ip_r, mean_I_r, mean_p], ['x y z * -'])
+    cov_Ip_g = core.std.Expr([corr_Ip_g, mean_I_g, mean_p], ['x y z * -'])
+    cov_Ip_b = core.std.Expr([corr_Ip_b, mean_I_b, mean_p], ['x y z * -'])
+
+    # Inverse of Sigma + eps * I
+    inv_rr = core.std.Expr([var_I_gg, var_I_bb, cov_I_gb], ['x y * z dup * -'])
+    inv_rg = core.std.Expr([cov_I_gb, cov_I_rb, cov_I_rg, var_I_bb], ['x y * z a * -'])
+    inv_rb = core.std.Expr([cov_I_rg, cov_I_gb, var_I_gg, cov_I_rb], ['x y * z a * -'])
+    inv_gg = core.std.Expr([var_I_rr, var_I_bb, cov_I_rb], ['x y * z dup * -'])
+    inv_gb = core.std.Expr([cov_I_rb, cov_I_rg, var_I_rr, cov_I_gb], ['x y * z a * -'])
+    inv_bb = core.std.Expr([var_I_rr, var_I_gg, cov_I_rg], ['x y * z dup * -'])
+
+    covDet = core.std.Expr([inv_rr, var_I_rr, inv_rg, cov_I_rg, inv_rb, cov_I_rb], ['x y * z a * + b c * +'])
+
+    inv_rr = core.std.Expr([inv_rr, covDet], ['x y /'])
+    inv_rg = core.std.Expr([inv_rg, covDet], ['x y /'])
+    inv_rb = core.std.Expr([inv_rb, covDet], ['x y /'])
+    inv_gg = core.std.Expr([inv_gg, covDet], ['x y /'])
+    inv_gb = core.std.Expr([inv_gb, covDet], ['x y /'])
+    inv_bb = core.std.Expr([inv_bb, covDet], ['x y /'])
+
+    a_r = core.std.Expr([inv_rr, cov_Ip_r, inv_rg, cov_Ip_g, inv_rb, cov_Ip_b], ['x y * z a * + b c * +'])
+    a_g = core.std.Expr([inv_rg, cov_Ip_r, inv_gg, cov_Ip_g, inv_gb, cov_Ip_b], ['x y * z a * + b c * +'])
+    a_b = core.std.Expr([inv_rb, cov_Ip_r, inv_gb, cov_Ip_g, inv_bb, cov_Ip_b], ['x y * z a * + b c * +'])
+    
+    b = core.std.Expr([mean_p, a_r, mean_I_r, a_g, mean_I_g, a_b, mean_I_b], ['x y z * - a b * - c d * -'])
+    
+    mean_a_r = Filter(a_r)
+    mean_a_g = Filter(a_g)
+    mean_a_b = Filter(a_b)
+    mean_b = Filter(b)
+    
+    # Fast guided filter's upsampling
+    if fast:
+        if use_fmtc2:
+            mean_a_r = core.fmtc.resample(mean_a_r, width, height, kernel=kernel2, **kernel2_args)
+            mean_a_g = core.fmtc.resample(mean_a_g, width, height, kernel=kernel2, **kernel2_args)
+            mean_a_b = core.fmtc.resample(mean_a_b, width, height, kernel=kernel2, **kernel2_args)
+            mean_b = core.fmtc.resample(mean_b, width, height, kernel=kernel2, **kernel2_args)
+        else: # use zimg
+            mean_a_r = eval('core.resize.{kernel}(mean_a_r, {w}, {h}, **kernel2_args)'.format(kernel=kernel2.capitalize(), w=width, h=height))
+            mean_a_g = eval('core.resize.{kernel}(mean_a_g, {w}, {h}, **kernel2_args)'.format(kernel=kernel2.capitalize(), w=width, h=height))
+            mean_a_b = eval('core.resize.{kernel}(mean_a_b, {w}, {h}, **kernel2_args)'.format(kernel=kernel2.capitalize(), w=width, h=height))
+            mean_b = eval('core.resize.{kernel}(mean_b, {w}, {h}, **kernel2_args)'.format(kernel=kernel2.capitalize(), w=width, h=height))
+
+    # Linear translation
+    q = core.std.Expr([mean_a_r, I_src_r, mean_a_g, I_src_g, mean_a_b, I_src_b, mean_b], ['x y * z a * + b c * + d +'])
     
     # Final bitdepth conversion
     return mvf.Depth(q, depth=bits, sample=sampleType, **depth_args)
