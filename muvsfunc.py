@@ -2689,10 +2689,10 @@ def DisplayHistogram(clip, factor=None):
     return core.std.StackVertical([histogram_v, bottom])
 
 
-def GuidedFilter(input, guidance=None, radius=4, regulation=0.01, fast=True, subsampling_ratio=4, kernel1='point', kernel2='bilinear', use_fmtc=False, **depth_args):
-    """Fast edge-preserving smoothing algorithm with a wide range of applications
+def GuidedFilter(input, guidance=None, radius=4, regulation=0.01, use_gauss=False, fast=True, subsampling_ratio=4, kernel1='point', kernel1_args=None, kernel2='bilinear', kernel2_args=None, use_fmtc=False, **depth_args):
+    """Guided Filter - fast edge-preserving smoothing algorithm
 
-    Author: Kaiming He et al.
+    Author: Kaiming He et al. (http://kaiminghe.com/eccv10/)
 
     The guided filter computes the filtering output by considering the content of a guidance image.
 
@@ -2704,7 +2704,7 @@ def GuidedFilter(input, guidance=None, radius=4, regulation=0.01, fast=True, sub
     enabling new filtering applications like detail enhancement, HDR compression, 
     image matting/feathering, dehazing, joint upsampling, etc.
 
-    All the calculation inside are done at 32bit float.
+    All the internal calculations are done at 32-bit float.
 
     Args:
         input: Input clip.
@@ -2718,6 +2718,13 @@ def GuidedFilter(input, guidance=None, radius=4, regulation=0.01, fast=True, sub
         regulation: (float) A criterion for judging whether a patch has high variance and should be preserved, or is flat and should be smoothed.
             Similar to the range variance in the bilateral filter.
             Default is 0.01.
+        use_gauss: Whether to use gaussian guided filter.
+            Guided filter is rotationally asymmetric and slightly biases to the x/y-axis because a box window is used in the filter design.
+            The problem can be solved by using a gaussian weighted window instead. The resulting kernels are rotationally symmetric.
+            The authors suggest that in practice the original guided filter is always good enough.
+            Gaussian is performed by core.tcanny.TCanny(mode=-1).
+            The sigma is set to r/sqrt(2).
+            Default is False.
         fast: (bool) Whether to use fast guided filter.
             This method subsamples the filtering input image and the guidance image,
             computes the local linear coefficients, and upsamples these coefficients.
@@ -2729,6 +2736,8 @@ def GuidedFilter(input, guidance=None, radius=4, regulation=0.01, fast=True, sub
             Default is 4.
         kernel1, kernel2: (string) Subsampling/upsampling kernels.
             Default is 'point'and 'bilinear'.
+        kernel1_args, kernel2_args: (dict) Additional parameters passed to resizers.
+            Default is None.
         use_fmtc: (bool) Whether to use fmtconv in subsampling and upsampling.
             Default is False.
             Note that fmtconv's point subsampling may causes pixel shift.
@@ -2760,13 +2769,21 @@ def GuidedFilter(input, guidance=None, radius=4, regulation=0.01, fast=True, sub
             raise ValueError(funcName + ': \"guidance\" must be of the same format as \"input\"!')
         if input.width != guidance.width or input.height != guidance.height:
             raise ValueError(funcName + ': \"guidance\" must be of the same size as \"input\"!')
-    
+
+    if kernel1_args is None:
+        kernel1_args = {}
+    if kernel2_args is None:
+        kernel2_args = {}
+
     # Bitdepth conversion and variable names modification to correspond to the paper
     p = mvf.Depth(input, depth=32, sample=vs.FLOAT, **depth_args)
     I = mvf.Depth(guidance, depth=32, sample=vs.FLOAT, **depth_args) if guidance is not None else p
     r = radius
     eps = regulation
     s = subsampling_ratio
+
+    # Select kernel shape. As the width of BoxFilter in this module is (radius*2-1) rather than (radius*2+1), radius should be be incremented by one.
+    Filter = functools.partial(core.tcanny.TCanny, sigma=r/2 * math.sqrt(2), mode=-1) if use_gauss else functools.partial(BoxFilter, radius=r+1)
 
     # Back up guidence image
     I_src = I
@@ -2776,20 +2793,20 @@ def GuidedFilter(input, guidance=None, radius=4, regulation=0.01, fast=True, sub
         down_w = round(width / s + 0.5)
         down_h = round(height / s + 0.5)
         if use_fmtc:
-            p = core.fmtc.resample(p, down_w, down_h, kernel=kernel1)
-            I = core.fmtc.resample(I, down_w, down_h, kernel=kernel1) if guidance is not None else p
+            p = core.fmtc.resample(p, down_w, down_h, kernel=kernel1, **kernel1_args)
+            I = core.fmtc.resample(I, down_w, down_h, kernel=kernel1, **kernel1_args) if guidance is not None else p
         else: # use zimg
             w = round(width / s)
             h = round(height / s)
-            p = eval('core.resize.{kernel}(p, {w}, {h})'.format(kernel=kernel1.capitalize(), w=down_w, h=down_h))
-            I = eval('core.resize.{kernel}(I, {w}, {h})'.format(kernel=kernel1.capitalize(), w=down_w, h=down_h)) if guidance is not None else p
+            p = eval('core.resize.{kernel}(p, {w}, {h}, **kernel1_args)'.format(kernel=kernel1.capitalize(), w=down_w, h=down_h))
+            I = eval('core.resize.{kernel}(I, {w}, {h}, **kernel1_args)'.format(kernel=kernel1.capitalize(), w=down_w, h=down_h)) if guidance is not None else p
         r = round(r / s)
     
-    # Compute local linear coefficients. As the width of BoxFilter in this module is (radius*2-1) rather than (radius*2+1), conversion is required
-    mean_p = BoxFilter(p, radius=r+1)
-    mean_I = BoxFilter(I, radius=r+1) if guidance is not None else mean_p
-    corr_I = BoxFilter(core.std.Expr([I], ['x dup *']), radius=r+1)
-    corr_Ip = BoxFilter(core.std.Expr([I, p], ['x y *']), radius=r+1) if guidance is not None else corr_I
+    # Compute local linear coefficients.
+    mean_p = Filter(p)
+    mean_I = Filter(I) if guidance is not None else mean_p
+    corr_I = Filter(core.std.Expr([I], ['x dup *']))
+    corr_Ip = Filter(core.std.Expr([I, p], ['x y *'])) if guidance is not None else corr_I
 
     var_I = core.std.Expr([corr_I, mean_I], ['x y dup * -'])
     cov_Ip = core.std.Expr([corr_Ip, mean_I, mean_p], ['x y z * -']) if guidance is not None else var_I
@@ -2797,17 +2814,17 @@ def GuidedFilter(input, guidance=None, radius=4, regulation=0.01, fast=True, sub
     a = core.std.Expr([cov_Ip, var_I], ['x y {} + /'.format(eps)])
     b = core.std.Expr([mean_p, a, mean_I], ['x y z * -'])
     
-    mean_a = BoxFilter(a, radius=r+1)
-    mean_b = BoxFilter(b, radius=r+1)
+    mean_a = Filter(a)
+    mean_b = Filter(b)
     
     # Fast guided filter's upsampling
     if fast:
         if use_fmtc:
-            mean_a = core.fmtc.resample(mean_a, width, height, kernel=kernel2)
-            mean_b = core.fmtc.resample(mean_b, width, height, kernel=kernel2)
+            mean_a = core.fmtc.resample(mean_a, width, height, kernel=kernel2, **kernel2_args)
+            mean_b = core.fmtc.resample(mean_b, width, height, kernel=kernel2, **kernel2_args)
         else:
-            mean_a = eval('core.resize.{kernel}(mean_a, {w}, {h})'.format(kernel=kernel2.capitalize(), w=width, h=height))
-            mean_b = eval('core.resize.{kernel}(mean_b, {w}, {h})'.format(kernel=kernel2.capitalize(), w=width, h=height))
+            mean_a = eval('core.resize.{kernel}(mean_a, {w}, {h}, **kernel2_args)'.format(kernel=kernel2.capitalize(), w=width, h=height))
+            mean_b = eval('core.resize.{kernel}(mean_b, {w}, {h}, **kernel2_args)'.format(kernel=kernel2.capitalize(), w=width, h=height))
 
     # Linear translation
     q = core.std.Expr([mean_a, I_src, mean_b], ['x y * z +'])
