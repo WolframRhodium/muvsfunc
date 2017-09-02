@@ -87,16 +87,16 @@ def LDMerge(flt_h, flt_v, src, mrad=0, show=0, planes=None, convknl=1, conv_div=
     if not isinstance(flt_h, vs.VideoNode):
         raise TypeError(funcName + ': \"flt_h\" must be a clip!')
     if src.format.id != flt_h.format.id:
-        raise ValueError(funcName + ': \"flt_h\" must be of the same format as \"src\"!')
+        raise TypeError(funcName + ': \"flt_h\" must be of the same format as \"src\"!')
     if src.width != flt_h.width or src.height != flt_h.height:
-        raise ValueError(funcName + ': \"flt_h\" must be of the same size as \"src\"!')
+        raise TypeError(funcName + ': \"flt_h\" must be of the same size as \"src\"!')
     
     if not isinstance(flt_v, vs.VideoNode):
         raise TypeError(funcName + ': \"flt_v\" must be a clip!')
     if src.format.id != flt_v.format.id:
-        raise ValueError(funcName + ': \"flt_v\" must be of the same format as \"src\"!')
+        raise TypeError(funcName + ': \"flt_v\" must be of the same format as \"src\"!')
     if src.width != flt_v.width or src.height != flt_v.height:
-        raise ValueError(funcName + ': \"flt_v\" must be of the same size as \"src\"!')
+        raise TypeError(funcName + ': \"flt_v\" must be of the same size as \"src\"!')
         
     if not isinstance(mrad, int):
         raise TypeError(funcName + '\"mrad\" must be an int!')
@@ -172,11 +172,11 @@ def Compare(src, flt, power=1.5, chroma=False, mode=2):
     if not isinstance(flt, vs.VideoNode):
         raise TypeError(funcName + ': \"flt\" must be a clip!')
     if src.format.id != flt.format.id:
-        raise ValueError(funcName + ': \"flt\" must be of the same format as \"src\"!')
+        raise TypeError(funcName + ': \"flt\" must be of the same format as \"src\"!')
     if src.width != flt.width or src.height != flt.height:
-        raise ValueError(funcName + ': \"flt\" must be of the same size as \"src\"!')
+        raise TypeError(funcName + ': \"flt\" must be of the same size as \"src\"!')
     if mode not in [1, 2]:
-        raise ValueError(funcName + ': \"mode\" must be in [1, 2]!')
+        raise TypeError(funcName + ': \"mode\" must be in [1, 2]!')
 
     isGray = src.format.color_family == vs.GRAY
     bits = src.format.bits_per_sample
@@ -485,7 +485,7 @@ def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=
     if ref.format.color_family not in [vs.YUV, vs.GRAY, vs.YCOCG]:
         raise TypeError(funcName + ': \"ref\" must be YUV, GRAY or YCOCG color family!')
     if src.width != ref.width or src.height != ref.height:
-        raise ValueError(funcName + ': \"ref\" must be of the same size as \"src\"!')
+        raise TypeError(funcName + ': \"ref\" must be of the same size as \"src\"!')
 
     bits = src.format.bits_per_sample
     src_16 = core.fmtc.bitdepth(src, bits=16, planes=planes) if bits < 16 else src
@@ -1242,9 +1242,9 @@ def Soothe_mod(input, source, keep=24, radius=1, scenechange=32, use_misc=True):
         source_src = None
 
     if input.format.id != source.format.id:
-        raise ValueError(funcName + ': \"source\" must be of the same format as \"input\"!')
+        raise TypeError(funcName + ': \"source\" must be of the same format as \"input\"!')
     if input.width != source.width or input.height != source.height:
-        raise ValueError(funcName + ': \"source\" must be of the same size as \"input\"!')
+        raise TypeError(funcName + ': \"source\" must be of the same size as \"input\"!')
     
     keep = max(min(keep, 100), 0)
     
@@ -1983,7 +1983,7 @@ def SeeSaw(clp, denoised=None, NRlimit=2, NRlimit2=None, Sstr=1.5, Slimit=None, 
         if denoised.format.id != clp.format.id:
             raise TypeError(funcName + ': \"denoised\" the same format as \"clp\"!')
         if denoised.width != clp.width or denoised.height != clp.height:
-            raise ValueError(funcName + ': \"denoised\" must be of the same size as \"clp\"!')
+            raise TypeError(funcName + ': \"denoised\" must be of the same size as \"clp\"!')
 
     if not isGray:
         clp_src = clp
@@ -2079,7 +2079,7 @@ def SeeSaw_SootheSS(sharp, orig, sootheT=25, sootheS=0):
     if orig.format.id != sharp.format.id:
         raise TypeError(funcName + ': \"orig\" the same format as \"sharp\"!')
     if orig.width != sharp.width or orig.height != sharp.height:
-        raise ValueError(funcName + ': \"orig\" must be of the same size as \"sharp\"!')
+        raise TypeError(funcName + ': \"orig\" must be of the same size as \"sharp\"!')
 
     sootheT = max(min(sootheT, 100), -100)
     sootheS = max(min(sootheS, 100), 0)
@@ -2424,9 +2424,9 @@ def dfttestMC(input, pp=None, mc=2, mdg=False, planes=None, sigma=None, sbsize=N
         if not isinstance(pp, vs.VideoNode):
             raise TypeError(funcName + ': \"pp\" must be a clip!')
         if input.format.id != pp.format.id:
-            raise ValueError(funcName + ': \"pp\" must be of the same format as \"input\"!')
+            raise TypeError(funcName + ': \"pp\" must be of the same format as \"input\"!')
         if input.width != pp.width or input.height != pp.height:
-            raise ValueError(funcName + ': \"pp\" must be of the same size as \"input\"!')
+            raise TypeError(funcName + ': \"pp\" must be of the same size as \"input\"!')
 
     # Set default options. Most external parameters are passed valueless.
     if dfttest_params is None:
@@ -2767,9 +2767,9 @@ def GuidedFilter(input, guidance=None, radius=4, regulation=0.01, use_gauss=Fals
         if not isinstance(guidance, vs.VideoNode):
             raise TypeError(funcName + ': \"guidance\" must be a clip!')
         if input.format.id != guidance.format.id:
-            raise ValueError(funcName + ': \"guidance\" must be of the same format as \"input\"!')
+            raise TypeError(funcName + ': \"guidance\" must be of the same format as \"input\"!')
         if input.width != guidance.width or input.height != guidance.height:
-            raise ValueError(funcName + ': \"guidance\" must be of the same size as \"input\"!')
+            raise TypeError(funcName + ': \"guidance\" must be of the same size as \"input\"!')
 
     if kernel1_args is None:
         kernel1_args = {}
@@ -2801,7 +2801,6 @@ def GuidedFilter(input, guidance=None, radius=4, regulation=0.01, use_gauss=Fals
 
     # Select kernel shape. As the width of BoxFilter in this module is (radius*2-1) rather than (radius*2+1), radius should be be incremented by one.
     Filter = functools.partial(core.tcanny.TCanny, sigma=r/2 * math.sqrt(2), mode=-1) if use_gauss else functools.partial(BoxFilter, radius=r+1)
-
     
     # Compute local linear coefficients.
     mean_p = Filter(p)
