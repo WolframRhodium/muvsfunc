@@ -37,8 +37,7 @@ Functions:
     TurnRight
     BalanceBorders
     DisplayHistogram
-    GuidedFilter
-    GuidedFilterColor
+    GuidedFilter (Color)
 '''
 
 import vapoursynth as vs
@@ -2690,7 +2689,7 @@ def DisplayHistogram(clip, factor=None):
     return core.std.StackVertical([histogram_v, bottom])
 
 
-def GuidedFilter(input, guidance=None, radius=4, regulation=0.01, use_gauss=False, fast=True, subsampling_ratio=4, use_fmtc1=False, kernel1='point', kernel1_args=None, use_fmtc2=False, kernel2='bilinear', kernel2_args=None, **depth_args):
+def GuidedFilter(input, guidance=None, radius=4, regulation=0.01, regulation_mode=0, use_gauss=False, fast=True, subsampling_ratio=4, use_fmtc1=False, kernel1='point', kernel1_args=None, use_fmtc2=False, kernel2='bilinear', kernel2_args=None, **depth_args):
     """Guided Filter - fast edge-preserving smoothing algorithm
 
     Author: Kaiming He et al. (http://kaiminghe.com/eccv10/)
@@ -2709,46 +2708,80 @@ def GuidedFilter(input, guidance=None, radius=4, regulation=0.01, use_gauss=Fals
 
     Args:
         input: Input clip.
+
         guidance: (clip) Guidance clip used to compute the coefficient of the linear translation on 'input'.
             It must has the same clip properties as 'input'.
             If it is None, it will be set to input, with duplicate calculations being omitted.
             Default is None.
+
         radius: (int) Box / Gaussian filter's radius.
             If box filter is used, the range of radius is 1 ~ 12(fast=False) or 1 ~ 12*subsampling_ratio in VapourSynth R38 or newer because of the limitation of std.Convolution().
             For gaussian filter, the radius can be much larger, even reaching the width/height of the clip.
             Default is 4.
+
         regulation: (float) A criterion for judging whether a patch has high variance and should be preserved, or is flat and should be smoothed.
             Similar to the range variance in the bilateral filter.
             Default is 0.01.
-        use_gauss: Whether to use gaussian guided filter.
+
+        regulation_mode: (int) Tweak on regulation.
+            It was mentioned in [1] that the local filters such as the Bilateral Filter (BF) or Guided Image Filter (GIF)
+            would concentrate the blurring near these edges and introduce halos.
+
+            The author of Weighted Guided Image Filter (WGIF) [3] argued that,
+            the Lagrangian factor (regulation) in the GIF is fixed could be another major reason that the GIF produces halo artifacts.
+
+            In [3], a WGIF was proposed to reduce the halo artifacts of the GIF.
+            An edge aware factor was introduced to the constraint term of the GIF,
+            the factor makes the edges preserved better in the result images and thus reduces the halo artifacts.
+
+            In [4], a gradient domain guided image filter is proposed by incorporating an explicit first-order edge-aware constraint.
+            The proposed filter is based on local optimization
+            and the cost function is composed of a zeroth order data fidelity term and a first order regularization term.
+            So the factors in the new local linear model can represent the images more accurately near edges.
+            In addition, the edge-aware factor is multi-scale, which can separate edges of an image from fine details of the image better.
+
+            0: Guided Filter [1]
+            1: Weighted Guided Image Filter [3]
+            2: Gradient Domain Guided Image Filter [4]
+            Default is 0.
+
+        use_gauss: Whether to use gaussian guided filter [1]. This replaces mean filter with gaussian filter.
             Guided filter is rotationally asymmetric and slightly biases to the x/y-axis because a box window is used in the filter design.
             The problem can be solved by using a gaussian weighted window instead. The resulting kernels are rotationally symmetric.
-            The authors suggest that in practice the original guided filter is always good enough.
+            The authors of [1] suggest that in practice the original guided filter is always good enough.
             Gaussian is performed by core.tcanny.TCanny(mode=-1).
             The sigma is set to r/sqrt(2).
             Default is False.
-        fast: (bool) Whether to use fast guided filter.
+
+        fast: (bool) Whether to use fast guided filter [2].
             This method subsamples the filtering input image and the guidance image,
             computes the local linear coefficients, and upsamples these coefficients.
             The upsampled coefficients are adopted on the original guidance image to produce the output.
             This method reduces the time complexity from O(N) to O(N^2) for a subsampling ratio s.
             Default is True.
+
         subsampling_ratio: (float) Only works when fast=True.
             Generally should be no less than 'radius'.
             Default is 4.
+
         use_fmtc1, use_fmtc2: (bool) Whether to use fmtconv in subsampling / upsampling.
             Default is False.
             Note that fmtconv's point subsampling may causes pixel shift.
+
         kernel1, kernel2: (string) Subsampling/upsampling kernels.
             Default is 'point'and 'bilinear'.
+
         kernel1_args, kernel2_args: (dict) Additional parameters passed to resizers.
             Default is None.
+
         depth_args: (dict) Additional arguments passed to mvf.Depth().
             Default is None.
 
     Ref:
-        [1] K. He, J. Sun, and X. Tang. Guided image filtering. TPAMI, 35(6):1397–1409, 2013.
-        [2] K. He, J. Sun. Fast Guided Filter. CoRR abs/1505.00996 (2015)
+        [1] He, K., Sun, J., & Tang, X. (2013). Guided image filtering. IEEE transactions on pattern analysis and machine intelligence, 35(6), 1397-1409.
+        [2] He, K., & Sun, J. (2015). Fast guided filter. arXiv preprint arXiv:1505.00996.
+        [3] Li, Z., Zheng, J., Zhu, Z., Yao, W., & Wu, S. (2015). Weighted guided image filtering. IEEE Transactions on Image Processing, 24(1), 120-129.
+        [4] Kou, F., Chen, W., Wen, C., & Li, Z. (2015). Gradient domain guided image filtering. IEEE Transactions on Image Processing, 24(11), 4528-4539.
 
     """
 
@@ -2800,19 +2833,65 @@ def GuidedFilter(input, guidance=None, radius=4, regulation=0.01, use_gauss=Fals
 
         r = round(r / s + 0.5)
 
-    # Select kernel shape. As the width of BoxFilter in this module is (radius*2-1) rather than (radius*2+1), radius should be be incremented by one.
+    # Select the shape of the kernel. As the width of BoxFilter in this module is (radius*2-1) rather than (radius*2+1), radius should be increased by one.
     Filter = functools.partial(core.tcanny.TCanny, sigma=r/2 * math.sqrt(2), mode=-1) if use_gauss else functools.partial(BoxFilter, radius=r+1)
+    Filter_r1 = functools.partial(core.tcanny.TCanny, sigma=1/2 * math.sqrt(2), mode=-1) if use_gauss else functools.partial(BoxFilter, radius=1+1)
+
+
+    # Edge-Aware Weighting, equation (5) in [3], or equation (9) in [4].
+    def FLT(n, f, clip, core, eps0):
+        frameMean = f.props.PlaneStatsAverage
+
+        return core.std.Expr(clip, ['x {eps0} + {avg} *'.format(avg=frameMean, eps0=eps0)])
+
+
+    # Compute the optimal value of a of Gradient Domain Guided Image Filter, equation (12) in [4]
+    def FLT2(n, f, cov_Ip, weight_in, weight, var_I, core, eps):
+        frameMean = f.props.PlaneStatsAverage
+        frameMin = f.props.PlaneStatsMin
+
+        alpha = frameMean
+        kk = -4 / (frameMin - alpha)
+
+        return core.std.Expr([cov_Ip, weight_in, weight, var_I], ['x {eps} 1 1 1 {kk} y {alpha} - * exp + / - * z / + a {eps} z / + /'.format(eps=eps, kk=kk, alpha=alpha)])
     
     # Compute local linear coefficients.
     mean_p = Filter(p)
     mean_I = Filter(I) if guidance is not None else mean_p
-    corr_I = Filter(core.std.Expr([I], ['x dup *']))
+    I_square = core.std.Expr([I], ['x dup *'])
+    corr_I = Filter(I_square)
     corr_Ip = Filter(core.std.Expr([I, p], ['x y *'])) if guidance is not None else corr_I
 
     var_I = core.std.Expr([corr_I, mean_I], ['x y dup * -'])
     cov_Ip = core.std.Expr([corr_Ip, mean_I, mean_p], ['x y z * -']) if guidance is not None else var_I
+
+    if regulation_mode: # 0: Original Guided Filter, 1: Weighted Guided Image Filter, 2: Gradient Domain Guided Image Filter
+        if r != 1:
+            mean_I_1 = Filter_r1(I)
+            corr_I_1 = Filter_r1(I_square)
+            var_I_1 = core.std.Expr([corr_I_1, mean_I_1], ['x y dup * -'])
+        else: # r == 1
+            var_I_1 == var_I
+
+        if regulation_mode == 1: # Weighted Guided Image Filter
+            weight_in = var_I_1
+        else: # regulation_mode == 2, Gradient Domain Guided Image Filter
+            weight_in = core.std.Expr([var_I, var_I_1], ['x y * sqrt']) 
+
+        eps0 = 0.001 ** 2 # Epsilon in [3] and [4]
+        denominator = core.std.Expr([weight_in], ['1 x {} + /'.format(eps0)])
+
+        denominator = core.std.PlaneStats(denominator, plane=[0])
+        weight = core.std.FrameEval(denominator, functools.partial(FLT, clip=weight_in, core=core, eps0=eps0), prop_src=[denominator]) # equation (5) in [3], or equation (9) in [4]
     
-    a = core.std.Expr([cov_Ip, var_I], ['x y {} + /'.format(eps)])
+        if regulation_mode == 1: # Weighted Guided Image Filter
+            a = core.std.Expr([cov_Ip, var_I, weight], ['x y {eps} z / + /'.format(eps=eps)])
+        else: # regulation_mode == 2, Gradient Domain Guided Image Filter
+            weight_in = core.std.PlaneStats(weight_in, plane=[0])
+            a = core.std.FrameEval(weight, functools.partial(FLT2, cov_Ip=cov_Ip, weight_in=weight_in, weight=weight, var_I=var_I, core=core, eps=eps), prop_src=[weight_in])
+    else: # regulation_mode == 0, Original Guided Filter
+        a = core.std.Expr([cov_Ip, var_I], ['x y {} + /'.format(eps)])
+
     b = core.std.Expr([mean_p, a, mean_I], ['x y z * -'])
     
     mean_a = Filter(a)
@@ -2840,6 +2919,7 @@ def GuidedFilterColor(input, guidance, radius=4, regulation=0.01, use_gauss=Fals
     Author: Kaiming He et al. (http://kaiminghe.com/eccv10/)
 
     Most of the description of the guided filter can be found in the documentation of native guided filter above.
+    Only the native guided filter is implemented.
     
     A color guidance image can better preserve the edges that are not distinguishable in gray-scale.
     
@@ -2854,8 +2934,8 @@ def GuidedFilterColor(input, guidance, radius=4, regulation=0.01, use_gauss=Fals
         Descriptions of other parameter can be found in the documentation of native guided filter above.
 
     Ref:
-        [1] K. He, J. Sun, and X. Tang. Guided image filtering. TPAMI, 35(6):1397–1409, 2013.
-        [2] K. He, J. Sun. Fast Guided Filter. CoRR abs/1505.00996 (2015)
+        [1] He, K., Sun, J., & Tang, X. (2013). Guided image filtering. IEEE transactions on pattern analysis and machine intelligence, 35(6), 1397-1409.
+        [2] He, K., & Sun, J. (2015). Fast guided filter. arXiv preprint arXiv:1505.00996.
 
     """
 
