@@ -2871,7 +2871,7 @@ def GuidedFilter(input, guidance=None, radius=4, regulation=0.01, regulation_mod
             corr_I_1 = Filter_r1(I_square)
             var_I_1 = core.std.Expr([corr_I_1, mean_I_1], ['x y dup * -'])
         else: # r == 1
-            var_I_1 == var_I
+            var_I_1 = var_I
 
         if regulation_mode == 1: # Weighted Guided Image Filter
             weight_in = var_I_1

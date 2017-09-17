@@ -1,3 +1,9 @@
+"""LUM filters for VapourSynth
+
+    Ref:
+        [1] Hardie, R. C., & Boncelet, C. (1993). LUM filters: a class of rank-order-based filters for smoothing and sharpening. IEEE transactions on signal processing, 41(3), 1061-1076.
+"""
+
 def lum_smoother(input, k):
     low = muf.Sort(input, k, mode='min')
     max = muf.Sort(input, k, mode='max')
