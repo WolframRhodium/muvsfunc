@@ -1,4 +1,10 @@
-"""Miscellaneous functions
+"""
+Miscellaneous functions:
+    GPS
+    gauss
+    freq_merge
+    band_merge
+    detail_enhancement
 """
 
 import vapoursynth as vs

@@ -1678,12 +1678,15 @@ def BoxFilter(input, radius=16, planes=None):
         if core.version_number() < 33:
             raise NotImplementedError(funcName + ': Please update your VapourSynth. Convolution on float sample has not yet been implemented on current version.')
         elif radius == 2 or radius == 3:
-            return core.std.Convolution(input, [1] * ((radius * 2 - 1) * (radius * 2 - 1)), planes=planes)
+            return core.std.Convolution(input, [1] * ((radius * 2 - 1) * (radius * 2 - 1)), planes=planes, mode='s')
         else:
-            return core.std.Convolution(input, [1] * (radius * 2 - 1), planes=planes, mode='v').std.Convolution([1] * (radius * 2 - 1), planes=planes, mode='h')
+            if core.version_number() >= 39:
+                return core.std.BoxBlur(input, hradius=radius-1, vradius=radius-1, planes=planes)
+            else: # BoxFilter on float sample has not been implemented
+                return core.std.Convolution(input, [1] * (radius * 2 - 1), planes=planes, mode='v').std.Convolution([1] * (radius * 2 - 1), planes=planes, mode='h')      
     else: # input.format.sample_type == vs.INTEGER
         if radius == 2 or radius == 3:
-            return core.std.Convolution(input, [1] * ((radius * 2 - 1) * (radius * 2 - 1)), planes=planes)
+            return core.std.Convolution(input, [1] * ((radius * 2 - 1) * (radius * 2 - 1)), planes=planes, mode='s')
         elif core.std.get_functions().__contains__('BoxBlur'):
             return core.std.BoxBlur(input, hradius=radius-1, vradius=radius-1, planes=planes)
         else:
@@ -2518,49 +2521,6 @@ def TurnRight(clip):
     return core.std.FlipVertical(clip).std.Transpose()
 
 
-def BalanceTopBorder(c, cTop, thresh, blur):
-    """BalanceBorders()'s helper function"""
-    core = vs.get_core()
-
-    cWidth = c.width
-    cHeight = c.height
-    cTop = min(cTop, cHeight - 1)
-    blurWidth = max(4, math.floor(cWidth / blur))
-    
-    c2 = mvf.PointPower(c, 1, 1)
-
-    last = core.std.CropRel(c2, 0, 0, cTop*2, (cHeight - cTop - 1) * 2)
-    last = core.resize.Point(last, cWidth * 2, cTop * 2)
-    last = core.resize.Bilinear(last, blurWidth * 2, cTop * 2)
-    last = core.std.Convolution(last, [1, 1, 1], mode='h')
-    last = core.resize.Bilinear(last, cWidth * 2, cTop * 2)
-    referenceBlur = last
-
-    original = core.std.CropRel(c2, 0, 0, 0, (cHeight - cTop) * 2)
-
-    last = original
-    last = core.resize.Bilinear(last, blurWidth * 2, cTop * 2)
-    last = core.std.Convolution(last, [1, 1, 1], mode='h')
-    last = core.resize.Bilinear(last, cWidth * 2, cTop * 2)
-    originalBlur = last
-
-    """
-    balanced = core.std.Expr([original, originalBlur, referenceBlur], ['z y - x +'])
-    difference = core.std.MakeDiff(balanced, original)
-
-    tp = scale(128 + thresh, c.format.bits_per_sample)
-    tm = scale(128 - thresh, c.format.bits_per_sample)
-    difference = core.std.Expr([difference], ['x {tp} min {tm} max'.format(tp=tp, tm=tm)])
-
-    last = core.std.MergeDiff(original, difference)
-    """
-    tp = scale(thresh, c.format.bits_per_sample)
-    tm = -tp
-    last = core.std.Expr([original, originalBlur, referenceBlur], ['z y - {tp} min {tm} max x +'.format(tp=tp, tm=tm)])
-
-    return core.std.StackVertical([last, core.std.CropRel(c2, 0, 0, cTop * 2, 0)]).resize.Point(cWidth, cHeight)
-
-
 def BalanceBorders(c, cTop=0, cBottom=0, cLeft=0, cRight=0, thresh=128, blur=999):
     """Avisynth's BalanceBorders() Version: v0.2
 
@@ -2648,6 +2608,49 @@ def BalanceBorders(c, cTop=0, cBottom=0, cLeft=0, cRight=0, thresh=128, blur=999
     return last
 
 
+def BalanceTopBorder(c, cTop, thresh, blur):
+    """BalanceBorders()'s helper function"""
+    core = vs.get_core()
+
+    cWidth = c.width
+    cHeight = c.height
+    cTop = min(cTop, cHeight - 1)
+    blurWidth = max(4, math.floor(cWidth / blur))
+    
+    c2 = mvf.PointPower(c, 1, 1)
+
+    last = core.std.CropRel(c2, 0, 0, cTop*2, (cHeight - cTop - 1) * 2)
+    last = core.resize.Point(last, cWidth * 2, cTop * 2)
+    last = core.resize.Bilinear(last, blurWidth * 2, cTop * 2)
+    last = core.std.Convolution(last, [1, 1, 1], mode='h')
+    last = core.resize.Bilinear(last, cWidth * 2, cTop * 2)
+    referenceBlur = last
+
+    original = core.std.CropRel(c2, 0, 0, 0, (cHeight - cTop) * 2)
+
+    last = original
+    last = core.resize.Bilinear(last, blurWidth * 2, cTop * 2)
+    last = core.std.Convolution(last, [1, 1, 1], mode='h')
+    last = core.resize.Bilinear(last, cWidth * 2, cTop * 2)
+    originalBlur = last
+
+    """
+    balanced = core.std.Expr([original, originalBlur, referenceBlur], ['z y - x +'])
+    difference = core.std.MakeDiff(balanced, original)
+
+    tp = scale(128 + thresh, c.format.bits_per_sample)
+    tm = scale(128 - thresh, c.format.bits_per_sample)
+    difference = core.std.Expr([difference], ['x {tp} min {tm} max'.format(tp=tp, tm=tm)])
+
+    last = core.std.MergeDiff(original, difference)
+    """
+    tp = scale(thresh, c.format.bits_per_sample)
+    tm = -tp
+    last = core.std.Expr([original, originalBlur, referenceBlur], ['z y - {tp} min {tm} max x +'.format(tp=tp, tm=tm)])
+
+    return core.std.StackVertical([last, core.std.CropRel(c2, 0, 0, cTop * 2, 0)]).resize.Point(cWidth, cHeight)
+
+
 def DisplayHistogram(clip, factor=None):
     """A simple function to display the histogram of an image.
 
@@ -2689,7 +2692,7 @@ def DisplayHistogram(clip, factor=None):
     return core.std.StackVertical([histogram_v, bottom])
 
 
-def GuidedFilter(input, guidance=None, radius=4, regulation=0.01, regulation_mode=0, use_gauss=False, fast=True, subsampling_ratio=4, use_fmtc1=False, kernel1='point', kernel1_args=None, use_fmtc2=False, kernel2='bilinear', kernel2_args=None, **depth_args):
+def GuidedFilter(input, guidance=None, radius=4, regulation=0.01, regulation_mode=0, use_gauss=False, fast=None, subsampling_ratio=4, use_fmtc1=False, kernel1='point', kernel1_args=None, use_fmtc2=False, kernel2='bilinear', kernel2_args=None, **depth_args):
     """Guided Filter - fast edge-preserving smoothing algorithm
 
     Author: Kaiming He et al. (http://kaiminghe.com/eccv10/)
@@ -2758,7 +2761,7 @@ def GuidedFilter(input, guidance=None, radius=4, regulation=0.01, regulation_mod
             computes the local linear coefficients, and upsamples these coefficients.
             The upsampled coefficients are adopted on the original guidance image to produce the output.
             This method reduces the time complexity from O(N) to O(N^2) for a subsampling ratio s.
-            Default is True.
+            Default is True if the version number of VapourSynth is less than 39, otherwise is False.
 
         subsampling_ratio: (float) Only works when fast=True.
             Generally should be no less than 'radius'.
@@ -2804,6 +2807,9 @@ def GuidedFilter(input, guidance=None, radius=4, regulation=0.01, regulation_mod
             raise TypeError(funcName + ': \"guidance\" must be of the same format as \"input\"!')
         if input.width != guidance.width or input.height != guidance.height:
             raise TypeError(funcName + ': \"guidance\" must be of the same size as \"input\"!')
+
+    if fast is None:
+        fast = False if core.version_number() >= 39 else True
 
     if kernel1_args is None:
         kernel1_args = {}
@@ -2913,7 +2919,7 @@ def GuidedFilter(input, guidance=None, radius=4, regulation=0.01, regulation_mod
     return mvf.Depth(q, depth=bits, sample=sampleType, **depth_args)
 
 
-def GuidedFilterColor(input, guidance, radius=4, regulation=0.01, use_gauss=False, fast=True, subsampling_ratio=4, use_fmtc1=False, kernel1='point', kernel1_args=None, use_fmtc2=False, kernel2='bilinear', kernel2_args=None, **depth_args):
+def GuidedFilterColor(input, guidance, radius=4, regulation=0.01, use_gauss=False, fast=None, subsampling_ratio=4, use_fmtc1=False, kernel1='point', kernel1_args=None, use_fmtc2=False, kernel2='bilinear', kernel2_args=None, **depth_args):
     """Guided Filter Color - fast edge-preserving smoothing algorithm using a color image as the guidance
 
     Author: Kaiming He et al. (http://kaiminghe.com/eccv10/)
@@ -2955,6 +2961,9 @@ def GuidedFilterColor(input, guidance, radius=4, regulation=0.01, use_gauss=Fals
         raise TypeError(funcName + ': \"guidance\" must be a RGB or YUV444 clip!')
     if input.width != guidance.width or input.height != guidance.height:
         raise ValueError(funcName + ': \"guidance\" must be of the same size as \"input\"!')
+
+    if fast is None:
+        fast = False if core.version_number() >= 39 else True
 
     if kernel1_args is None:
         kernel1_args = {}
