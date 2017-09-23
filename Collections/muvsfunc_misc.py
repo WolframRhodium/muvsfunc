@@ -134,8 +134,8 @@ def SSR(clip, sigma=50, full=None, **args):
 
     lowFre = gauss(clip, sigma=sigma, **args)
 
-    clip = mvf.Depth(clip, 32, fulls=full, fulld=True)
-    lowFre = mvf.Depth(lowFre, 32, fulls=full, fulld=True) # core.bilateral.Gaussian() doesn't support float input.
+    clip = mvf.Depth(clip, 32, fulls=full)
+    lowFre = mvf.Depth(lowFre, 32, fulls=full) # core.bilateral.Gaussian() doesn't support float input.
 
     expr = 'x 1 + log y 1 + log -'
     clip = core.std.Expr([clip, lowFre], [expr])
@@ -152,7 +152,7 @@ def SSR(clip, sigma=50, full=None, **args):
 
     clip = core.std.FrameEval(clip, functools.partial(Stretch, clip=clip, core=core), prop_src=stats)
 
-    clip = mvf.Depth(clip, depth=bits, sample=sampleType, fulls=True, fulld=full)
+    clip = mvf.Depth(clip, depth=bits, sample=sampleType, fulld=full)
 
     if not isGray:
         clip = core.std.ShufflePlanes([clip, clip_src], list(range(clip_src.format.num_planes)), clip_src.format.color_family)

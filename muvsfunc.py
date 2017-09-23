@@ -38,6 +38,7 @@ Functions:
     BalanceBorders
     DisplayHistogram
     GuidedFilter (Color)
+    Wiener2
 '''
 
 import vapoursynth as vs
@@ -180,6 +181,7 @@ def Compare(src, flt, power=1.5, chroma=False, mode=2):
 
     isGray = src.format.color_family == vs.GRAY
     bits = src.format.bits_per_sample
+    sample = src.format.sample_type
 
     expr = {}
     expr[1] = 'y x - abs 1 + {power} pow 1 -'.format(power=power)
@@ -187,11 +189,11 @@ def Compare(src, flt, power=1.5, chroma=False, mode=2):
 
     chroma = chroma or isGray
 
-    if bits < 16:
-        src = core.fmtc.bitdepth(src, bits=16)
-        flt = core.fmtc.bitdepth(flt, bits=16)
+    if bits != 16:
+        src = mvf.Depth(src, 16, sample=vs.INTEGER)
+        flt = mvf.Depth(flt, 16, sample=vs.INTEGER)
         diff = core.std.Expr([src, flt], [expr[mode]] if chroma else [expr[mode], '{neutral}'.format(neutral=32768)])
-        diff = core.fmtc.bitdepth(diff, bits=bits, dmode=1, fulls=True, fulld=True)
+        diff = mvf.Depth(diff, depth=bits, sample=sample, fulls=True, fulld=True, dither="none", ampo=0, ampn=0)
     else:
         diff = core.std.Expr([src, flt], [expr[mode]] if chroma else [expr[mode], '{neutral}'.format(neutral=32768)])
 
@@ -1644,7 +1646,7 @@ def firniture(clip, width, height, kernel='binomial7', taps=None, gamma=False, *
     return clip
 
 
-def BoxFilter(input, radius=16, planes=None):
+def BoxFilter(input, radius_h=16, radius_v=None, planes=None):
     '''Box filter
     
     Performs a box filtering on the input clip. Box filtering consists in averaging all the pixels in a square area whose center is the output pixel. You can approximate a large gaussian filtering by cascading a few box filters.
@@ -1652,7 +1654,7 @@ def BoxFilter(input, radius=16, planes=None):
     Args:
         input: Input clip to be filtered.
 
-        radius: (int) Size of the averaged square. Its width is radius*2-1. Range is 2–9.
+        radius_h, radius_v: (int) Size of the averaged square. The size is (radius_v*2-1) * (radius_h*2-1).
 
         planes: (int []) Whether to process the corresponding plane. By default, every plane will be processed.
             The unprocessed planes will be copied from the source clip, "input".
@@ -1670,27 +1672,33 @@ def BoxFilter(input, radius=16, planes=None):
     elif isinstance(planes, int):
         planes = [planes]
 
-    if radius == 1:
+    if radius_v is None:
+        radius_v = radius_h
+
+    if radius_h == radius_v == 1:
         return input
     
     # process
     if input.format.sample_type == vs.FLOAT:
         if core.version_number() < 33:
             raise NotImplementedError(funcName + ': Please update your VapourSynth. Convolution on float sample has not yet been implemented on current version.')
-        elif radius == 2 or radius == 3:
-            return core.std.Convolution(input, [1] * ((radius * 2 - 1) * (radius * 2 - 1)), planes=planes, mode='s')
+        elif radius_h == radius_v == 2 or radius_h == radius_v == 3:
+            return core.std.Convolution(input, [1] * ((radius_h * 2 - 1) * (radius_h * 2 - 1)), planes=planes, mode='s')
         else:
             if core.version_number() >= 39:
-                return core.std.BoxBlur(input, hradius=radius-1, vradius=radius-1, planes=planes)
+                return core.std.BoxBlur(input, hradius=radius_h-1, vradius=radius_v-1, planes=planes)
             else: # BoxFilter on float sample has not been implemented
-                return core.std.Convolution(input, [1] * (radius * 2 - 1), planes=planes, mode='v').std.Convolution([1] * (radius * 2 - 1), planes=planes, mode='h')      
+                return core.std.Convolution(input, [1] * (radius * 2 - 1), planes=planes, mode='v').std.Convolution([1] * (radius * 2 - 1), planes=planes, mode='h')
     else: # input.format.sample_type == vs.INTEGER
-        if radius == 2 or radius == 3:
-            return core.std.Convolution(input, [1] * ((radius * 2 - 1) * (radius * 2 - 1)), planes=planes, mode='s')
+        if radius_h == radius_v == 2 or radius_h == radius_v == 3:
+            return core.std.Convolution(input, [1] * ((radius_h * 2 - 1) * (radius_h * 2 - 1)), planes=planes, mode='s')
         elif core.std.get_functions().__contains__('BoxBlur'):
-            return core.std.BoxBlur(input, hradius=radius-1, vradius=radius-1, planes=planes)
+            return core.std.BoxBlur(input, hradius=radius_h-1, vradius=radius_v-1, planes=planes)
         else:
-            return core.std.Convolution(input, [1] * (radius * 2 - 1), planes=planes, mode='v').std.Convolution([1] * (radius * 2 - 1), planes=planes, mode='h')
+            if radius_h > 1:
+                input = core.std.Convolution(input, [1] * (radius_h * 2 - 1), planes=planes, mode='h')
+            if radius_v > 1:
+                input = core.std.Convolution(input, [1] * (radius_v * 2 - 1), planes=planes, mode='v')
 
 
 def SmoothGrad(input, radius=9, thr=0.25, ref=None, elast=3.0, planes=None, **limit_filter_args):
@@ -2562,7 +2570,7 @@ def BalanceBorders(c, cTop=0, cBottom=0, cLeft=0, cRight=0, thresh=128, blur=999
 
     Examples:
         The variant of several calls of the order:
-        last = muf.BalanceBorders(last, 7, 6, 4, 4)                      # "General" color matching
+        last = muf.BalanceBorders(last, 7, 6, 4, 4)                    # "General" color matching
         last = muf.BalanceBorders(last, 5, 5, 4, 4, thresh=2, blur=10) # Very slightly changes a large area (with a "margin")
         last = muf.BalanceBorders(last, 3, 3, 2, 2, thresh=8, blur=4)  # Slightly changes the "main problem area"
 
@@ -2718,7 +2726,7 @@ def GuidedFilter(input, guidance=None, radius=4, regulation=0.01, regulation_mod
             Default is None.
 
         radius: (int) Box / Gaussian filter's radius.
-            If box filter is used, the range of radius is 1 ~ 12(fast=False) or 1 ~ 12*subsampling_ratio in VapourSynth R38 or newer because of the limitation of std.Convolution().
+            If box filter is used, the range of radius is 1 ~ 12(fast=False) or 1 ~ 12*subsampling_ratio in VapourSynth R38 or older because of the limitation of std.Convolution().
             For gaussian filter, the radius can be much larger, even reaching the width/height of the clip.
             Default is 4.
 
@@ -3079,3 +3087,61 @@ def GuidedFilterColor(input, guidance, radius=4, regulation=0.01, use_gauss=Fals
     
     # Final bitdepth conversion
     return mvf.Depth(q, depth=bits, sample=sampleType, **depth_args)
+
+
+def Wiener2(input, radius_v=3, radius_h=None, noise=None, full=None):
+    """2-D adaptive noise-removal filtering. (wiener2 from MATLAB)
+
+    Wiener2 lowpass filters an intensity image that has been degraded by constant power additive noise.
+    Wiener2 uses a pixel-wise adaptive Wiener method based on statistics estimated from a local neighborhood of each pixel.
+
+    Estimate of the additive noise power will not be returned.
+
+    Args:
+        input: Input clip. Only the first plane will be processed.
+        radius_v, radius_h: (int) Size of neighborhoods to estimate the local image mean and standard deviation.
+            If "radius_h" is None, it will be set to "radius_v".
+            Default is 3.
+        noise: (float) Variance of addictive noise. If it is not given, average of all the local estimated variances will be used.
+            Default is None.
+        full: (bool) Whether input clip is of full range. Default is None.
+        depth_args: (dict) Additional arguments passed to mvf.Depth().
+            Default is None.
+
+    Ref:
+        [1] Lim, J. S. (1990). Two-dimensional signal and image processing. Englewood Cliffs, NJ, Prentice Hall, 1990, 710 p, p. 538, equations 9.26, 9.27, and 9.29.
+        [2] 2-D adaptive noise-removal filtering - MATLAB wiener2 - MathWorks (https://www.mathworks.com/help/images/ref/wiener2.html)
+
+    """
+
+    core = vs.get_core()
+    funcName = 'wiener2'
+
+    if not isinstance(input, vs.VideoNode) or input.format.num_planes > 1:
+        raise TypeError(funcName + ': \"input\" must be a gray-scale/single channel clip!')
+
+    bits = input.format.bits_per_sample
+    sampleType = input.format.sample_type
+
+    if radius_h is None:
+        radius_h = radius_v
+
+    input32 = mvf.Depth(input, depth=32, sample=vs.FLOAT, fulls=full, **depth_args)
+
+    localMean = BoxFilter(input32, radius_h+1, radius_v+1)
+    localVar = BoxFilter(core.std.Expr([input32], ['x dup *']), radius_v+1, radius_h+1)
+    localVar = core.std.Expr([localVar, localMean], ['x y dup * -'])
+
+    if noise is None:
+        localVarStats = core.std.PlaneStats(localVar, plane=[0])
+
+        def FLT(n, f, clip, core, localMean, localVar):
+            noise = f.props.PlaneStatsAverage
+
+            return core.std.Expr([clip, localMean, localVar], ['y z {noise} - 0 max z {noise} max / x y - * +'.format(noise=noise)])
+
+        flt = core.std.FrameEval(input32, functools.partial(FLT, clip=input32, core=core, localMean=localMean, localVar=localVar), prop_src=[localVarStats])
+    else:
+        flt = core.std.Expr([input32, localMean, localVar], ['y z {noise} - 0 max z {noise} max / x y - * +'.format(noise=noise)])
+
+    return mvf.Depth(flt, depth=bits, sample=sampleType, fulld=full, **depth_args)
