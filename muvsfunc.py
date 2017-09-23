@@ -1688,7 +1688,7 @@ def BoxFilter(input, radius_h=16, radius_v=None, planes=None):
             if core.version_number() >= 39:
                 return core.std.BoxBlur(input, hradius=radius_h-1, vradius=radius_v-1, planes=planes)
             else: # BoxFilter on float sample has not been implemented
-                return core.std.Convolution(input, [1] * (radius * 2 - 1), planes=planes, mode='v').std.Convolution([1] * (radius * 2 - 1), planes=planes, mode='h')
+                return core.std.Convolution(input, [1] * (radius_h * 2 - 1), planes=planes, mode='h').std.Convolution([1] * (radius_v * 2 - 1), planes=planes, mode='v')
     else: # input.format.sample_type == vs.INTEGER
         if radius_h == radius_v == 2 or radius_h == radius_v == 3:
             return core.std.Convolution(input, [1] * ((radius_h * 2 - 1) * (radius_h * 2 - 1)), planes=planes, mode='s')
@@ -3089,7 +3089,7 @@ def GuidedFilterColor(input, guidance, radius=4, regulation=0.01, use_gauss=Fals
     return mvf.Depth(q, depth=bits, sample=sampleType, **depth_args)
 
 
-def Wiener2(input, radius_v=3, radius_h=None, noise=None, full=None):
+def Wiener2(input, radius_v=3, radius_h=None, noise=None, full=None, **depth_args):
     """2-D adaptive noise-removal filtering. (wiener2 from MATLAB)
 
     Wiener2 lowpass filters an intensity image that has been degraded by constant power additive noise.
@@ -3129,7 +3129,7 @@ def Wiener2(input, radius_v=3, radius_h=None, noise=None, full=None):
     input32 = mvf.Depth(input, depth=32, sample=vs.FLOAT, fulls=full, **depth_args)
 
     localMean = BoxFilter(input32, radius_h+1, radius_v+1)
-    localVar = BoxFilter(core.std.Expr([input32], ['x dup *']), radius_v+1, radius_h+1)
+    localVar = BoxFilter(core.std.Expr([input32], ['x dup *']), radius_h+1, radius_v+1)
     localVar = core.std.Expr([localVar, localMean], ['x y dup * -'])
 
     if noise is None:
