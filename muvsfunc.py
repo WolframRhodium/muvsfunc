@@ -1,7 +1,7 @@
 '''
 Functions:
     LDMerge
-    Compare
+    Compare (2)
     ExInpand
     InDeflate
     MultiRemoveGrain
@@ -198,6 +198,45 @@ def Compare(src, flt, power=1.5, chroma=False, mode=2):
         diff = core.std.Expr([src, flt], [expr[mode]] if chroma else [expr[mode], '{neutral}'.format(neutral=32768)])
 
     return diff
+
+
+def Compare2(clip1, clip2, props_list=None):
+    """Simple function to compare the format between two clips.
+
+    TypeError will be raised when the two formats are not identical.
+    Otherwise, the function simply returns None.
+
+    Args:
+        clip1, clip2: Input.
+        props_list: (list) A list containing the format to be compared. If it is none, all the formats will be compared.
+            Default is None.
+
+    """
+
+    if not isinstance(clip1, vs.VideoNode):
+        raise TypeError(funcName + ': \"clip1\" must be a clip!')
+
+    if not isinstance(clip2, vs.VideoNode):
+        raise TypeError(funcName + ': \"clip2\" must be a clip!')
+
+    if props_list is None:
+        props_list = ['width', 'height', 'num_frames', 'fps', 'format.name', 'format.subsampling_w', 'format.subsampling_h']
+
+    info = ''
+
+    for prop in props_list:
+        clip1_prop = eval('clip1.{prop}'.format(prop=prop))
+        clip2_prop = eval('clip2.{prop}'.format(prop=prop))
+
+        if clip1_prop != clip2_prop:
+            info += '{prop}: {clip1_prop} != {clip2_prop}\n'.format(prop=prop, clip1_prop=clip1_prop, clip2_prop=clip2_prop)
+
+    if info != '':
+        info = '\n\n{}'.format(info)
+
+        raise TypeError(info)
+
+    return
 
 
 def ExInpand(input, mrad=0, mode='rectangle', planes=None):
@@ -1740,7 +1779,7 @@ def SmoothGrad(input, radius=9, thr=0.25, ref=None, elast=3.0, planes=None, **li
         planes = [planes]
     
     # process
-    smooth = BoxFilter(input, radius, planes)
+    smooth = BoxFilter(input, radius, planes=planes)
     
     return mvf.LimitFilter(smooth, input, ref, thr, elast, planes=planes, **limit_filter_args)
 
