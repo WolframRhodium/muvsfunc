@@ -669,7 +669,7 @@ def Build_gf3_range_mask(src, radius=1):
     return last
 
 
-def AnimeMask(input, shift=0, expr=None, mode=1, resample_args=dict(kernel='bicubic')):
+def AnimeMask(input, shift=0, expr=None, mode=1, resample_args=None):
     """A filter to generate edge/ringing mask for anime based on gradient operator.
 
     For Anime's ringing mask, it's recommended to set "shift" between 0.5 to 1.0.
@@ -683,7 +683,8 @@ def AnimeMask(input, shift=0, expr=None, mode=1, resample_args=dict(kernel='bicu
 
         mode: (-1 or 1) Different kernel. Typically, -1 is for edge, 1 is for ringing. Default is 1.
 
-        resample_args: (dictinary) Which kernel is used to shift the mask. Default is dict(kernel='bicubic').
+        resample_args: (dict) Additional parameters passed to core.fmtc.resample in the form of dict. 
+            Default is dict(kernel='bicubic').
 
     """
 
@@ -702,6 +703,9 @@ def AnimeMask(input, shift=0, expr=None, mode=1, resample_args=dict(kernel='bicu
     if mode == -1:
         input = core.std.Invert(input)
         shift = -shift
+
+    if resample_args is None:
+        resample_args = dict(kernel='bicubic')
     
     bits = input.format.bits_per_sample
     
@@ -772,7 +776,7 @@ def AnimeMask2(input, r=1.2, expr=None, mode=1):
     return mask
 
 
-def PolygonExInpand(input, shift=0, shape=0, mixmode=0, noncentral=False, step=1, amp=1, fmtc_args=dict(), resample_args=dict(kernel='bilinear')):
+def PolygonExInpand(input, shift=0, shape=0, mixmode=0, noncentral=False, step=1, amp=1, fmtc_args=None, resample_args=None):
     """A filter to process mask based on resampling kernel.
 
     Args:
@@ -791,9 +795,11 @@ def PolygonExInpand(input, shift=0, shape=0, mixmode=0, noncentral=False, step=1
 
         amp: (float) Linear multiple to strengthen the final mask. Default is 1.
 
-        fmtc_args: (dictinary) Extra arguments of fmtc. Default is dict().
+        fmtc_args: (dict) Additional parameters passed to core.fmtc.resample and core.fmtc.bitdepth in the form of dict.
+            Default is {}.
 
-        resample_args: (dictinary) Controls which kernel is used to shift the mask. Default is dict(kernel='bilinear').
+        resample_args: (dict) Additional parameters passed to core.fmtc.resample in the form of dict. Controls which kernel is used to shift the mask.
+            Default is dict(kernel='bilinear').
 
     """
 
@@ -819,6 +825,12 @@ def PolygonExInpand(input, shift=0, shape=0, mixmode=0, noncentral=False, step=1
         shift = -shift
     elif shift == 0:
         return input
+
+    if fmtc_args is None:
+        fmtc_args = {}
+
+    if resample_args is None:
+        resample_args = dict(kernel='bilinear')
 
     bits = input.format.bits_per_sample
 
@@ -1544,7 +1556,7 @@ def TCannyHelper(input, t_h=8.0, t_l=1.0, plane=0, returnAll=False, **canny_args
         returnAll: (bint) Whether to return a tuple containing every 4 temporary clips(strongEdge, weakEdge, view, tcannyOutput) or just "view" clip.
             Default is False.
 
-        canny_args: (dictionary) Remaining TCanny's arguments (except "mode" and "planes").
+        canny_args: (dict) Additional parameters passed to core.tcanny.TCanny (except "mode" and "planes") in the form of keyword arguments.
 
     """
 
@@ -1644,7 +1656,7 @@ def firniture(clip, width, height, kernel='binomial7', taps=None, gamma=False, *
         gamma: (bool) Default is False.
             Set to true to turn on gamma correction for the y channel.
 
-        resample_args: (dictionary) Remaining fmtc.resample's arguments.
+        resample_args: (dict) Additional parameters passed to core.fmtc.resample in the form of keyword arguments.
 
     Examples:
         clip = muvsfunc.firniture(clip, 720, 400, kernel="noalias4", gamma=False)
@@ -1708,7 +1720,7 @@ def BoxFilter(input, radius=16, radius_v=None, planes=None, fmtc_conv=0, radius_
             Default is 11 for integer input and 21 for float input.
             Only works when "fmtc_conv" is enabled.
 
-        resample_args: (dict) Additional parameters passed to core.fmtc.resample.
+        resample_args: (dict) Additional parameters passed to core.fmtc.resample in the form of dict.
             It's recommended to set "flt" to True for higher precision, like:
                 flt = muf.BoxFilter(src, resample_args=dict(flt=True))
             Only works when "fmtc_conv" is enabled.
@@ -1717,7 +1729,7 @@ def BoxFilter(input, radius=16, radius_v=None, planes=None, fmtc_conv=0, radius_
         keep_bits: (bool) Whether to keep the bitdepth of the output the same as input.
             Only works when "fmtc_conv" is enabled and input is integer.
 
-        depth_args: (dict) Additional parameters passed to mvf.Depth.
+        depth_args: (dict) Additional parameters passed to mvf.Depth in the form of dict.
             Only works when "fmtc_conv" is enabled, input is integer and "keep_bits" is True.
             Default is {}.
 
@@ -1771,14 +1783,11 @@ def BoxFilter(input, radius=16, radius_v=None, planes=None, fmtc_conv=0, radius_
                 return core.std.BoxBlur(input, hradius=radius-1, vradius=radius_v-1, planes=planes)
 
             else: # BoxBlur on float sample has not been implemented
-                """
                 if radius > 1:
                     input = core.std.Convolution(input, [1] * (radius * 2 - 1), planes=planes, mode='h')
                 if radius_v > 1:
                     input = core.std.Convolution(input, [1] * (radius_v * 2 - 1), planes=planes, mode='v')
                 return input
-                """
-                return core.boxblur2.BoxBlur(input, hradius=radius-1, vradius=radius_v-1, planes=planes)
 
     else: # input.format.sample_type == vs.INTEGER
         if radius == radius_v == 2 or radius == radius_v == 3:
@@ -1824,7 +1833,7 @@ def SmoothGrad(input, radius=9, thr=0.25, ref=None, elast=3.0, planes=None, **li
         planes: (int []) Whether to process the corresponding plane. By default, every plane will be processed.
             The unprocessed planes will be copied from the source clip, "input".
 
-        limit_filter_args: (dictionary) Remaining mvf.LimitFilter's arguments.
+        limit_filter_args: (dict) Additional arguments passed to mvf.LimitFilter in the form of keyword arguments.
 
     '''
         
@@ -1858,7 +1867,7 @@ def DeFilter(input, fun, iter=10, planes=None, **fun_args):
         planes: (int []) Whether to process the corresponding plane. By default, every plane will be processed.
             The unprocessed planes will be copied from the source clip, "input".
 
-        fun_args: (dictionary) Arguments which will be passed to fun. Alternative to functools.partial.
+        fun_args: (dict) Additional arguments passed to "fun" in the form of keyword arguments. Alternative to functools.partial.
 
     '''
 
@@ -2883,10 +2892,10 @@ def GuidedFilter(input, guidance=None, radius=4, regulation=0.01, regulation_mod
         kernel1, kernel2: (string) Subsampling/upsampling kernels.
             Default is 'point'and 'bilinear'.
 
-        kernel1_args, kernel2_args: (dict) Additional parameters passed to resizers.
+        kernel1_args, kernel2_args: (dict) Additional parameters passed to resizers in the form of dict.
             Default is None.
 
-        depth_args: (dict) Additional arguments passed to mvf.Depth().
+        depth_args: (dict) Additional arguments passed to mvf.Depth() in the form of keyword arguments.
             Default is None.
 
     Ref:
@@ -3205,7 +3214,7 @@ def Wiener2(input, radius_v=3, radius_h=None, noise=None, **depth_args):
             Default is 3.
         noise: (float) Variance of addictive noise. If it is not given, average of all the local estimated variances will be used.
             Default is None.
-        depth_args: (dict) Additional arguments passed to mvf.Depth().
+        depth_args: (dict) Additional arguments passed to mvf.Depth() in the form of keyword arguments.
             Default is None.
 
     Ref:
