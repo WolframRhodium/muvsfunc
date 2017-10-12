@@ -204,7 +204,7 @@ def Compare2(clip1, clip2, props_list=None):
     """Simple function to compare the format between two clips.
 
     TypeError will be raised when the two formats are not identical.
-    Otherwise, the function simply returns None.
+    Otherwise, None is returned.
 
     Args:
         clip1, clip2: Input.
@@ -220,7 +220,7 @@ def Compare2(clip1, clip2, props_list=None):
         raise TypeError(funcName + ': \"clip2\" must be a clip!')
 
     if props_list is None:
-        props_list = ['width', 'height', 'num_frames', 'fps', 'format.name', 'format.subsampling_w', 'format.subsampling_h']
+        props_list = ['width', 'height', 'num_frames', 'fps', 'format.name']
 
     info = ''
 
@@ -1685,7 +1685,7 @@ def firniture(clip, width, height, kernel='binomial7', taps=None, gamma=False, *
     return clip
 
 
-def BoxFilter(input, radius=16, radius_v=None, planes=None):
+def BoxFilter(input, radius=16, radius_v=None, planes=None, fmtc_conv=0, radius_thr=None, resample_args=None, keep_bits=True, depth_args=None):
     '''Box filter
     
     Performs a box filtering on the input clip. Box filtering consists in averaging all the pixels in a square area whose center is the output pixel. You can approximate a large gaussian filtering by cascading a few box filters.
@@ -1698,6 +1698,28 @@ def BoxFilter(input, radius=16, radius_v=None, planes=None):
 
         planes: (int []) Whether to process the corresponding plane. By default, every plane will be processed.
             The unprocessed planes will be copied from the source clip, "input".
+
+        fmtc_conv: (0~2) Whether to use fmtc.resample for convolution.
+            It's recommended to input clip without chroma subsampling when using fmtc.resample, otherwise the output may be incorrect.
+            0: False. 1: True (except both "radius" and "radius_v" is strictly smaller than 4). 2: Auto, determined by radius_thr (exclusive).
+            Default is 0.
+        
+        radius_thr: (int) Threshold of wheter to use fmtc.resample when "fmtc_conv" is 2.
+            Default is 11 for integer input and 21 for float input.
+            Only works when "fmtc_conv" is enabled.
+
+        resample_args: (dict) Additional parameters passed to core.fmtc.resample.
+            It's recommended to set "flt" to True for higher precision, like:
+                flt = muf.BoxFilter(src, resample_args=dict(flt=True))
+            Only works when "fmtc_conv" is enabled.
+            Default is {}.
+
+        keep_bits: (bool) Whether to keep the bitdepth of the output the same as input.
+            Only works when "fmtc_conv" is enabled and input is integer.
+
+        depth_args: (dict) Additional parameters passed to mvf.Depth.
+            Only works when "fmtc_conv" is enabled, input is integer and "keep_bits" is True.
+            Default is {}.
 
     '''
     
@@ -1717,28 +1739,67 @@ def BoxFilter(input, radius=16, radius_v=None, planes=None):
 
     if radius == radius_v == 1:
         return input
+
+    if radius_thr is None:
+        radius_thr = 21 if input.format.sample_type == vs.FLOAT else 11 # Values are measured from my experiment
+
+    if resample_args is None:
+        resample_args = {}
+
+    if depth_args is None:
+        depth_args = {}
+
+    planes2 = [(3 if i in planes else 2) for i in range(input.format.num_planes)]
+    width = radius * 2 - 1
+    width_v = radius_v * 2 - 1
+    kernel = [1 / width] * width
+    kernel_v = [1 / width_v] * width_v
     
     # process
     if input.format.sample_type == vs.FLOAT:
         if core.version_number() < 33:
-            raise NotImplementedError(funcName + ': Please update your VapourSynth. Convolution on float sample has not yet been implemented on current version.')
+            raise NotImplementedError(funcName + ': Please update your VapourSynth. BoxBlur on float sample has not yet been implemented on current version.')
         elif radius == radius_v == 2 or radius == radius_v == 3:
             return core.std.Convolution(input, [1] * ((radius * 2 - 1) * (radius * 2 - 1)), planes=planes, mode='s')
+
         else:
-            if core.version_number() >= 39:
+            if fmtc_conv == 1 or (fmtc_conv != 0 and radius > radius_thr): # Use fmtc.resample for convolution
+                flt = core.fmtc.resample(input, kernel='impulse', impulseh=kernel, impulsev=kernel_v, planes=planes2, cnorm=False, fh=-1, fv=-1, center=False, **resample_args)
+                return flt # No bitdepth conversion is required since fmtc.resample outputs the same bitdepth as input
+
+            elif core.version_number() >= 39:
                 return core.std.BoxBlur(input, hradius=radius-1, vradius=radius_v-1, planes=planes)
-            else: # BoxFilter on float sample has not been implemented
-                return core.std.Convolution(input, [1] * (radius * 2 - 1), planes=planes, mode='h').std.Convolution([1] * (radius_v * 2 - 1), planes=planes, mode='v')
+
+            else: # BoxBlur on float sample has not been implemented
+                """
+                if radius > 1:
+                    input = core.std.Convolution(input, [1] * (radius * 2 - 1), planes=planes, mode='h')
+                if radius_v > 1:
+                    input = core.std.Convolution(input, [1] * (radius_v * 2 - 1), planes=planes, mode='v')
+                return input
+                """
+                return core.boxblur2.BoxBlur(input, hradius=radius-1, vradius=radius_v-1, planes=planes)
+
     else: # input.format.sample_type == vs.INTEGER
         if radius == radius_v == 2 or radius == radius_v == 3:
             return core.std.Convolution(input, [1] * ((radius * 2 - 1) * (radius * 2 - 1)), planes=planes, mode='s')
-        elif core.std.get_functions().__contains__('BoxBlur'):
-            return core.std.BoxBlur(input, hradius=radius-1, vradius=radius_v-1, planes=planes)
+
         else:
-            if radius > 1:
-                input = core.std.Convolution(input, [1] * (radius * 2 - 1), planes=planes, mode='h')
-            if radius_v > 1:
-                input = core.std.Convolution(input, [1] * (radius_v * 2 - 1), planes=planes, mode='v')
+            if fmtc_conv == 1 or (fmtc_conv != 0 and radius > radius_thr): # Use fmtc.resample for convolution
+                flt = core.fmtc.resample(input, kernel='impulse', impulseh=kernel, impulsev=kernel_v, planes=planes2, cnorm=False, fh=-1, fv=-1, center=False, **resample_args)
+                if keep_bits and input.format.bits_per_sample != flt.format.bits_per_sample:
+                    flt = mvf.Depth(flt, depth=input.format.bits_per_sample, **depth_args)
+                return flt
+
+            elif core.std.get_functions().__contains__('BoxBlur'):
+                return core.std.BoxBlur(input, hradius=radius-1, vradius=radius_v-1, planes=planes)
+
+            else: # BoxBlur was not found
+                if radius > 1:
+                    input = core.std.Convolution(input, [1] * (radius * 2 - 1), planes=planes, mode='h')
+                if radius_v > 1:
+                    input = core.std.Convolution(input, [1] * (radius_v * 2 - 1), planes=planes, mode='v')
+                return input
 
 
 def SmoothGrad(input, radius=9, thr=0.25, ref=None, elast=3.0, planes=None, **limit_filter_args):
