@@ -38,7 +38,6 @@ Functions:
     BalanceBorders
     DisplayHistogram
     GuidedFilter (Color)
-    Wiener2
 '''
 
 import vapoursynth as vs
@@ -531,7 +530,7 @@ def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=
     bits = src.format.bits_per_sample
     src_16 = core.fmtc.bitdepth(src, bits=16, planes=planes) if bits < 16 else src
     src_8 = core.fmtc.bitdepth(src, bits=8, dmode=1, planes=[0]) if bits != 8 else src
-    if id(src) == id(ref):
+    if src == ref:
         ref_16 = src_16
     else:
         ref_16 = core.fmtc.bitdepth(ref, bits=16, planes=planes) if ref.format.bits_per_sample < 16 else ref
@@ -1283,27 +1282,28 @@ def Soothe_mod(input, source, keep=24, radius=1, scenechange=32, use_misc=True):
 
     core = vs.get_core()
     funcName = 'Soothe_mod'
-
-    if id(input) == id(source):
-        return input
     
     if not isinstance(input, vs.VideoNode):
         raise TypeError(funcName + ': \"input\" must be a clip!')
-    if input.format.color_family != vs.GRAY:
-        input = mvf.GetPlane(input, 0)
-
     if not isinstance(source, vs.VideoNode):
         raise TypeError(funcName + ': \"source\" must be a clip!')
-    if source.format.color_family != vs.GRAY:
-        source_src = source
-        source = mvf.GetPlane(source, 0)
-    else:
-        source_src = None
+
+    if input == source:
+        return input
 
     if input.format.id != source.format.id:
         raise TypeError(funcName + ': \"source\" must be of the same format as \"input\"!')
     if input.width != source.width or input.height != source.height:
         raise TypeError(funcName + ': \"source\" must be of the same size as \"input\"!')
+
+    if input.format.color_family != vs.GRAY:
+        input = mvf.GetPlane(input, 0)
+
+    if source.format.color_family != vs.GRAY:
+        source_src = source
+        source = mvf.GetPlane(source, 0)
+    else:
+        source_src = None
     
     keep = max(min(keep, 100), 0)
     
@@ -2116,7 +2116,7 @@ def SeeSaw(clp, denoised=None, NRlimit=2, NRlimit2=None, Sstr=1.5, Slimit=None, 
         clp_src = clp
         clp = mvf.GetPlane(clp)
         denoised_src = denoised
-        denoised = mvf.GetPlane(denoised) if id(clp_src) != id(denoised_src) else clp
+        denoised = mvf.GetPlane(denoised) if clp_src != denoised_src else clp
     
     NRdiff = core.std.MakeDiff(clp, denoised)
 
@@ -2133,7 +2133,7 @@ def SeeSaw(clp, denoised=None, NRlimit=2, NRlimit2=None, Sstr=1.5, Slimit=None, 
     last = SeeSaw_SootheSS(last, tame, sootheT, sootheS)
     sharpdiff = core.std.MakeDiff(tame, last)
 
-    if NRlimit == 0 or id(clp) == id(denoised):
+    if NRlimit == 0 or clp == denoised:
         last = clp
     else:
         NRdiff = core.std.MakeDiff(clp, denoised)
@@ -2221,7 +2221,7 @@ def SeeSaw_SootheSS(sharp, orig, sootheT=25, sootheS=0):
         sharp_src = sharp
         sharp = mvf.GetPlane(sharp)
         orig_src = orig
-        orig = mvf.GetPlane(orig) if id(sharp_src) != id(orig_src) else sharp
+        orig = mvf.GetPlane(orig) if sharp_src != orig_src else sharp
     
     expr1 = 'x {neutral} < y {neutral} < xor x {neutral} - 100 / {SSPT} * {neutral} + x {neutral} - abs y {neutral} - abs > x {SSPT} * y {i} * + 100 / x ? ?'.format(neutral=neutral, SSPT=SSPT, i=100-SSPT)
     expr2 = 'x {neutral} < y {neutral} < xor x {neutral} - 100 / {ST} * {neutral} + x {neutral} - abs y {neutral} - abs > x {ST} * y {i} * + 100 / x ? ?'.format(neutral=neutral, ST=ST, i=100-ST)
@@ -2587,7 +2587,7 @@ def dfttestMC(input, pp=None, mc=2, mdg=False, planes=None, sigma=None, sbsize=N
     # Prepare supersampled clips.
     pp_enabled = pp is not None
     pp_super = haf.DitherLumaRebuild(pp if pp_enabled else input, s0=1, chroma=chroma).mv.Super(pel=pel, chroma=chroma)
-    super = haf.DitherLumaRebuild(input, s0=1, chroma=chroma).mv.Super(pel=pel, chroma=chroma) if pp_enabled and id(input) != id(pp) else pp_super
+    super = haf.DitherLumaRebuild(input, s0=1, chroma=chroma).mv.Super(pel=pel, chroma=chroma) if pp_enabled and input != pp else pp_super
 
     # Motion vector search.
     analysis_args = dict(chroma=chroma, search=search, searchparam=searchparam, overlap=overlap, blksize=blksize, dct=dct)
@@ -2931,7 +2931,7 @@ def GuidedFilter(input, guidance=None, radius=4, regulation=0.01, regulation_mod
             raise TypeError(funcName + ': \"guidance\" must be of the same format as \"input\"!')
         if input.width != guidance.width or input.height != guidance.height:
             raise TypeError(funcName + ': \"guidance\" must be of the same size as \"input\"!')
-        if id(input) == id(guidance): # Remove redundant computation
+        if input == guidance: # Remove redundant computation
             guidance = None
 
     if fast is None:
@@ -3205,60 +3205,3 @@ def GuidedFilterColor(input, guidance, radius=4, regulation=0.01, use_gauss=Fals
     
     # Final bitdepth conversion
     return mvf.Depth(q, depth=bits, sample=sampleType, **depth_args)
-
-
-def Wiener2(input, radius_v=3, radius_h=None, noise=None, **depth_args):
-    """2-D adaptive noise-removal filtering. (wiener2 from MATLAB)
-
-    Wiener2 lowpass filters an intensity image that has been degraded by constant power additive noise.
-    Wiener2 uses a pixel-wise adaptive Wiener method based on statistics estimated from a local neighborhood of each pixel.
-
-    Estimate of the additive noise power will not be returned.
-
-    Args:
-        input: Input clip. Only the first plane will be processed.
-        radius_v, radius_h: (int) Size of neighborhoods to estimate the local image mean and standard deviation. The size is (radius_v*2-1) * (radius_h*2-1).
-            If "radius_h" is None, it will be set to "radius_v".
-            Default is 3.
-        noise: (float) Variance of addictive noise. If it is not given, average of all the local estimated variances will be used.
-            Default is {}.
-        depth_args: (dict) Additional arguments passed to mvf.Depth() in the form of keyword arguments.
-            Default is {}.
-
-    Ref:
-        [1] Lim, J. S. (1990). Two-dimensional signal and image processing. Englewood Cliffs, NJ, Prentice Hall, 1990, 710 p, p. 538, equations 9.26, 9.27, and 9.29.
-        [2] 2-D adaptive noise-removal filtering - MATLAB wiener2 - MathWorks (https://www.mathworks.com/help/images/ref/wiener2.html)
-
-    """
-
-    core = vs.get_core()
-    funcName = 'Wiener2'
-
-    if not isinstance(input, vs.VideoNode) or input.format.num_planes > 1:
-        raise TypeError(funcName + ': \"input\" must be a gray-scale/single channel clip!')
-
-    bits = input.format.bits_per_sample
-    sampleType = input.format.sample_type
-
-    if radius_h is None:
-        radius_h = radius_v
-
-    input32 = mvf.Depth(input, depth=32, sample=vs.FLOAT, **depth_args)
-
-    localMean = BoxFilter(input32, radius_h+1, radius_v+1)
-    localVar = BoxFilter(core.std.Expr([input32], ['x dup *']), radius_h+1, radius_v+1)
-    localVar = core.std.Expr([localVar, localMean], ['x y dup * -'])
-
-    if noise is None:
-        localVarStats = core.std.PlaneStats(localVar, plane=[0])
-
-        def FLT(n, f, clip, core, localMean, localVar):
-            noise = f.props.PlaneStatsAverage
-
-            return core.std.Expr([clip, localMean, localVar], ['y z {noise} - 0 max z {noise} max / x y - * +'.format(noise=noise)])
-
-        flt = core.std.FrameEval(input32, functools.partial(FLT, clip=input32, core=core, localMean=localMean, localVar=localVar), prop_src=[localVarStats])
-    else:
-        flt = core.std.Expr([input32, localMean, localVar], ['y z {noise} - 0 max z {noise} max / x y - * +'.format(noise=noise)])
-
-    return mvf.Depth(flt, depth=bits, sample=sampleType, **depth_args)
