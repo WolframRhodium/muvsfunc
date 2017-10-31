@@ -201,8 +201,8 @@ def Wiener2(input, radius_v=3, radius_h=None, noise=None, **depth_args):
 
     input32 = mvf.Depth(input, depth=32, sample=vs.FLOAT, **depth_args)
 
-    localMean = BoxFilter(input32, radius_h+1, radius_v+1)
-    localVar = BoxFilter(core.std.Expr([input32], ['x dup *']), radius_h+1, radius_v+1)
+    localMean = muf.BoxFilter(input32, radius_h+1, radius_v+1)
+    localVar = muf.BoxFilter(core.std.Expr([input32], ['x dup *']), radius_h+1, radius_v+1)
     localVar = core.std.Expr([localVar, localMean], ['x y dup * -'])
 
     if noise is None:
@@ -267,3 +267,36 @@ def tv(I, iter=5, dt=None, ep=1, lam=0, I0=None, C=0):
         I = core.std.Expr([I, I_x, I_y, I_xx, I_xy, I_yy, I0], [expr])
 
     return I
+
+
+def BernsteinFilter(clip, iter=30, **depth_args):
+    """Bernstein Filter
+
+    Bernstein filter is an efficient filter solver, which can implicitly minimize the mean curvature.
+
+    Internal precision is always float.
+
+    Args:
+        clip: Input.
+        iter: (int) Num of iterations. Default is 30
+        depth_args: (dict) Additional arguments passed to mvf.Depth() in the form of keyword arguments.
+            Default is {}.
+
+    Ref:
+        [1] Gong, Y. (2016, March). Bernstein filter: A new solver for mean curvature regularized models. In Acoustics, Speech and Signal Processing (ICASSP), 2016 IEEE International Conference on (pp. 1701-1705). IEEE.
+
+    """
+
+    core = vs.get_core()
+
+    bits = clip.format.bits_per_sample
+    sample = clip.format.sample_type
+
+    clip = mvf.Depth(clip, depth=32, sample=vs.FLOAT, **depth_args)
+
+    for i in range(iter):
+        d1 = core.std.Convolution(clip, [1, -2, 1], divisor=2, mode='h')
+        d2 = core.std.Convolution(clip, [1, -2, 1], divisor=2, mode='v')
+        clip = core.std.Expr([clip, d1, d2], ['y abs z abs < x y + x z + ?'])
+
+    return mvf.Depth(clip, depth=bits, sample=sample, **depth_args)
