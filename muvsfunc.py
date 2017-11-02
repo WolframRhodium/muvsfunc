@@ -38,6 +38,7 @@ Functions:
     BalanceBorders
     DisplayHistogram
     GuidedFilter (Color)
+    GMSD
 '''
 
 import vapoursynth as vs
@@ -590,8 +591,6 @@ def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=
 
 
 def GF3_smooth(src_16, ref_16, smode, radius, thr, elast, planes):
-    funcName = 'GradFun3'
-
     if smode == 0:
         return GF3_smoothgrad_multistage(src_16, ref_16, radius, thr, elast, planes)
     elif smode == 1:
@@ -3205,3 +3204,122 @@ def GuidedFilterColor(input, guidance, radius=4, regulation=0.01, use_gauss=Fals
     
     # Final bitdepth conversion
     return mvf.Depth(q, depth=bits, sample=sampleType, **depth_args)
+
+
+def GMSD(clip1, clip2, plane=None, downsample=True, c=0.0026, show_map=False, **depth_args):
+    """Gradient Magnitude Similarity Deviation Calculator
+
+    GMSD is a new effective and efficient image quality assessment (IQA) model, which utilizes the pixel-wise gradient magnitude similarity (GMS) 
+    between the reference and distorted images combined with standard deviation of the GMS map to predict perceptual image quality.
+
+    The distortion degree of the distorted image will be stored as frame property 'PlaneGMSD' in the output clip.
+    
+    The value of GMSD reflects the range of distortion severities in an image.
+    The lowerer the GMSD score, the higher the image perceptual quality.
+    If "clip1" == "clip2", GMSD = 0.
+
+    All the internal calculations are done at 32-bit float.
+
+    Args:
+        clip1: The distorted clip, will be copied to output if "show_map" is False.
+
+        clip2: Reference clip, must be of the same format and dimension as the "clip1".
+
+        plane: (int) Specify which plane to be processed. Default is None.
+
+        downsample: (bool) Whether to averaged the clips over local 2x2 window and downsample by a factor of 2 before the MSSIM value is calculated.
+            Default is True.
+
+        c: (float) A positive constant that supplies numerical stability.
+            According to the paper, for all the databases, GMSD shows similar preference to the value of c.
+            Default is 0.0026.
+
+        show_map: (bool) Whether to return GMS map. If not, "clip1" will be returned. Default is False.
+
+        depth_args: (dict) Additional arguments passed to mvf.Depth() in the form of keyword arguments.
+            Default is {}.
+
+    Ref:
+        [1] Xue, W., Zhang, L., Mou, X., & Bovik, A. C. (2014). Gradient magnitude similarity deviation: A highly efficient perceptual image quality index. IEEE Transactions on Image Processing, 23(2), 684-695.
+        [2] http://www4.comp.polyu.edu.hk/~cslzhang/IQA/GMSD/GMSD.htm.
+
+    """
+
+    core = vs.get_core()
+    funcName = 'GMSD'
+    
+    if not isinstance(clip1, vs.VideoNode):
+        raise TypeError(funcName + ': \"clip1\" must be a clip!')
+    if not isinstance(clip2, vs.VideoNode):
+        raise TypeError(funcName + ': \"clip2\" must be a clip!')
+    
+    if clip1.format.id != clip2.format.id:
+        raise ValueError(funcName + ': \"clip1\" and \"clip2\" must be of the same format!')
+    if clip1.width != clip2.width or clip1.height != clip2.height:
+        raise ValueError(funcName + ': \"clip1\" and \"clip2\" must be of the same width and height!')
+
+    # Store the "clip1"
+    clip1_src = clip1
+
+    # Convert to double type grayscale image
+    clip1 = mvf.GetPlane(clip1, plane)
+    clip2 = mvf.GetPlane(clip2, plane)
+    clip1 = mvf.Depth(clip1, depth=32, sample=vs.FLOAT, **depth_args)
+    clip2 = mvf.Depth(clip2, depth=32, sample=vs.FLOAT, **depth_args)
+
+    # Filtered by a 2x2 average filter and then down-sampled by a factor of 2, as in the implementation of SSIM
+    if downsample:
+        clip1 = IQA_downsample(clip1)
+        clip2 = IQA_downsample(clip2)
+
+    # Calculate gradients based on Prewitt filter
+    clip1_dx = core.std.Convolution(clip1, [1, 0, -1, 1, 0, -1, 1, 0, -1], divisor=1, saturate=False)
+    clip1_dy = core.std.Convolution(clip1, [1, 1, 1, 0, 0, 0, -1, -1, -1], divisor=1, saturate=False)
+    clip1_grad_squared = core.std.Expr([clip1_dx, clip1_dy], ['x dup * y dup * +'])
+
+    clip2_dx = core.std.Convolution(clip2, [1, 0, -1, 1, 0, -1, 1, 0, -1], divisor=1, saturate=False)
+    clip2_dy = core.std.Convolution(clip2, [1, 1, 1, 0, 0, 0, -1, -1, -1], divisor=1, saturate=False)
+    clip2_grad_squared = core.std.Expr([clip2_dx, clip2_dy], ['x dup * y dup * +'])
+
+    # Compute the gradient magnitude similarity (GMS) map
+    quality_map = core.std.Expr([clip1_grad_squared, clip2_grad_squared], ['2 x y * sqrt * {c} + x y + {c} + /'.format(c=c)])
+
+    # The following code is modified from mvf.PlaneStatistics(), which is used to compute the standard derivation of the GMS map as GMSD
+    floatFormat = core.register_format(vs.GRAY, vs.FLOAT, 32, 0, 0)
+    floatBlk = core.std.BlankClip(quality_map, format=floatFormat.id)
+    
+    if core.std.get_functions().__contains__('PlaneStats'):
+        map_mean = core.std.PlaneStats(quality_map, plane=[0], prop='PlaneStats')
+    else:
+        map_mean = core.std.PlaneAverage(quality_map, plane=[0], prop='PlaneStatsAverage')
+
+    def _PlaneSDFrame(n, f, clip):
+        mean = f.props.PlaneStatsAverage
+        expr = "x {mean} - dup *".format(mean=mean)
+        return core.std.Expr(clip, expr, floatFormat.id)
+    SDclip = core.std.FrameEval(floatBlk, functools.partial(_PlaneSDFrame, clip=quality_map), map_mean)
+
+    if core.std.get_functions().__contains__('PlaneStats'):
+        SDclip = core.std.PlaneStats(SDclip, plane=[0], prop='PlaneStats')
+    else:
+        SDclip = core.std.PlaneAverage(SDclip, plane=[0], prop='PlaneStatsAverage')
+        
+    def _PlaneGMSDTransfer(n, f):
+        fout = f[0].copy()
+        fout.props.PlaneGMSD = math.sqrt(f[1].props.PlaneStatsAverage)
+        return fout
+    output_clip = quality_map if show_map else clip1_src
+    output_clip = core.std.ModifyFrame(output_clip, [output_clip, SDclip], selector=_PlaneGMSDTransfer)
+
+    return output_clip
+
+
+def IQA_downsample(clip):
+    """Downsampler for image quality assesment model.
+
+    The “clip” is first filtered by a 2x2 average filter, and then down-sampled by a factor of 2.
+    """
+
+    core = vs.get_core()
+
+    return core.std.Convolution(clip, [1, 1, 0, 1, 1, 0, 0, 0, 0]).resize.Point(clip.width // 2, clip.height // 2, src_left=-1, src_top=-1)
