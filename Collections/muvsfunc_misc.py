@@ -8,6 +8,7 @@ Miscellaneous functions:
     SSR
     Wiener2
     tv
+    BernsteinFilter
 """
 
 import vapoursynth as vs
@@ -41,6 +42,7 @@ def gauss(clip, sigma=None, algo=0):
 
     Args:
         sigma: Standard deviation of gaussian.
+
         algo: (int) Algorithm. 0:auto, 1:tcanny.TCanny(mode=-1), 2:bilateral.Gaussian()
 
     """
@@ -59,7 +61,8 @@ def freq_merge(src, flt, fun=None, **fun_args):
 
     Args:
         src, flt: Input.
-        fun:(function) A low-pass filter. Default is gaussian.
+
+        fun: (function) A low-pass filter. Default is gaussian.
     """
 
     core = vs.get_core()
@@ -77,8 +80,10 @@ def band_merge(src, flt, fun=None, fun_args1=None, fun_args2=None, cascade=True)
 
     Args:
         src, flt: I nput.
-        fun:(function) A low-pass filter. Default is gaussian.
-        cascade:(bool) Whether to cascade functions. Default is True.
+
+        fun: (function) A low-pass filter. Default is gaussian.
+
+        cascade: (bool) Whether to cascade functions. Default is True.
 
     """
 
@@ -117,7 +122,9 @@ def SSR(clip, sigma=50, full=None, **args):
 
     Args:
         clip: Input. Only the first plane will be processed.
+
         sigma: (int) Standard deviation of gaussian blur. Default is 50.
+
         full: (bool) Whether input clip is of full range. Default is None.
 
     Ref:
@@ -173,11 +180,14 @@ def Wiener2(input, radius_v=3, radius_h=None, noise=None, **depth_args):
 
     Args:
         input: Input clip. Only the first plane will be processed.
+
         radius_v, radius_h: (int) Size of neighborhoods to estimate the local image mean and standard deviation. The size is (radius_v*2-1) * (radius_h*2-1).
             If "radius_h" is None, it will be set to "radius_v".
             Default is 3.
+
         noise: (float) Variance of addictive noise. If it is not given, average of all the local estimated variances will be used.
             Default is {}.
+
         depth_args: (dict) Additional arguments passed to mvf.Depth() in the form of keyword arguments.
             Default is {}.
 
@@ -225,11 +235,17 @@ def tv(I, iter=5, dt=None, ep=1, lam=0, I0=None, C=0):
 
     Args:
         I: Input. Recommended to input floating type clip.
+
         iter: (int) Num of iterations. Default is 5.
+
         dt: (float) Time step. Default is ep/5.
+
         ep: (float) Epsilon (of gradient regularization). Default is 1.
+
         lam: (float) Fidelity term lambda. Default is 0.
+
         I0: (clip) Input (noisy) image. Default is "I".
+
     
     Ref:
         [1] Rudin, L. I., Osher, S., & Fatemi, E. (1992). Nonlinear total variation based noise removal algorithms. Physica D: Nonlinear Phenomena, 60(1-4), 259-268.
@@ -278,7 +294,9 @@ def BernsteinFilter(clip, iter=30, **depth_args):
 
     Args:
         clip: Input.
+
         iter: (int) Num of iterations. Default is 30
+
         depth_args: (dict) Additional arguments passed to mvf.Depth() in the form of keyword arguments.
             Default is {}.
 
