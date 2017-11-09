@@ -277,7 +277,7 @@ def ExInpand(input, mrad=0, mode='rectangle', planes=None):
 
     if isinstance(mrad, int):
         mrad = [mrad]
-    if isinstance(mode, str) or isinstance(mode, int):
+    if isinstance(mode, (str, int)):
         mode = [mode]
     
     if not isinstance(mode, list):
@@ -469,7 +469,7 @@ def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=
 
     if elast is None:
         elast = 3.0
-    elif isinstance(elast, int) or isinstance(elast, float):
+    elif isinstance(elast, (int, float)):
         if elast < 1:
             raise ValueError(funcName + ': Valid range of \"elast\" is [1, +inf)!')
     else:
@@ -485,7 +485,7 @@ def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=
 
     if thr_det is None:
         thr_det = 2 + round(max(thr - 0.35, 0) / 0.3)
-    elif isinstance(thr_det, int) or isinstance(thr_det, float):
+    elif isinstance(thr_det, (int, float)):
         if thr_det <= 0.0:
             raise ValueError(funcName + '" \"thr_det\" must be strictly positive!')
     else:
@@ -509,7 +509,7 @@ def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=
 
     if elastc is None:
         elastc = elast
-    elif isinstance(elastc, int) or isinstance(elastc, float):
+    elif isinstance(elastc, (int, float)):
         if elastc < 1:
             raise ValueError(funcName + ':valid range of \"elastc\" is [1, +inf)!')
     else:
@@ -1425,7 +1425,7 @@ def FixTelecinedFades(input, mode=0, threshold=[0.0], color=[0.0], full=None, pl
         if i not in [0, 1, 2]:
             raise ValueError(funcName + ': valid values of \"mode\" are 0, 1 or 2!')
 
-    if isinstance(threshold, int) or isinstance(threshold, float):
+    if isinstance(threshold, (int, float)):
         threshold = [threshold]
     if not isinstance(threshold, list):
         raise TypeError(funcName + ': \"threshold\" must be a list!')
@@ -1442,7 +1442,7 @@ def FixTelecinedFades(input, mode=0, threshold=[0.0], color=[0.0], full=None, pl
         for i in range(len(threshold)):
             threshold[i] = abs(threshold[i]) * ((1 << bits) - 1) / 255
 
-    if isinstance(color, int) or isinstance(color, float):
+    if isinstance(color, (int, float)):
         color = [color]
     if not isinstance(color, list):
         raise TypeError(funcName + ': \"color\" must be a list!')
@@ -3208,7 +3208,7 @@ def GuidedFilterColor(input, guidance, radius=4, regulation=0.01, use_gauss=Fals
 
 
 def GMSD(clip1, clip2, plane=None, downsample=True, c=0.0026, show_map=False, **depth_args):
-    """Gradient Magnitude Similarity Deviation calculator
+    """Gradient Magnitude Similarity Deviation Calculator
 
     GMSD is a new effective and efficient image quality assessment (IQA) model, which utilizes the pixel-wise gradient magnitude similarity (GMS) 
     between the reference and distorted images combined with standard deviation of the GMS map to predict perceptual image quality.
@@ -3313,7 +3313,7 @@ def GMSD(clip1, clip2, plane=None, downsample=True, c=0.0026, show_map=False, **
 
 
 def SSIM(clip1, clip2, plane=None, downsample=True, k1=0.01, k2=0.03, fun=None, dynamic_range=1, show_map=False, **depth_args):
-    """Structural SIMilarity Index calculator
+    """Structural SIMilarity Index Calculator
 
     The Structural SIMilarity (SSIM) index is a method for measuring the similarity between two images.
     It is based on the hypothesis that the HVS is highly adapted for extracting structural information, 
@@ -3418,7 +3418,7 @@ def SSIM(clip1, clip2, plane=None, downsample=True, k1=0.01, k2=0.03, fun=None, 
 
         numerator1_expr = '2 z * {c1} +'.format(c1=c1)
         numerator2_expr = '2 a z - * {c2} +'.format(c2=c2)
-        expr = 'x y * 0 > {numerator1} {numerator2} * x y * / x 0 = not y 0 = and {numerator1} x / {true} ? ?'.format(numerator1=numerator1_expr, numerator2=numerator2_expr, true=1)
+        expr = 'x y * 0 > {numerator1} {numerator2} * x y * / x 0 = not y 0 = and {numerator1} x / {i} ? ?'.format(numerator1=numerator1_expr, numerator2=numerator2_expr, i=1)
         ssim_map = core.std.Expr([denominator1, denominator2, mu1_mu2, sigma12_pls_mu1_mu2], [expr])
 
     # The following code is modified from mvf.PlaneStatistics(), which is used to compute the mean of the SSIM index map as MSSIM
@@ -3438,7 +3438,7 @@ def SSIM(clip1, clip2, plane=None, downsample=True, k1=0.01, k2=0.03, fun=None, 
 
 
 def IQA_downsample(clip):
-    """Downsampler for image quality assesment model.
+    """Downsampler for image quality assessment model.
 
     The “clip” is first filtered by a 2x2 average filter, and then down-sampled by a factor of 2.
     """
