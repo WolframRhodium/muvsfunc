@@ -9,8 +9,10 @@ def numpy_process(clip, numpy_function, per_plane=True):
 
     Args:
         clip: Input cilp.
-        numpy_function: Function processed on the numpy data. It should not change the dimensions or data type of its input.
-        per_plane: (bool) Whether to pass the data by plane. If not, the data would be passed by frame. Default is True.
+
+        numpy_function: Spatial function to process numpy data. It should not change the dimensions or data type of its input.
+
+        per_plane: (bool) Whether to process data by plane. If not, data would be processed by frame. Default is True.
 
     """
 
@@ -48,8 +50,8 @@ def numpy_process(clip, numpy_function, per_plane=True):
     return flt
 
 
-def L0Smooth(clip, lamda=2e-2, kappa=2, **depth_args):
-    """L0 Smooth Filter
+def L0Smooth(clip, lamda=2e-2, kappa=2, color=True, **depth_args):
+    """L0 Smooth in VapourSynth
 
     L0 smooth is a new image editing method, particularly effective for sharpening major edges 
     by increasing the steepness of transitions while eliminating a manageable degree of low-amplitude structures.
@@ -60,20 +62,24 @@ def L0Smooth(clip, lamda=2e-2, kappa=2, **depth_args):
 
     All the internal calculations are done at 32-bit float.
 
-    This function has not been completed yet,
-    every planes are processed separately, and the performance is slow.
-
     Args:
-        src: Input image in float type.
+        src: Input clip with no chroma subsampling.
 
         lamda: (float) Smoothing parameter controlling the degree of smooth.
-            Typically it is within the range [1e-3, 1e-1].
-            Default is 2e-2.
+            A large "lamda" makes the result have very few edges.
+            Typically it is within the range [0.001, 0.1].
+            This parameter is renamed from "lambda" for better compatibility with Python.
+            Default is 0.02.
 
-        kappa: (float) Parameter that controls the rate.
-            Small kappa results in more iteratioins and with sharper edges.
-            kappa = 2 is suggested for natural images.
+        kappa: (float) Parameter that controls the convergence rate of alternating minimization algorithm.
+            Small "kappa" results in more iteratioins and with sharper edges.
+            kappa = 2 is suggested for natural images, which is a good balance between efficiency and performance.
             Default is 2.
+
+        color: (bool) Whether to process data collaboratively.
+            If true, the gradient magnitude in the model is defined as the sum of gradient magnitudes in the original color space.
+            If false, channels in "clip" will be processed separately.
+            Default is True.
 
         depth_args: (dict) Additional arguments passed to mvf.Depth() in the form of keyword arguments.
             Default is {}.
@@ -82,14 +88,21 @@ def L0Smooth(clip, lamda=2e-2, kappa=2, **depth_args):
         [1] Xu, L., Lu, C., Xu, Y., & Jia, J. (2011, December). Image smoothing via L0 gradient minimization. In ACM Transactions on Graphics (TOG) (Vol. 30, No. 6, p. 174). ACM.
         [2] http://www.cse.cuhk.edu.hk/~leojia/projects/L0smoothing/index.html
 
+    TODO: Optimize FFT using pyfftw library.
+
     """
+
+    funcName = 'L0Smooth'
+
+    if not isinstance(clip, vs.VideoNode) or any((clip.format.subsampling_w, clip.format.subsampling_h)):
+        raise TypeError(funcName + ': \"clip\" must be a clip with no chroma subsampling!')
 
     bits = clip.format.bits_per_sample
     sampleType = clip.format.sample_type
 
     clip = mvf.Depth(clip, depth=32, sample=vs.FLOAT, **depth_args)
 
-    clip = numpy_process(clip, functools.partial(L0Smooth_core, lamda=lamda, kappa=kappa), per_plane=True)
+    clip = numpy_process(clip, functools.partial(L0Smooth_core, lamda=lamda, kappa=kappa), per_plane=(not color or clip.format.num_planes == 1))
 
     clip = mvf.Depth(clip, depth=bits, sample=sampleType, **depth_args)
 
@@ -97,31 +110,32 @@ def L0Smooth(clip, lamda=2e-2, kappa=2, **depth_args):
 
 
 def L0Smooth_core(src, lamda=2e-2, kappa=2):
-    """Ported of L0 Smooth in numpy
-
-    This function has not been completed yet,
-    every planes are processed separately, and the performance is slow.
+    """L0 Smooth in NumPy.
 
     Args:
-        src: Gray scale image in float type.
+        src: 2-D or 3-D numpy array.
+            3-D data will be processed collaboratively, which is the same as the official MATLAB version.
 
         lamda: (float) Smoothing parameter controlling the degree of smooth.
-            Typically it is within the range [1e-3, 1e-1].
             Default is 2e-2.
 
-        kappa: (float) Parameter that controls the rate.
-            Small kappa results in more iteratioins and with sharper edges.
-            kappa = 2 is suggested for natural images.
+        kappa: (float) Parameter that controls the rate of convergence.
             Default is 2.
 
-    Ref:
-        [1] Xu, L., Lu, C., Xu, Y., & Jia, J. (2011, December). Image smoothing via L 0 gradient minimization. In ACM Transactions on Graphics (TOG) (Vol. 30, No. 6, p. 174). ACM.
-        [2] http://www.cse.cuhk.edu.hk/~leojia/projects/L0smoothing/index.html
+        For detailed documentation, please refer to the docstring of "L0Smooth" funcion.
+
+    TODO: Optimize FFT using pyfftw library.
 
     """
 
+    funcName = 'L0_smooth_core'
+
+    if not isinstance(src, np.ndarray) or src.ndim not in (2, 3):
+        raise TypeError(funcName + ': \"src\" must be 2-D or 3-D numpy data!')
+
     imgSize = src.shape
     size2D = imgSize[:2]
+    D = np.size(src, 2) if src.ndim == 3 else 1
     betamax = 1e5
 
     fx = np.array([[1, -1]])
@@ -135,28 +149,38 @@ def L0Smooth_core(src, lamda=2e-2, kappa=2):
 
     beta = 2 * lamda
 
+    if src.ndim == 3:
+        Denormin2 = np.tile(Denormin2.reshape(list(Denormin2.shape) + [1]), (1, 1, D))
+
     while beta < betamax:
         Denormin = 1 + beta * Denormin2
+        # h-v subproblem
         h = np.hstack((np.diff(src, 1, 1), src[:, 0:1] - src[:, -1:]))
         v = np.vstack((np.diff(src, 1, 0), src[0:1, :] - src[-1:, :]))
-        t = h ** 2 + v ** 2 < lamda / beta
+        if src.ndim == 3:
+            t = np.sum(h ** 2 + v ** 2, 2) < lamda / beta
+            t = np.tile(t.reshape(list(t.shape) + [1]), (1, 1, D))
+        else: # src.ndim == 2
+            t = h ** 2 + v ** 2 < lamda / beta
         h[t] = 0
         v[t] = 0
+        # S subproblem
         Normin2 = np.hstack((h[:, -1:] - h[:, 0:1], -np.diff(h, 1, 1))) + np.vstack((v[-1:, :] - v[0:1, :], -np.diff(v, 1, 0)))
-        FS = (Normin1 + beta * np.fft.fft2(Normin2)) / Denormin
-        src[:] = np.real(np.fft.ifft2(FS))
+        FS = (Normin1 + beta * np.fft.fft2(Normin2, axes=(0, 1))) / Denormin
+        src[:] = np.real(np.fft.ifft2(FS, axes=(0, 1)))
         beta *= kappa
 
     return src
 
 
 def psf2otf(psf, outSize=None):
-    """Function on convert point-spread function to optical transfer function
+    """Function of convert point-spread function to optical transfer function
 
     Ported from MATLAB
 
     Args:
         psf: Point-spread function in numpy.ndarray.
+
         outSize: (tuple) The size of the OTF array. Default is the same as psf.
 
     """
