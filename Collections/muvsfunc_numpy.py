@@ -1,7 +1,17 @@
+"""
+VapourSynth functions:
+    numpy_process
+    L0Smooth
+
+NumPy functions:
+    L0Smooth_core
+    psf2otf
+"""
+
 import vapoursynth as vs
 import mvsfunc as mvf
-import functools
 import numpy as np
+import functools
 import math
 
 def numpy_process(clip, numpy_function, per_plane=True):
@@ -29,19 +39,19 @@ def numpy_process(clip, numpy_function, per_plane=True):
 
                 d = np.array(fout.get_write_array(p), copy=False)
                 np.copyto(d, s)
-                del d, s
+                del d
         else:
             s_list = []
             for p in range(planes):
                 arr = np.array(fout.get_read_array(p), copy=False)
-                s_list.append(arr.reshape(list(arr.shape) + [1]))
+                s_list.append(arr[:, :, np.newaxis])
             s = np.concatenate(s_list, axis=2)
             s[:] = numpy_function(s)
 
             for p in range(planes):
                 d = np.array(fout.get_write_array(p), copy=False)
                 np.copyto(d, s[:, :, p])
-            del d, s
+                del d
 
         return fout
 
@@ -102,14 +112,23 @@ def L0Smooth(clip, lamda=2e-2, kappa=2, color=True, **depth_args):
 
     clip = mvf.Depth(clip, depth=32, sample=vs.FLOAT, **depth_args)
 
-    clip = numpy_process(clip, functools.partial(L0Smooth_core, lamda=lamda, kappa=kappa), per_plane=(not color or clip.format.num_planes == 1))
+    # Pre-calculate constant matrix
+    size2D = (clip.height, clip.width)
+    fx = np.array([[1, -1]])
+    fy = np.array([[1], [-1]])
+    otfFx = psf2otf(fx, outSize=size2D)
+    otfFy = psf2otf(fy, outSize=size2D)
+    Denormin2 = np.abs(otfFx) ** 2 + np.abs(otfFy) ** 2
+    Denormin2 = Denormin2[:, :size2D[1]//2+1]
+
+    clip = numpy_process(clip, functools.partial(L0Smooth_core, lamda=lamda, kappa=kappa, Denormin2=Denormin2), per_plane=(not color or clip.format.num_planes == 1))
 
     clip = mvf.Depth(clip, depth=bits, sample=sampleType, **depth_args)
 
     return clip
 
 
-def L0Smooth_core(src, lamda=2e-2, kappa=2):
+def L0Smooth_core(src, lamda=2e-2, kappa=2, Denormin2=None):
     """L0 Smooth in NumPy.
 
     Args:
@@ -122,7 +141,9 @@ def L0Smooth_core(src, lamda=2e-2, kappa=2):
         kappa: (float) Parameter that controls the rate of convergence.
             Default is 2.
 
-        For detailed documentation, please refer to the docstring of "L0Smooth" funcion.
+        Denormin2: (ndarray) Constant matrix. If it is None, it will be calculated automatically.
+
+        For detailed documentation, please refer to the documentation of "L0Smooth" funcion in current library.
 
     TODO: Optimize FFT using pyfftw library.
 
@@ -135,45 +156,63 @@ def L0Smooth_core(src, lamda=2e-2, kappa=2):
 
     imgSize = src.shape
     size2D = imgSize[:2]
+    r_size2D = (size2D[0], size2D[1] // 2 + 1)
     D = np.size(src, 2) if src.ndim == 3 else 1
     betamax = 1e5
 
-    fx = np.array([[1, -1]])
-    fy = np.array([[1], [-1]])
-    otfFx = psf2otf(fx, size2D)
-    otfFy = psf2otf(fy, size2D)
+    h = np.empty_like(src)
+    v = np.empty_like(src)
+    Normin2 = np.empty_like(src)
 
-    Normin1 = np.fft.fft2(src, axes=(0, 1))
+    Normin1 = np.fft.rfft2(src, axes=(0, 1))
 
-    Denormin2 = np.abs(otfFx) ** 2 + np.abs(otfFy) ** 2
+    if Denormin2 is None:
+        fx = np.array([[1, -1]])
+        fy = np.array([[1], [-1]])
+        otfFx = psf2otf(fx, outSize=size2D)
+        otfFxy = psf2otf(fy, outSize=size2D)
+        Denormin2 = np.abs(otfFx) ** 2 + np.abs(otfFy) ** 2
+        Denormin2 = Denormin2[:, :size2D[1]//2+1]
+    elif Denormin2.shape == size2D:
+        Denormin2 = Denormin2[:, :size2D[1]//2+1]
+    elif Denormin2.shape not in (r_size2D, list(r_size2D) + [D]):
+        raise ValueError(funcName + ': the shape of \"Denormin2\" must be {}!'.format(r_size2D))
 
     beta = 2 * lamda
 
     if src.ndim == 3:
-        Denormin2 = np.tile(Denormin2.reshape(list(Denormin2.shape) + [1]), (1, 1, D))
+        Denormin2 = np.tile(Denormin2[:, :, np.newaxis], (1, 1, D))
 
     while beta < betamax:
         Denormin = 1 + beta * Denormin2
         # h-v subproblem
-        h = np.hstack((np.diff(src, 1, 1), src[:, 0:1] - src[:, -1:]))
-        v = np.vstack((np.diff(src, 1, 0), src[0:1, :] - src[-1:, :]))
+        #h = np.hstack((np.diff(src, 1, 1), src[:, 0:1] - src[:, -1:]))
+        #v = np.vstack((np.diff(src, 1, 0), src[0:1, :] - src[-1:, :]))
+        h[:, :-1] = src[:, 1:] - src[:, :-1]
+        h[:, -1:] = src[:, 0:1] - src[:, -1:]
+        v[:-1, :] = src[1:, :] - src[:-1, :]
+        v[-1:, :] = src[0:1, :] - src[-1:, :]
         if src.ndim == 3:
             t = np.sum(h ** 2 + v ** 2, 2) < lamda / beta
-            t = np.tile(t.reshape(list(t.shape) + [1]), (1, 1, D))
+            t = np.tile(t[:, :, np.newaxis], (1, 1, D))
         else: # src.ndim == 2
-            t = h ** 2 + v ** 2 < lamda / beta
+            t = (h ** 2 + v ** 2) < lamda / beta
         h[t] = 0
         v[t] = 0
         # S subproblem
-        Normin2 = np.hstack((h[:, -1:] - h[:, 0:1], -np.diff(h, 1, 1))) + np.vstack((v[-1:, :] - v[0:1, :], -np.diff(v, 1, 0)))
-        FS = (Normin1 + beta * np.fft.fft2(Normin2, axes=(0, 1))) / Denormin
-        src[:] = np.real(np.fft.ifft2(FS, axes=(0, 1)))
+        #Normin2 = np.hstack((h[:, -1:] - h[:, 0:1], -np.diff(h, 1, 1))) + np.vstack((v[-1:, :] - v[0:1, :], -np.diff(v, 1, 0)))
+        Normin2[:, 0:1] = h[:, -1:] - h[:, 0:1]
+        Normin2[:, 1:] = h[:, :-1] - h[:, 1:]
+        Normin2[0:1, :] += v[-1:, :] - v[0:1, :]
+        Normin2[1:, :] += v[:-1, :] - v[1:, :]
+        FS = (Normin1 + beta * np.fft.rfft2(Normin2, axes=(0, 1))) / Denormin
+        src[:] = np.fft.irfft2(FS, axes=(0, 1))
         beta *= kappa
 
     return src
 
 
-def psf2otf(psf, outSize=None):
+def psf2otf(psf, outSize=None, fast=False):
     """Function of convert point-spread function to optical transfer function
 
     Ported from MATLAB
@@ -182,6 +221,9 @@ def psf2otf(psf, outSize=None):
         psf: Point-spread function in numpy.ndarray.
 
         outSize: (tuple) The size of the OTF array. Default is the same as psf.
+
+        fast: (tuple) Whether to check the resulting values and discard the imaginary part if it's within roundoff error.
+            Default is False.
 
     """
 
@@ -193,29 +235,28 @@ def psf2otf(psf, outSize=None):
         outSize = psfSize
     elif not isinstance(outSize, np.ndarray):
         outSize = np.array(outSize)
-    else:
-        raise TypeError("\'outSize\' must be a tuple!")
 
     # Pad the PSF to outSize
-    padSize = tuple(outSize - psfSize)
-    psf = np.lib.pad(psf, [(0, i) for i in padSize], 'constant')
+    padSize = outSize - psfSize
+    psf = np.lib.pad(psf, pad_width=[(0, i) for i in padSize], mode='constant', constant_values=0)
 
     # Circularly shift otf so that the "center" of the PSF is at the (0, 0) element of the array.
-    psf = np.roll(psf, shift=tuple(-np.floor_divide(psfSize, 2)), axis=tuple(range(np.size(psfSize))))
+    psf = np.roll(psf, shift=tuple(-np.floor_divide(psfSize, 2)), axis=tuple(range(psf.ndim)))
 
     # Compute the OTF
     otf = np.fft.fftn(psf)
 
-    # Estimate the rough number of operations involved in the computation of the FFT.
-    nElem = np.prod(psfSize)
-    nOps = 0
-    for k in range(np.ndim(psf)):
-        nffts = nElem / psfSize[k]
-        nOps += psfSize[k] * math.log2(psfSize[k]) * nffts
+    if not fast:
+        # Estimate the rough number of operations involved in the computation of the FFT.
+        nElem = np.prod(psfSize)
+        nOps = 0
+        for k in range(np.ndim(psf)):
+            nffts = nElem / psfSize[k]
+            nOps += psfSize[k] * math.log2(psfSize[k]) * nffts
 
-    # Discard the imaginary part of the psf if it's within roundoff error.
-    eps = 2.220446049250313e-16
-    if np.max(np.abs(np.imag(otf.flatten()))) / np.max(np.abs(otf.flatten())) <= nOps * eps:
-        otf = np.real(otf)
+        # Discard the imaginary part of the psf if it's within roundoff error.
+        eps = 2.220446049250313e-16
+        if np.max(np.abs(np.imag(otf))) / np.max(np.abs(otf)) <= nOps * eps:
+            otf = np.real(otf)
 
     return otf
