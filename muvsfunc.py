@@ -40,6 +40,7 @@ Functions:
     GuidedFilter (Color)
     GMSD
     SSIM
+    SSIM_downsampler
 '''
 
 import vapoursynth as vs
@@ -2699,7 +2700,7 @@ def BalanceBorders(c, cTop=0, cBottom=0, cLeft=0, cRight=0, thresh=128, blur=999
         raise TypeError(funcName + ': \"c\" must be a clip!')
 
     if c.format.sample_type != vs.INTEGER:
-        raise TypeError(funcname+': \"c\" must be integer format!')
+        raise TypeError(funcName+': \"c\" must be integer format!')
 
     if blur <= 0:
         raise ValueError(funcName + ': \'blur\' have not a correct value! (0 ~ inf]')
@@ -2801,7 +2802,7 @@ def DisplayHistogram(clip, factor=None):
         raise TypeError(funcName + ': \"clip\" must be a clip!')
 
     if clip.format.sample_type != vs.INTEGER or clip.format.bits_per_sample > 16 or clip.format.color_family != vs.YUV:
-        raise TypeError(funcname+': \"clip\" must be 8..16 integer YUV format!')
+        raise TypeError(funcName+': \"clip\" must be 8..16 integer YUV format!')
 
     histogram_v = core.hist.Classic(clip)
 
@@ -2960,8 +2961,8 @@ def GuidedFilter(input, guidance=None, radius=4, regulation=0.01, regulation_mod
             p = core.fmtc.resample(p, down_w, down_h, kernel=kernel1, **kernel1_args)
             I = core.fmtc.resample(I, down_w, down_h, kernel=kernel1, **kernel1_args) if guidance is not None else p
         else: # use zimg
-            p = eval('core.resize.{kernel}(p, {w}, {h}, **kernel1_args)'.format(kernel=kernel1.capitalize(), w=down_w, h=down_h))
-            I = eval('core.resize.{kernel}(I, {w}, {h}, **kernel1_args)'.format(kernel=kernel1.capitalize(), w=down_w, h=down_h)) if guidance is not None else p
+            p = eval('core.resize.{kernel}(p, down_w, down_h, **kernel1_args)'.format(kernel=kernel1.capitalize()))
+            I = eval('core.resize.{kernel}(I, down_w, down_h, **kernel1_args)'.format(kernel=kernel1.capitalize())) if guidance is not None else p
 
         r = round(r / s + 0.5)
 
@@ -3294,7 +3295,7 @@ def GMSD(clip1, clip2, plane=None, downsample=True, c=0.0026, show_map=False, **
     def _PlaneSDFrame(n, f, clip):
         mean = f.props.PlaneStatsAverage
         expr = "x {mean} - dup *".format(mean=mean)
-        return core.std.Expr(clip, expr, floatFormat.id)
+        return core.std.Expr(clip, expr)
     SDclip = core.std.FrameEval(quality_map, functools.partial(_PlaneSDFrame, clip=quality_map), map_mean)
 
     if core.std.get_functions().__contains__('PlaneStats'):
@@ -3446,3 +3447,87 @@ def IQA_downsample(clip):
     core = vs.get_core()
 
     return core.std.Convolution(clip, [1, 1, 0, 1, 1, 0, 0, 0, 0]).resize.Point(clip.width // 2, clip.height // 2, src_left=-1, src_top=-1)
+
+
+def SSIM_downsampler(clip, w, h, smooth=5, kernel='Bicubic', use_fmtc=False, epsilon=1e-6, depth_args=None, **resample_args):
+    """SSIM downsampler
+
+    SSIM downsampler is an image downscaling technique that aims to optimize for the perceptual quality of the downscaled results.
+    Image downscaling is considered as an optimization problem
+    where the difference between the input and output images is measured using famous Structural SIMilarity (SSIM) index.
+    The solution is derived in closed-form, which leads to the simple, efficient implementation.
+    The downscaled images retain perceptually important features and details,
+    resulting in an accurate and spatio-temporally consistent representation of the high resolution input.
+    
+    This is an pseudo-implementation of SSIM dowmsampler with slight modification.
+    The pre-downsampling is performed by vszimg/fmtconv, and the behaviour of convolution at the border is uniform.
+
+    All the internal calculations are done at 32-bit float.
+
+    Args:
+        clip: The input clip.
+
+        w, h: The size of the output clip.
+
+        smooth: (int, float or function) The method to smooth the image.
+            If it's an int, it specifies the "smooth" of the internel used boxfilter, i.e. the window has a size of (2*smooth+1)x(2*smooth+1).
+            If it's a float, it specifies the "sigma" of core.tcanny.TCanny, i.e. the standard deviation of gaussian blur.
+            If it's a function, it appears as a general smoother.
+            Default is 5. The boxfilter with size 11x11 will be performed.
+        kernel: (str) Resamler of vszimg/fmtconv.
+            Default is 'Bicubic'.
+        use_fmtc: (bool) Whether to use fmtconv for downsampling. If not, vszimg (core.resize.*) will be used.
+            Default is False.
+        depth_args: (dict) Additional arguments passed to mvf.Depth().
+            Default is {}.
+        resample_args: (dict) Additional arguments passed to vszimg/fmtconv in the form of keyword arguments.
+            Default is {}.
+
+    Ref:
+        [1] Oeztireli, A. C., & Gross, M. (2015). Perceptually based downscaling of images. ACM Transactions on Graphics (TOG), 34(4), 77.
+
+    """
+
+    funcName = 'SSIM_downsampler'
+
+    core = vs.get_core()
+
+    if not isinstance(clip, vs.VideoNode):
+        raise TypeError(funcName + ': \"clip\" must be a clip!')
+
+    bits = clip.format.bits_per_sample
+    sampleType = clip.format.sample_type
+    if depth_args is None:
+        depth_args = {}
+
+    if isinstance(smooth, int):
+        Filter = functools.partial(BoxFilter, radius=smooth+1)
+    elif isinstance(smooth, float):
+        Filter = functools.partial(core.tcanny.TCanny, sigma=smooth, mode=-1)
+    elif callable(smooth):
+        Filter = smooth
+    else:
+        raise TypeError(funcName + ': \"smooth\" must be a int, float or a function!')
+
+    clip = mvf.Depth(clip, depth=32, sample=vs.FLOAT, **depth_args)
+
+    if use_fmtc:
+        l = core.fmtc.resample(clip, w, h, **resample_args)
+        l2 = core.fmtc.resample(core.std.Expr([clip], ['x dup *']), w, h, **resample_args)
+    else:
+        l = eval('core.resize.{kernel}(clip, w, h, **resample_args)'.format(kernel=kernel.capitalize()))
+        l2 = eval('core.resize.{kernel}(core.std.Expr([clip], ["x dup *"]), w, h, **resample_args)'.format(kernel=kernel.capitalize()))
+
+    m = Filter(l)
+    sl_plus_m_square = Filter(core.std.Expr([l], ['x dup *']))
+    sh_plus_m_square = Filter(l2)
+    m_square = core.std.Expr([m], ['x dup *'])
+    r = core.std.Expr([sl_plus_m_square, sh_plus_m_square, m_square], ['x z - {eps} < 0 y z - x z - / sqrt ?'.format(eps=epsilon)])
+    t = Filter(core.std.Expr([r, m], ['x y *']))
+    m = Filter(m)
+    r = Filter(r)
+    d = core.std.Expr([m, r, l, t], ['x y z * + a -'])
+
+    out = mvf.Depth(d, depth=bits, sample=sampleType, **depth_args)
+
+    return out
