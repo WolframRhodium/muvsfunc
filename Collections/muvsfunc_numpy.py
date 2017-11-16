@@ -104,6 +104,8 @@ def L0Smooth(clip, lamda=2e-2, kappa=2, color=True, **depth_args):
 
     funcName = 'L0Smooth'
 
+    core = vs.get_core()
+
     if not isinstance(clip, vs.VideoNode) or any((clip.format.subsampling_w, clip.format.subsampling_h)):
         raise TypeError(funcName + ': \"clip\" must be a clip with no chroma subsampling!')
 
@@ -111,6 +113,11 @@ def L0Smooth(clip, lamda=2e-2, kappa=2, color=True, **depth_args):
     sampleType = clip.format.sample_type
 
     clip = mvf.Depth(clip, depth=32, sample=vs.FLOAT, **depth_args)
+    if clip.width & 1:
+        pad = True
+        clip = core.std.AddBorders(clip, left=1)
+    else:
+        pad = False
 
     # Pre-calculate constant matrix
     size2D = (clip.height, clip.width)
@@ -123,6 +130,9 @@ def L0Smooth(clip, lamda=2e-2, kappa=2, color=True, **depth_args):
 
     clip = numpy_process(clip, functools.partial(L0Smooth_core, lamda=lamda, kappa=kappa, Denormin2=Denormin2), per_plane=(not color or clip.format.num_planes == 1))
 
+    if pad:
+        clip = core.std.CropRel(clip, left=1)
+
     clip = mvf.Depth(clip, depth=bits, sample=sampleType, **depth_args)
 
     return clip
@@ -132,7 +142,7 @@ def L0Smooth_core(src, lamda=2e-2, kappa=2, Denormin2=None):
     """L0 Smooth in NumPy.
 
     Args:
-        src: 2-D or 3-D numpy array.
+        src: 2-D or 3-D numpy array. The length along the second dimension must be even.
             3-D data will be processed collaboratively, which is the same as the official MATLAB version.
 
         lamda: (float) Smoothing parameter controlling the degree of smooth.
@@ -153,6 +163,9 @@ def L0Smooth_core(src, lamda=2e-2, kappa=2, Denormin2=None):
 
     if not isinstance(src, np.ndarray) or src.ndim not in (2, 3):
         raise TypeError(funcName + ': \"src\" must be 2-D or 3-D numpy data!')
+
+    if src.shape[1] & 1:
+        raise TypeError(funcName + ': the length of \"src\" along the second dimension must be even!')
 
     imgSize = src.shape
     size2D = imgSize[:2]

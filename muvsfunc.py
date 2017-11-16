@@ -40,7 +40,7 @@ Functions:
     GuidedFilter (Color)
     GMSD
     SSIM
-    SSIM_downsampler
+    SSIM_downsample
 '''
 
 import vapoursynth as vs
@@ -3449,7 +3449,7 @@ def IQA_downsample(clip):
     return core.std.Convolution(clip, [1, 1, 0, 1, 1, 0, 0, 0, 0]).resize.Point(clip.width // 2, clip.height // 2, src_left=-1, src_top=-1)
 
 
-def SSIM_downsampler(clip, w, h, smooth=5, kernel='Bicubic', use_fmtc=False, epsilon=1e-6, depth_args=None, **resample_args):
+def SSIM_downsample(clip, w, h, smooth=1, kernel='Bicubic', use_fmtc=False, epsilon=1e-6, depth_args=None, **resample_args):
     """SSIM downsampler
 
     SSIM downsampler is an image downscaling technique that aims to optimize for the perceptual quality of the downscaled results.
@@ -3459,7 +3459,7 @@ def SSIM_downsampler(clip, w, h, smooth=5, kernel='Bicubic', use_fmtc=False, eps
     The downscaled images retain perceptually important features and details,
     resulting in an accurate and spatio-temporally consistent representation of the high resolution input.
     
-    This is an pseudo-implementation of SSIM dowmsampler with slight modification.
+    This is an pseudo-implementation of SSIM downsampler with slight modification.
     The pre-downsampling is performed by vszimg/fmtconv, and the behaviour of convolution at the border is uniform.
 
     All the internal calculations are done at 32-bit float.
@@ -3470,16 +3470,20 @@ def SSIM_downsampler(clip, w, h, smooth=5, kernel='Bicubic', use_fmtc=False, eps
         w, h: The size of the output clip.
 
         smooth: (int, float or function) The method to smooth the image.
-            If it's an int, it specifies the "smooth" of the internel used boxfilter, i.e. the window has a size of (2*smooth+1)x(2*smooth+1).
+            If it's an int, it specifies the "radius" of the internel used boxfilter, i.e. the window has a size of (2*smooth+1)x(2*smooth+1).
             If it's a float, it specifies the "sigma" of core.tcanny.TCanny, i.e. the standard deviation of gaussian blur.
-            If it's a function, it appears as a general smoother.
-            Default is 5. The boxfilter with size 11x11 will be performed.
-        kernel: (str) Resamler of vszimg/fmtconv.
+            If it's a function, it acs as a general smoother.
+            Default is 1. The 3x3 boxfilter will be performed.
+
+        kernel: (string) Resample kernel of vszimg/fmtconv.
             Default is 'Bicubic'.
+
         use_fmtc: (bool) Whether to use fmtconv for downsampling. If not, vszimg (core.resize.*) will be used.
             Default is False.
+
         depth_args: (dict) Additional arguments passed to mvf.Depth().
             Default is {}.
+
         resample_args: (dict) Additional arguments passed to vszimg/fmtconv in the form of keyword arguments.
             Default is {}.
 
@@ -3488,7 +3492,7 @@ def SSIM_downsampler(clip, w, h, smooth=5, kernel='Bicubic', use_fmtc=False, eps
 
     """
 
-    funcName = 'SSIM_downsampler'
+    funcName = 'SSIM_downsample'
 
     core = vs.get_core()
 
