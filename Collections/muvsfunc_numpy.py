@@ -14,7 +14,7 @@ import numpy as np
 import functools
 import math
 
-def numpy_process(clip, numpy_function, per_plane=True):
+def numpy_process(clip, numpy_function, per_plane=True, lock_source_array=True, **fun_args):
     """Helper function for filtering clip in numpy
 
     Args:
@@ -22,7 +22,14 @@ def numpy_process(clip, numpy_function, per_plane=True):
 
         numpy_function: Spatial function to process numpy data. It should not change the dimensions or data type of its input.
 
-        per_plane: (bool) Whether to process data by plane. If not, data would be processed by frame. Default is True.
+        per_plane: (bool) Whether to process data by plane. If not, data would be processed by frame.
+            Default is True.
+
+        lock_source_array: (bool) Whether to lock the source array to avoid unintentionally overwrite the data.
+            Default is True.
+
+        fun_args: (dict) Additional arguments passed to “numpy_function” in the form of keyword arguments.
+            Default is {}.
 
     """
 
@@ -34,25 +41,30 @@ def numpy_process(clip, numpy_function, per_plane=True):
         planes = fout.format.num_planes
         if per_plane:
             for p in range(planes):
-                s = np.array(fout.get_read_array(p), copy=False)
-                s[:] = numpy_function(s)
+                s = np.asarray(f.get_read_array(p))
+                if lock_source_array:
+                    s.flags.writeable = False # Lock the source data, making it read-only
 
-                d = np.array(fout.get_write_array(p), copy=False)
-                np.copyto(d, s)
+                fs = numpy_function(s, **fun_args)
+
+                d = np.asarray(fout.get_write_array(p))
+                np.copyto(d, fs)
                 del d
         else:
             s_list = []
             for p in range(planes):
-                arr = np.array(fout.get_read_array(p), copy=False)
+                arr = np.asarray(f.get_read_array(p))
                 s_list.append(arr[:, :, np.newaxis])
             s = np.concatenate(s_list, axis=2)
-            s[:] = numpy_function(s)
+            if lock_source_array:
+                s.flags.writeable = False # Lock the source data, making it read-only
+
+            fs = numpy_function(s, **fun_args)
 
             for p in range(planes):
-                d = np.array(fout.get_write_array(p), copy=False)
-                np.copyto(d, s[:, :, p])
+                d = np.asarray(fout.get_write_array(p))
+                np.copyto(d, fs[:, :, p])
                 del d
-
         return fout
 
     flt = core.std.ModifyFrame(clip, clip, FLT)
@@ -109,17 +121,22 @@ def L0Smooth(clip, lamda=2e-2, kappa=2, color=True, **depth_args):
     if not isinstance(clip, vs.VideoNode) or any((clip.format.subsampling_w, clip.format.subsampling_h)):
         raise TypeError(funcName + ': \"clip\" must be a clip with no chroma subsampling!')
 
+    # Internal parameters
     bits = clip.format.bits_per_sample
     sampleType = clip.format.sample_type
+    per_plane = not color or clip.format.num_planes == 1
 
+    # Convert to floating point
     clip = mvf.Depth(clip, depth=32, sample=vs.FLOAT, **depth_args)
+
+    # Add padding for real Fast Fourier Transform
     if clip.width & 1:
         pad = True
         clip = core.std.AddBorders(clip, left=1)
     else:
         pad = False
 
-    # Pre-calculate constant matrix
+    # Pre-calculate constant 2-D matrix
     size2D = (clip.height, clip.width)
     fx = np.array([[1, -1]])
     fy = np.array([[1], [-1]])
@@ -128,17 +145,20 @@ def L0Smooth(clip, lamda=2e-2, kappa=2, color=True, **depth_args):
     Denormin2 = np.abs(otfFx) ** 2 + np.abs(otfFy) ** 2
     Denormin2 = Denormin2[:, :size2D[1]//2+1]
 
-    clip = numpy_process(clip, functools.partial(L0Smooth_core, lamda=lamda, kappa=kappa, Denormin2=Denormin2), per_plane=(not color or clip.format.num_planes == 1))
+    # Process
+    clip = numpy_process(clip, functools.partial(L0Smooth_core, lamda=lamda, kappa=kappa, Denormin2=Denormin2, copy=True), per_plane=per_plane)
 
+    # Crop the padding
     if pad:
         clip = core.std.CropRel(clip, left=1)
 
+    # Convert the bit depth and sample type of output to the same as input
     clip = mvf.Depth(clip, depth=bits, sample=sampleType, **depth_args)
 
     return clip
 
 
-def L0Smooth_core(src, lamda=2e-2, kappa=2, Denormin2=None):
+def L0Smooth_core(src, lamda=2e-2, kappa=2, Denormin2=None, copy=False):
     """L0 Smooth in NumPy.
 
     Args:
@@ -152,6 +172,10 @@ def L0Smooth_core(src, lamda=2e-2, kappa=2, Denormin2=None):
             Default is 2.
 
         Denormin2: (ndarray) Constant matrix. If it is None, it will be calculated automatically.
+            If "src" is a 2-D array, "Denormin2" must also be 2-D array.
+            Else, if "src" is a 2-D array, "Denormin2" can be either 2-D or 3-D array.
+
+        copy: (bool) Whether to copy the data before processing. Default is False.
 
         For detailed documentation, please refer to the documentation of "L0Smooth" funcion in current library.
 
@@ -161,65 +185,84 @@ def L0Smooth_core(src, lamda=2e-2, kappa=2, Denormin2=None):
 
     funcName = 'L0_smooth_core'
 
+    if copy:
+        src = src.copy()
+
     if not isinstance(src, np.ndarray) or src.ndim not in (2, 3):
         raise TypeError(funcName + ': \"src\" must be 2-D or 3-D numpy data!')
 
     if src.shape[1] & 1:
         raise TypeError(funcName + ': the length of \"src\" along the second dimension must be even!')
 
+    # Get size
     imgSize = src.shape
     size2D = imgSize[:2]
     r_size2D = (size2D[0], size2D[1] // 2 + 1)
-    D = np.size(src, 2) if src.ndim == 3 else 1
-    betamax = 1e5
+    D = imgSize[2] if src.ndim == 3 else 1
 
-    h = np.empty_like(src)
-    v = np.empty_like(src)
-    Normin2 = np.empty_like(src)
-
-    Normin1 = np.fft.rfft2(src, axes=(0, 1))
-
+    # Generate constant "Denormin2"
     if Denormin2 is None:
         fx = np.array([[1, -1]])
         fy = np.array([[1], [-1]])
         otfFx = psf2otf(fx, outSize=size2D)
-        otfFxy = psf2otf(fy, outSize=size2D)
+        otfFy = psf2otf(fy, outSize=size2D)
         Denormin2 = np.abs(otfFx) ** 2 + np.abs(otfFy) ** 2
-        Denormin2 = Denormin2[:, :size2D[1]//2+1]
-    elif Denormin2.shape == size2D:
-        Denormin2 = Denormin2[:, :size2D[1]//2+1]
-    elif Denormin2.shape not in (r_size2D, list(r_size2D) + [D]):
-        raise ValueError(funcName + ': the shape of \"Denormin2\" must be {}!'.format(r_size2D))
 
+    if Denormin2.shape[:2] == size2D:
+        Denormin2 = Denormin2[:, :size2D[1]//2+1]
+
+    if src.ndim == 3 and Denormin2.shape == r_size2D:
+        Denormin2 = Denormin2[:, :, np.newaxis]
+
+    if src.ndim == 2:
+        if Denormin2.shape != r_size2D:
+            raise ValueError(funcName + ': the shape of \"Denormin2\" must be {}!'.format(r_size2D))
+    else: # src.ndim == 3
+        if Denormin2.shape not in ((*r_size2D, 1), (*r_size2D, D)):
+            raise ValueError(funcName + ': the shape of \"Denormin2\" must be {}!'.format(r_size2D))
+
+    # Internal parameters
     beta = 2 * lamda
+    betamax = 1e5
 
-    if src.ndim == 3:
-        Denormin2 = np.tile(Denormin2[:, :, np.newaxis], (1, 1, D))
+    # Pre-allocate memory
+    Denormin = np.empty_like(Denormin2)
+    h = np.empty_like(src)
+    v = np.empty_like(src)
+    t = np.empty(size2D, dtype='bool')
+    FS = np.empty(r_size2D if src.ndim == 2 else (*r_size2D, D), dtype='complex64')
+    Normin2 = np.empty_like(src)
+
+    # Start processing
+    Normin1 = np.fft.rfft2(src, axes=(0, 1))
 
     while beta < betamax:
         Denormin = 1 + beta * Denormin2
+
         # h-v subproblem
         #h = np.hstack((np.diff(src, 1, 1), src[:, 0:1] - src[:, -1:]))
         #v = np.vstack((np.diff(src, 1, 0), src[0:1, :] - src[-1:, :]))
         h[:, :-1] = src[:, 1:] - src[:, :-1]
-        h[:, -1:] = src[:, 0:1] - src[:, -1:]
+        h[:, -1:] = src[:, :1] - src[:, -1:]
         v[:-1, :] = src[1:, :] - src[:-1, :]
-        v[-1:, :] = src[0:1, :] - src[-1:, :]
+        v[-1:, :] = src[:1, :] - src[-1:, :]
         if src.ndim == 3:
-            t = np.sum(h ** 2 + v ** 2, 2) < lamda / beta
-            t = np.tile(t[:, :, np.newaxis], (1, 1, D))
+            t[:] = np.sum(h ** 2 + v ** 2, 2) < lamda / beta
         else: # src.ndim == 2
-            t = (h ** 2 + v ** 2) < lamda / beta
+            t[:] = (h ** 2 + v ** 2) < lamda / beta
         h[t] = 0
         v[t] = 0
+
         # S subproblem
         #Normin2 = np.hstack((h[:, -1:] - h[:, 0:1], -np.diff(h, 1, 1))) + np.vstack((v[-1:, :] - v[0:1, :], -np.diff(v, 1, 0)))
-        Normin2[:, 0:1] = h[:, -1:] - h[:, 0:1]
+        Normin2[:, :1] = h[:, -1:] - h[:, :1]
         Normin2[:, 1:] = h[:, :-1] - h[:, 1:]
-        Normin2[0:1, :] += v[-1:, :] - v[0:1, :]
+        Normin2[:1, :] += v[-1:, :] - v[:1, :]
         Normin2[1:, :] += v[:-1, :] - v[1:, :]
-        FS = (Normin1 + beta * np.fft.rfft2(Normin2, axes=(0, 1))) / Denormin
+        FS[:] = (Normin1 + beta * np.fft.rfft2(Normin2, axes=(0, 1))) / Denormin
         src[:] = np.fft.irfft2(FS, axes=(0, 1))
+
+        # Updata parameter
         beta *= kappa
 
     return src
