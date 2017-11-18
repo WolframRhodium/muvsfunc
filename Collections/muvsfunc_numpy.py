@@ -8,11 +8,11 @@ NumPy functions:
     psf2otf
 """
 
+import functools
+import math
 import vapoursynth as vs
 import mvsfunc as mvf
 import numpy as np
-import functools
-import math
 
 def numpy_process(clip, numpy_function, per_plane=True, lock_source_array=True, **fun_args):
     """Helper function for filtering clip in numpy
@@ -53,9 +53,9 @@ def numpy_process(clip, numpy_function, per_plane=True, lock_source_array=True, 
         else:
             s_list = []
             for p in range(planes):
-                arr = np.asarray(f.get_read_array(p))
-                s_list.append(arr[:, :, np.newaxis])
-            s = np.concatenate(s_list, axis=2)
+                arr = np.asarray(f.get_read_array(p)) # This is a 2-D array
+                s_list.append(arr)
+            s = np.stack(s_list, axis=2) # "s" is a 3-D array
             if lock_source_array:
                 s.flags.writeable = False # Lock the source data, making it read-only
 
@@ -75,7 +75,7 @@ def numpy_process(clip, numpy_function, per_plane=True, lock_source_array=True, 
 def L0Smooth(clip, lamda=2e-2, kappa=2, color=True, **depth_args):
     """L0 Smooth in VapourSynth
 
-    L0 smooth is a new image editing method, particularly effective for sharpening major edges 
+    L0 smooth is a new image editing method, particularly effective for sharpening major edges
     by increasing the steepness of transitions while eliminating a manageable degree of low-amplitude structures.
     It is achieved in an unconventional optimization framework making use of L0 gradient minimization,
     which can globally control how many non-zero gradients are resulted to approximate prominent structures in a structure-sparsity-management manner.
@@ -138,12 +138,7 @@ def L0Smooth(clip, lamda=2e-2, kappa=2, color=True, **depth_args):
 
     # Pre-calculate constant 2-D matrix
     size2D = (clip.height, clip.width)
-    fx = np.array([[1, -1]])
-    fy = np.array([[1], [-1]])
-    otfFx = psf2otf(fx, outSize=size2D)
-    otfFy = psf2otf(fy, outSize=size2D)
-    Denormin2 = np.abs(otfFx) ** 2 + np.abs(otfFy) ** 2
-    Denormin2 = Denormin2[:, :size2D[1]//2+1]
+    Denormin2 = L0Smooth_generate_denormin2(size2D)
 
     # Process
     clip = numpy_process(clip, functools.partial(L0Smooth_core, lamda=lamda, kappa=kappa, Denormin2=Denormin2, copy=True), per_plane=per_plane)
@@ -156,6 +151,19 @@ def L0Smooth(clip, lamda=2e-2, kappa=2, color=True, **depth_args):
     clip = mvf.Depth(clip, depth=bits, sample=sampleType, **depth_args)
 
     return clip
+
+
+def L0Smooth_generate_denormin2(size2D):
+    """Helper function to generate constant "Denormin2"
+    """
+    fx = np.array([[1, -1]])
+    fy = np.array([[1], [-1]])
+    otfFx = psf2otf(fx, outSize=size2D)
+    otfFy = psf2otf(fy, outSize=size2D)
+    Denormin2 = np.abs(otfFx) ** 2 + np.abs(otfFy) ** 2
+    Denormin2 = Denormin2[:, :size2D[1]//2+1]
+
+    return Denormin2
 
 
 def L0Smooth_core(src, lamda=2e-2, kappa=2, Denormin2=None, copy=False):
@@ -214,12 +222,8 @@ def L0Smooth_core(src, lamda=2e-2, kappa=2, Denormin2=None, copy=False):
     if src.ndim == 3 and Denormin2.shape == r_size2D:
         Denormin2 = Denormin2[:, :, np.newaxis]
 
-    if src.ndim == 2:
-        if Denormin2.shape != r_size2D:
-            raise ValueError(funcName + ': the shape of \"Denormin2\" must be {}!'.format(r_size2D))
-    else: # src.ndim == 3
-        if Denormin2.shape not in ((*r_size2D, 1), (*r_size2D, D)):
-            raise ValueError(funcName + ': the shape of \"Denormin2\" must be {}!'.format(r_size2D))
+    if (src.ndim == 2 and Denormin2.shape != r_size2D) or (src.ndim == 3 and Denormin2.shape not in ((*r_size2D, 1), (*r_size2D, D))):
+        raise ValueError(funcName + ': the shape of \"Denormin2\" must be {}!'.format((*r_size2D, 1)))
 
     # Internal parameters
     beta = 2 * lamda
@@ -230,7 +234,7 @@ def L0Smooth_core(src, lamda=2e-2, kappa=2, Denormin2=None, copy=False):
     h = np.empty_like(src)
     v = np.empty_like(src)
     t = np.empty(size2D, dtype='bool')
-    FS = np.empty(r_size2D if src.ndim == 2 else (*r_size2D, D), dtype='complex64')
+    FS = np.empty(r_size2D if src.ndim == 2 else (*r_size2D, D), dtype='complex')
     Normin2 = np.empty_like(src)
 
     # Start processing

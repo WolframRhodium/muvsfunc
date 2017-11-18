@@ -43,11 +43,11 @@ Functions:
     SSIM_downsample
 '''
 
+import functools
+import math
 import vapoursynth as vs
 import havsfunc as haf
 import mvsfunc as mvf
-import functools
-import math
 
 def LDMerge(flt_h, flt_v, src, mrad=0, show=0, planes=None, convknl=1, conv_div=None, calc_mode=0, power=1.0):
     """A filter to merge two filtered clip based on gradient direction map from source clip.
@@ -83,24 +83,24 @@ def LDMerge(flt_h, flt_v, src, mrad=0, show=0, planes=None, convknl=1, conv_div=
 
     core = vs.get_core()
     funcName = 'LDMerge'
-    
+
     if not isinstance(src, vs.VideoNode):
         raise TypeError(funcName + ': \"src\" must be a clip!')
-         
+
     if not isinstance(flt_h, vs.VideoNode):
         raise TypeError(funcName + ': \"flt_h\" must be a clip!')
     if src.format.id != flt_h.format.id:
         raise TypeError(funcName + ': \"flt_h\" must be of the same format as \"src\"!')
     if src.width != flt_h.width or src.height != flt_h.height:
         raise TypeError(funcName + ': \"flt_h\" must be of the same size as \"src\"!')
-    
+
     if not isinstance(flt_v, vs.VideoNode):
         raise TypeError(funcName + ': \"flt_v\" must be a clip!')
     if src.format.id != flt_v.format.id:
         raise TypeError(funcName + ': \"flt_v\" must be of the same format as \"src\"!')
     if src.width != flt_v.width or src.height != flt_v.height:
         raise TypeError(funcName + ': \"flt_v\" must be of the same size as \"src\"!')
-        
+
     if not isinstance(mrad, int):
         raise TypeError(funcName + '\"mrad\" must be an int!')
 
@@ -115,14 +115,14 @@ def LDMerge(flt_h, flt_v, src, mrad=0, show=0, planes=None, convknl=1, conv_div=
         planes = [planes]
 
     bits = flt_h.format.bits_per_sample
-    
+
     if convknl == 0:
         convknl_h = [-1, -1, -1, 2, 2, 2, -1, -1, -1]
         convknl_v = [-1, 2, -1, -1, 2, -1, -1, 2, -1]
     else: # convknl == 1
         convknl_h = [-17, -61, -17, 0, 0, 0, 17, 61, 17]
         convknl_v = [-17, 0, 17, -61, 0, 61, -17, 0, 17]
-    
+
     if conv_div is None:
         conv_div = max(convknl_h)
 
@@ -135,7 +135,7 @@ def LDMerge(flt_h, flt_v, src, mrad=0, show=0, planes=None, convknl=1, conv_div=
     elif mrad < 0:
         hmap = haf.mt_inpand_multi(hmap, sw=0, sh=-mrad, planes=planes)
         vmap = haf.mt_inpand_multi(vmap, sw=-mrad, sh=0, planes=planes)
-    
+
     ldexpr = '{peak} 1 x 0.0001 + y 0.0001 + / {power} pow + /'.format(peak=(1 << bits) - 1, power=power) if calc_mode == 0 else 'y 0.0001 + x 0.0001 + dup * y 0.0001 + dup * + 2 * sqrt / {peak} *'.format(peak=(1 << bits) - 1)
     ldmap = core.std.Expr([hmap, vmap], [(ldexpr if i in planes else '') for i in range(src.format.num_planes)])
 
@@ -280,7 +280,7 @@ def ExInpand(input, mrad=0, mode='rectangle', planes=None):
         mrad = [mrad]
     if isinstance(mode, (str, int)):
         mode = [mode]
-    
+
     if not isinstance(mode, list):
         raise TypeError(funcName + ': \"mode\" must be an int, a string, a list of ints, a list of strings or a list of mixing ints and strings!')
 
@@ -294,15 +294,15 @@ def ExInpand(input, mrad=0, mode='rectangle', planes=None):
                 raise ValueError(funcName + ': \"mode\" must be an int in [0, 2] or a specific string in [\"rectangle\", \"losange\", \"ellipse\"]!')
         else:
             raise TypeError(funcName + ': \"mode\" must be an int in [0, 2] or a specific string in [\"rectangle\", \"losange\", \"ellipse\"]!')
-        
+
         if isinstance(mrad, int):
             sw = sh = mrad
         else:
             sw, sh = mrad
-        
+
         if sw * sh < 0:
             raise TypeError(funcName + ': \"mrad\" at a time must be both positive or negative!')
-        
+
         if sw > 0 or sh > 0:
             return haf.mt_expand_multi(input, mode=mode, planes=planes, sw=sw, sh=sh)
         else:
@@ -340,7 +340,7 @@ def InDeflate(input, msmooth=0, planes=None):
         input: Source clip.
 
         msmooth: (int []) How many times to use std.Inflate()/std.Deflate(). Default is 0.
-            The behaviour is the same as "mode" in ExInpand(). 
+            The behaviour is the same as "mode" in ExInpand().
 
         planes: (int []) Whether to process the corresponding plane. By default, every plane will be processed.
             The unprocessed planes will be copied from "input".
@@ -377,7 +377,7 @@ def InDeflate(input, msmooth=0, planes=None):
                 clip = InDeflate_process(input, planes=planes, radius=m)
     else:
         raise TypeError(funcName + ': \"msmooth\" must be an int or a list of ints!')
-    
+
     return clip
 
 
@@ -397,7 +397,7 @@ def MultiRemoveGrain(input, mode=0, loop=1):
 
     core = vs.get_core()
     funcName = 'MultiRemoveGrain'
-    
+
     if not isinstance(input, vs.VideoNode):
         raise TypeError(funcName + ': \"input\" must be a clip!')
 
@@ -436,7 +436,7 @@ def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=
 
         2. current smode=1 or 2 only support small "radius" (<=9).
 
-    Removed parameters list: 
+    Removed parameters list:
         "dthr", "wmin", "thr_edg", "subspl", "lsb_in"
     Parameters "y", "u", "v" are changed into "planes"
 
@@ -686,14 +686,14 @@ def AnimeMask(input, shift=0, expr=None, mode=1, resample_args=None):
 
         mode: (-1 or 1) Different kernel. Typically, -1 is for edge, 1 is for ringing. Default is 1.
 
-        resample_args: (dict) Additional parameters passed to core.fmtc.resample in the form of dict. 
+        resample_args: (dict) Additional parameters passed to core.fmtc.resample in the form of dict.
             Default is dict(kernel='bicubic').
 
     """
 
     core = vs.get_core()
     funcName = 'AnimeMask'
-    
+
     if not isinstance(input, vs.VideoNode):
         raise TypeError(funcName + ': \"input\" must be a clip!')
 
@@ -709,9 +709,9 @@ def AnimeMask(input, shift=0, expr=None, mode=1, resample_args=None):
 
     if resample_args is None:
         resample_args = dict(kernel='bicubic')
-    
+
     bits = input.format.bits_per_sample
-    
+
     fmtc_args = dict(fulls=True, fulld=True)
     mask1 = core.std.Convolution(input, [0, 0, 0, 0, 2, -1, 0, -1, 0], saturate=True).fmtc.resample(sx=shift, sy=shift, **fmtc_args, **resample_args)
     mask2 = core.std.Convolution(input, [0, -1, 0, -1, 2, 0, 0, 0, 0], saturate=True).fmtc.resample(sx=-shift, sy=-shift, **fmtc_args, **resample_args)
@@ -749,7 +749,7 @@ def AnimeMask2(input, r=1.2, expr=None, mode=1):
 
     core = vs.get_core()
     funcName = 'AnimeMask2'
-    
+
     if not isinstance(input, vs.VideoNode):
         raise TypeError(funcName + ': \"input\" must be a clip!')
 
@@ -808,7 +808,7 @@ def PolygonExInpand(input, shift=0, shape=0, mixmode=0, noncentral=False, step=1
 
     core = vs.get_core()
     funcName = 'PolygonExInpand'
-    
+
     if not isinstance(input, vs.VideoNode):
         raise TypeError(funcName + ': \"input\" must be a clip!')
 
@@ -847,7 +847,7 @@ def PolygonExInpand(input, shift=0, shape=0, mixmode=0, noncentral=False, step=1
         inv_ortho = [-step, -step * (1<< input.format.subsampling_h)]
         dia = [math.sqrt(step / 2), math.sqrt(step / 2) * (1 << input.format.subsampling_h)]
         inv_dia = [-math.sqrt(step / 2), -math.sqrt(step / 2) * (1 << input.format.subsampling_h)]
-        
+
         # shift
         if shape == 0 or shape == 2:
             mask2 = core.fmtc.resample(mask5, sx=0, sy=ortho, **fmtc_args, **resample_args)
@@ -918,20 +918,20 @@ def Luma(input, plane=0, power=4):
 
     if not isinstance(input, vs.VideoNode):
         raise TypeError(funcName + ': \"input\" must be a clip!')
-    
+
     if (input.format.sample_type != vs.INTEGER):
         raise TypeError(funcName + ': \"input\" must be of integer format!')
-        
+
     bits = input.format.bits_per_sample
     peak = (1 << bits) - 1
-    
+
     clip = mvf.GetPlane(input, plane)
-    
+
 
     def calc_luma(x):
         p = x << power
         return (peak - (p & peak)) if (p & (peak + 1)) else (p & peak)
-    
+
     return core.std.Lut(clip, function=calc_luma)
 
 
@@ -944,12 +944,12 @@ def ediaa(a):
 
     core = vs.get_core()
     funcName = 'ediaa'
-    
+
     if not isinstance(a, vs.VideoNode):
         raise TypeError(funcName + ': \"a\" must be a clip!')
 
     bits = a.format.bits_per_sample
-    
+
     last = core.eedi2.EEDI2(a, field=1).std.Transpose()
     last = core.eedi2.EEDI2(last, field=1).std.Transpose()
     last = core.fmtc.resample(last, a.width, a.height, [-0.5, -0.5 * (1 << a.format.subsampling_w)], [-0.5, -0.5 * (1 << a.format.subsampling_h)], kernel='spline36')
@@ -969,12 +969,12 @@ def nnedi3aa(a):
 
     core = vs.get_core()
     funcName = 'nnedi3aa'
-    
+
     if not isinstance(a, vs.VideoNode):
         raise TypeError(funcName + ': \"a\" must be a clip!')
 
     bits = a.format.bits_per_sample
-    
+
     last = core.nnedi3.nnedi3(a, field=1, dh=True).std.Transpose()
     last = core.nnedi3.nnedi3(last, field=1, dh=True).std.Transpose()
     last = core.fmtc.resample(last, a.width, a.height, [-0.5, -0.5 * (1 << a.format.subsampling_w)], [-0.5, -0.5 * (1 << a.format.subsampling_h)], kernel='spline36')
@@ -994,27 +994,27 @@ def maa(input):
 
     core = vs.get_core()
     funcName = 'maa'
-    
+
     if not isinstance(input, vs.VideoNode):
         raise TypeError(funcName + ': \"input\" must be a clip!')
-    
+
     w = input.width
     h = input.height
     bits = input.format.bits_per_sample
-    
+
     if input.format.color_family != vs.GRAY:
         input_src = input
         input = mvf.GetPlane(input, 0)
     else:
         input_src = None
 
-    mask = core.std.Convolution(input, [0, -1, 0, -1, 0, 1, 0, 1, 0], divisor=2, saturate=False).std.Binarize(scale(7, bits) + 1)   
+    mask = core.std.Convolution(input, [0, -1, 0, -1, 0, 1, 0, 1, 0], divisor=2, saturate=False).std.Binarize(scale(7, bits) + 1)
     aa_clip = core.resize.Spline36(input, w * 2, h * 2)
     aa_clip = core.sangnom.SangNom(aa_clip).std.Transpose()
     aa_clip = core.sangnom.SangNom(aa_clip).std.Transpose()
     aa_clip = core.resize.Spline36(aa_clip, w, h)
     last = core.std.MaskedMerge(input, aa_clip, mask)
-    
+
     if input_src is None:
         return last
     else:
@@ -1027,7 +1027,7 @@ def SharpAAMcmod(orig, dark=0.2, thin=10, sharp=150, smooth=-1, stabilize=False,
     Also a line darkener since it uses edge masking to apply tweakable warp-sharpening,
     "normal" sharpening and line darkening with optional temporal stabilization of these edges.
     Part of AnimeIVTC.
-    
+
     Author: thetoof. Developed in the "fine anime antialiasing thread".
 
     Only the first plane (luma) will be processed.
@@ -1067,26 +1067,26 @@ def SharpAAMcmod(orig, dark=0.2, thin=10, sharp=150, smooth=-1, stabilize=False,
 
     core = vs.get_core()
     funcName = 'SharpAAMcmod'
-    
+
     if not isinstance(orig, vs.VideoNode):
         raise TypeError(funcName + ': \"orig\" must be a clip!')
-    
+
     w = orig.width
     h = orig.height
     bits = orig.format.bits_per_sample
-    
+
     if orig.format.color_family != vs.GRAY:
         orig_src = orig
         orig = mvf.GetPlane(orig, 0)
     else:
         orig_src = None
-    
+
     if aaov is None:
         aaov = 8 if w > 1100 else 4
-    
+
     if aablk is None:
         aablk = 16 if w > 1100 else 8
-    
+
     m = core.std.Expr([core.std.Convolution(orig, [5, 10, 5, 0, 0, 0, -5, -10, -5], divisor=4, saturate=False), core.std.Convolution(orig, [5, 0, -5, 10, 0, -10, 5, 0, -5], divisor=4, saturate=False)], ['x y max {neutral8} / 0.86 pow {peak8} *'.format(neutral8=scale(128, bits), peak8=scale(255, bits))])
 
     if thin == 0 and dark == 0:
@@ -1097,7 +1097,7 @@ def SharpAAMcmod(orig, dark=0.2, thin=10, sharp=150, smooth=-1, stabilize=False,
         preaa = core.warp.AWarpSharp2(orig, depth=thin)
     else:
         preaa = haf.Toon(orig, str=dark).warp.AWarpSharp2(depth=thin)
-    
+
     aatype = aatype.lower()
     if aatype == 'sangnom':
         aa = core.resize.Spline36(preaa, w * 2, h * 2)
@@ -1110,27 +1110,27 @@ def SharpAAMcmod(orig, dark=0.2, thin=10, sharp=150, smooth=-1, stabilize=False,
         aa = nnedi3aa(preaa)
     else:
         raise ValueError(funcName + ': valid values of \"aatype\" are \"sangnom\", \"eedi2\" and \"nnedi3\"!')
-    
+
     if sharp == 0 and smooth == 0:
         postsh = aa
     else:
         postsh = haf.LSFmod(aa, strength=sharp, overshoot=1, soft=smooth, edgemode=1)
-    
+
     merged = core.std.MaskedMerge(orig, postsh, m)
-    
+
     if stabilize:
         sD = core.std.MakeDiff(orig, merged)
-    
+
         origsuper = haf.DitherLumaRebuild(orig, s0=1).mv.Super(pel=aapel)
         sDsuper = core.mv.Super(sD, pel=aapel)
-    
+
         fv3 = core.mv.Analyse(origsuper, isb=False, delta=3, overlap=aaov, blksize=aablk) if tradius == 3 else None
         fv2 = core.mv.Analyse(origsuper, isb=False, delta=2, overlap=aaov, blksize=aablk) if tradius >= 2 else None
         fv1 = core.mv.Analyse(origsuper, isb=False, delta=1, overlap=aaov, blksize=aablk) if tradius >= 1 else None
         bv1 = core.mv.Analyse(origsuper, isb=True, delta=1, overlap=aaov, blksize=aablk) if tradius >= 1 else None
         bv2 = core.mv.Analyse(origsuper, isb=True, delta=2, overlap=aaov, blksize=aablk) if tradius >= 2 else None
         bv3 = core.mv.Analyse(origsuper, isb=True, delta=3, overlap=aaov, blksize=aablk) if tradius == 3 else None
-        
+
         if tradius == 1:
             sDD = core.mv.Degrain1(sD, sDsuper, bv1, fv1)
         elif tradius == 2:
@@ -1139,14 +1139,14 @@ def SharpAAMcmod(orig, dark=0.2, thin=10, sharp=150, smooth=-1, stabilize=False,
             sDD = core.mv.Degrain3(sD, sDsuper, bv1, fv1, bv2, fv2, bv3, fv3)
         else:
             raise ValueError(funcName + ': valid values of \"tradius\" are 1, 2 and 3!')
-        
+
         reduc = 0.4
         sDD = core.std.Expr([sD, sDD], ['x {neutral} - abs y {neutral} - abs < x y ?'.format(neutral=scale(128, bits))]).std.Merge(sDD, 1.0 - reduc)
-    
+
         last = core.std.MakeDiff(orig, sDD)
     else:
         last = merged
-    
+
     if orig_src is None:
         return last
     else:
@@ -1236,12 +1236,12 @@ def Sort(input, order=1, planes=None, mode='max'):
     if order == 1:
         sort = core.std.Maximum(input, planes=planes)
     elif order in range(2, 5):
-        sort = core.rgvs.Repair(core.std.Maximum(input, planes=planes), input, 
+        sort = core.rgvs.Repair(core.std.Maximum(input, planes=planes), input,
                                 [(order if i in planes else 0) for i in range(input.format.num_planes)])
     elif order == 5:
         sort = core.std.Median(input, planes=planes)
     elif order in range(6, 9):
-        sort = core.rgvs.Repair(core.std.Minimum(input, planes=planes), input, 
+        sort = core.rgvs.Repair(core.std.Minimum(input, planes=planes), input,
                                 [((10 - order) if i in planes else 0) for i in range(input.format.num_planes)])
     else: # order == 9
         sort = core.std.Minimum(input, planes=planes)
@@ -1278,12 +1278,12 @@ def Soothe_mod(input, source, keep=24, radius=1, scenechange=32, use_misc=True):
         sharpener = dull.LimitedSharpen( ss_x=1.25, ss_y=1.25, strength=150, overshoot=1 )
 
         Soothe( sharp, dull, 20 )
- 
+
     """
 
     core = vs.get_core()
     funcName = 'Soothe_mod'
-    
+
     if not isinstance(input, vs.VideoNode):
         raise TypeError(funcName + ': \"input\" must be a clip!')
     if not isinstance(source, vs.VideoNode):
@@ -1305,18 +1305,18 @@ def Soothe_mod(input, source, keep=24, radius=1, scenechange=32, use_misc=True):
         source = mvf.GetPlane(source, 0)
     else:
         source_src = None
-    
+
     keep = max(min(keep, 100), 0)
-    
+
     if use_misc:
         if not isinstance(radius, int) or (not(1 <= radius <= 12)):
             raise ValueError(funcName + ': \'radius\' have not a correct value! [1 ~ 12]')
     else:
         if not isinstance(radius, int) or (not(1 <= radius <= 7)):
             raise ValueError(funcName + ': \'radius\' have not a correct value! [1 ~ 7]')
-    
+
     bits = source.format.bits_per_sample
-    
+
     diff = core.std.MakeDiff(source, input)
     if use_misc:
         diff2 = TemporalSoften(diff, radius, scenechange)
@@ -1328,7 +1328,7 @@ def Soothe_mod(input, source, keep=24, radius=1, scenechange=32, use_misc=True):
 
     expr = 'x {neutral} - y {neutral} - * 0 < x {neutral} - {KP} * {neutral} + x {neutral} - abs y {neutral} - abs > x {KP} * y {iKP} * + x ? ?'.format(neutral=scale(128, bits), KP=keep/100, iKP=1-keep/100)
     diff3 = core.std.Expr([diff, diff2], [expr])
-    
+
     last = core.std.MakeDiff(source, diff3)
 
     if source_src is None:
@@ -1349,7 +1349,7 @@ def TemporalSoften(input, radius=4, scenechange=15):
 
     core = vs.get_core()
     funcName = 'TemporalSoften'
-    
+
     if not isinstance(input, vs.VideoNode):
         raise TypeError(funcName + ': \"input\" must be a clip!')
 
@@ -1376,7 +1376,7 @@ def FixTelecinedFades(input, mode=0, threshold=[0.0], color=[0.0], full=None, pl
     and it's now time to kiss "vinverse" goodbye cuz "vinverse" is old and low quality.
     unlike vinverse which works as a dumb blurring + contra-sharpening combo and very harmful to artifacts-free frames,
     this filter works by matching the brightness of top and bottom fields with statistical methods, and also harmless to healthy frames.
-    
+
     Args:
         input: Source clip. Can be 8-16 bits integer or 32 bits floating point based. Recommend to use 32 bits float format.
 
@@ -1386,7 +1386,7 @@ def FixTelecinedFades(input, mode=0, threshold=[0.0], color=[0.0], full=None, pl
             2: brighten the darker field to match the brightness of the brighter field
 
         threshold: (float [], positive) Default is 0.
-            If the absolute difference between filtered pixel and input pixel is less than "threshold", then just copy the input pixel. 
+            If the absolute difference between filtered pixel and input pixel is less than "threshold", then just copy the input pixel.
             The value is always scaled by 8 bits integer.
             The last value in the list will be used for the remaining plane.
 
@@ -1459,7 +1459,7 @@ def FixTelecinedFades(input, mode=0, threshold=[0.0], color=[0.0], full=None, pl
     else:
         for i in range(len(color)):
             color[i] = abs(color[i]) * ((1 << bits) - 1) / 255
-    
+
     if full is None:
         if input.format.color_family in [vs.GRAY, vs.YUV]:
             full = False
@@ -1470,7 +1470,7 @@ def FixTelecinedFades(input, mode=0, threshold=[0.0], color=[0.0], full=None, pl
         planes = list(range(input.format.num_planes))
     elif isinstance(planes, int):
         planes = [planes]
-    
+
     # internal function
     def GetExpr(scale, color, threshold):
         if color != 0:
@@ -1478,16 +1478,16 @@ def FixTelecinedFades(input, mode=0, threshold=[0.0], color=[0.0], full=None, pl
         else:
             flt = 'x {scale} *'.format(scale=scale)
         return flt if threshold == 0 else '{flt} x - abs {threshold} > {flt} x ?'.format(flt=flt, threshold=threshold)
-    
+
 
     def Adjust(n, f, clip, core, mode, threshold, color):
         separated = core.std.SeparateFields(clip, tff=True)
         topField = core.std.SelectEvery(separated, 2, [0])
         bottomField = core.std.SelectEvery(separated, 2, [1])
-        
+
         topAvg = f[0].props.PlaneStatsAverage
         bottomAvg = f[1].props.PlaneStatsAverage
-        
+
         if color != 0:
             if isFloat:
                 topAvg -= color
@@ -1495,7 +1495,7 @@ def FixTelecinedFades(input, mode=0, threshold=[0.0], color=[0.0], full=None, pl
             else:
                 topAvg -= color / ((1 << bits) - 1)
                 bottomAvg -= color / ((1 << bits) - 1)
-        
+
         if topAvg != bottomAvg:
             if mode == 0:
                 meanAvg = (topAvg + bottomAvg) / 2
@@ -1513,7 +1513,7 @@ def FixTelecinedFades(input, mode=0, threshold=[0.0], color=[0.0], full=None, pl
                     bottomField = core.std.Expr([bottomField], [GetExpr(scale=maxAvg / bottomAvg, threshold=threshold, color=color)])
                 else:
                     topField = core.std.Expr([topField], [GetExpr(scale=maxAvg / topAvg, threshold=threshold, color=color)])
-        
+
         woven = core.std.Interleave([topField, bottomField])
         woven = core.std.DoubleWeave(woven, tff=True).std.SelectEvery(2, [0])
         return woven
@@ -1522,11 +1522,11 @@ def FixTelecinedFades(input, mode=0, threshold=[0.0], color=[0.0], full=None, pl
     input_src = input
     if not full and not isFloat:
         input = core.fmtc.bitdepth(input, fulls=False, fulld=True, planes=planes)
-    
+
     separated = core.std.SeparateFields(input, tff=True)
     topField = core.std.SelectEvery(separated, 2, [0])
     bottomField = core.std.SelectEvery(separated, 2, [1])
-    
+
     topFieldPlanes = {}
     bottomFieldPlanes = {}
     adjustedPlanes = {}
@@ -1569,10 +1569,10 @@ def TCannyHelper(input, t_h=8.0, t_l=1.0, plane=0, returnAll=False, **canny_args
 
     core = vs.get_core()
     funcName = 'TCannyHelper'
-    
+
     if not isinstance(input, vs.VideoNode):
         raise TypeError(funcName + ': \"input\" must be a clip!')
-    
+
     if input.format.color_family != vs.GRAY:
         input = mvf.GetPlane(input, plane)
 
@@ -1581,10 +1581,10 @@ def TCannyHelper(input, t_h=8.0, t_l=1.0, plane=0, returnAll=False, **canny_args
 
     bits = input.format.bits_per_sample
     isFloat = input.format.sample_type == vs.FLOAT
-    
+
     strongEdge = core.tcanny.TCanny(input, t_h=t_h+1e-4, t_l=t_h, mode=0, **canny_args)
     weakEdge = core.tcanny.TCanny(input, t_h=t_l+1e-4, t_l=t_l, mode=0, **canny_args)
-    
+
     expr = "x y and {peak} y {neutral} 0 ? ?".format(peak=1.0 if isFloat else (1 << bits) - 1, neutral=0.5 if isFloat else 1 << (bits - 1))
     view = core.std.Expr([strongEdge, weakEdge], [expr])
 
@@ -1643,9 +1643,9 @@ def MergeChroma(clip1, clip2, weight=1.0):
 
 def firniture(clip, width, height, kernel='binomial7', taps=None, gamma=False, **resample_args):
     '''5 new interpolation kernels (via fmtconv)
-    
+
     Proposed by *.mp4 guy (https://forum.doom9.org/showthread.php?t=166080)
-    
+
     Args:
         clip: Source clip.
 
@@ -1671,13 +1671,13 @@ def firniture(clip, width, height, kernel='binomial7', taps=None, gamma=False, *
     '''
 
     import nnedi3_resample as nnrs
-    
+
     core = vs.get_core()
     funcName = 'firniture'
-    
+
     if not isinstance(clip, vs.VideoNode):
         raise TypeError(funcName + ': \"clip\" must be a clip!')
-    
+
     impulseCoefficents = dict(
         binomial5=[8, 0, -589, 0, 11203, 0, -93355, 0, 606836, 1048576, 606836, 0, -93355, 0, 11203, 0, -589, 0, 8],
         binomial7=[146, 0, -20294, 0, 744006, 0, -11528384, 0, 94148472, 0, -487836876, 0, 2551884458, 4294967296, 2551884458, 0, -487836876, 0, 94148472, 0, -11528384, 0, 744006, 0, -20294, 0, 146],
@@ -1686,29 +1686,29 @@ def firniture(clip, width, height, kernel='binomial7', taps=None, gamma=False, *
         noalias4=[-1, 2, 4, -6, -17, 7, 59, 96, 59, 7, -17, -6, 4, 2, -1],
         noaliasnoring4=[-1, 8, 40, -114, -512, 360, 3245, 5664, 3245, 360, -512, -114, 40, 8, -1]
         )
-    
+
     if taps is None:
         taps = int(kernel[-1])
-    
+
     if clip.format.bits_per_sample != 16:
         clip = mvf.Depth(clip, 16)
-    
+
     if gamma:
         clip = nnrs.GammaToLinear(clip)
-    
+
     clip = core.fmtc.resample(clip, width, height, kernel='impulse', impulse=impulseCoefficents[kernel], kovrspl=2, taps=taps, **resample_args)
-    
+
     if gamma:
         clip = nnrs.LinearToGamma(clip)
-    
+
     return clip
 
 
 def BoxFilter(input, radius=16, radius_v=None, planes=None, fmtc_conv=0, radius_thr=None, resample_args=None, keep_bits=True, depth_args=None):
     '''Box filter
-    
+
     Performs a box filtering on the input clip. Box filtering consists in averaging all the pixels in a square area whose center is the output pixel. You can approximate a large gaussian filtering by cascading a few box filters.
-    
+
     Args:
         input: Input clip to be filtered.
 
@@ -1722,7 +1722,7 @@ def BoxFilter(input, radius=16, radius_v=None, planes=None, fmtc_conv=0, radius_
             It's recommended to input clip without chroma subsampling when using fmtc.resample, otherwise the output may be incorrect.
             0: False. 1: True (except both "radius" and "radius_v" is strictly smaller than 4). 2: Auto, determined by radius_thr (exclusive).
             Default is 0.
-        
+
         radius_thr: (int) Threshold of wheter to use fmtc.resample when "fmtc_conv" is 2.
             Default is 11 for integer input and 21 for float input.
             Only works when "fmtc_conv" is enabled.
@@ -1741,13 +1741,13 @@ def BoxFilter(input, radius=16, radius_v=None, planes=None, fmtc_conv=0, radius_
             Default is {}.
 
     '''
-    
+
     core = vs.get_core()
     funcName = 'BoxFilter'
-    
+
     if not isinstance(input, vs.VideoNode):
         raise TypeError(funcName + ': \"input\" must be a clip!')
-    
+
     if planes is None:
         planes = list(range(input.format.num_planes))
     elif isinstance(planes, int):
@@ -1773,7 +1773,7 @@ def BoxFilter(input, radius=16, radius_v=None, planes=None, fmtc_conv=0, radius_
     width_v = radius_v * 2 - 1
     kernel = [1 / width] * width
     kernel_v = [1 / width_v] * width_v
-    
+
     # process
     if input.format.sample_type == vs.FLOAT:
         if core.version_number() < 33:
@@ -1820,10 +1820,10 @@ def BoxFilter(input, radius=16, radius_v=None, planes=None, fmtc_conv=0, radius_
 
 def SmoothGrad(input, radius=9, thr=0.25, ref=None, elast=3.0, planes=None, **limit_filter_args):
     '''Avisynth's SmoothGrad
-    
+
     SmoothGrad smooths the low gradients or flat areas of a 16-bit clip. It proceeds by applying a huge blur filter and comparing the result with the input data for each pixel.
     If the difference is below the specified threshold, the filtered version is taken into account, otherwise the input pixel remains unchanged.
-    
+
     Args:
         input: Input clip to be filtered.
 
@@ -1843,21 +1843,21 @@ def SmoothGrad(input, radius=9, thr=0.25, ref=None, elast=3.0, planes=None, **li
         limit_filter_args: (dict) Additional arguments passed to mvf.LimitFilter in the form of keyword arguments.
 
     '''
-        
+
     core = vs.get_core()
     funcName = 'SmoothGrad'
-    
+
     if not isinstance(input, vs.VideoNode):
         raise TypeError(funcName + ': \"input\" must be a clip!')
-    
+
     if planes is None:
         planes = list(range(input.format.num_planes))
     elif isinstance(planes, int):
         planes = [planes]
-    
+
     # process
     smooth = BoxFilter(input, radius, planes=planes)
-    
+
     return mvf.LimitFilter(smooth, input, ref, thr, elast, planes=planes, **limit_filter_args)
 
 
@@ -1896,13 +1896,13 @@ def DeFilter(input, fun, iter=10, planes=None, **fun_args):
     # iteration
     for i in range(iter):
         flt = core.std.Expr([flt, input, fun(flt, **fun_args)], [(calc_expr if i in planes else '') for i in range(input.format.num_planes)])
-    
+
     return flt
 
 
 def scale(val, bits):
     '''The old scale function in havsfunc.
-    
+
     '''
 
     return val * ((1 << bits) - 1) // 255
@@ -1936,19 +1936,19 @@ def ColorBarsHD(clip=None, width=1288, height=720):
     core = vs.get_core()
     funcName = 'ColorBarsHD'
     from mt_lutspa import lutspa
-    
+
     if clip is not None and not isinstance(clip, vs.VideoNode):
         raise TypeError(funcName + ': \"clip\" must be a clip!')
 
     c = round(width * 3 / 28)
     d = round((width - c * 7) / 2)
-    
+
     p4 = round(height / 4)
     p23 = round(height / 12)
     p1 = height - p23 * 2 - p4
 
     blkclip_args = dict(format=vs.YUV444P8, length=1, fpsnum=30000, fpsden=1001)
-    
+
     pattern1_colors = dict(Gray40=[104, 128, 128], White75=[180, 128, 128], Yellow=[168, 44, 136], Cyan=[145, 147, 44], Green=[134, 63, 52], Magenta=[63, 193, 204], Red=[51, 109, 212], Blue=[28, 212, 120])
     Gray40 = core.std.BlankClip(clip, d, p1, color=pattern1_colors['Gray40'], **blkclip_args)
     White75 = core.std.BlankClip(clip, c, p1, color=pattern1_colors['White75'], **blkclip_args)
@@ -1959,14 +1959,14 @@ def ColorBarsHD(clip=None, width=1288, height=720):
     Red = core.std.BlankClip(clip, c, p1, color=pattern1_colors['Red'], **blkclip_args)
     Blue = core.std.BlankClip(clip, c, p1, color=pattern1_colors['Blue'], **blkclip_args)
     pattern1 = core.std.StackHorizontal([Gray40, White75, Yellow, Cyan, Green, Magenta, Red, Blue, Gray40])
-    
+
     pattern2_colors = dict(Cyan100=[188, 154, 16], plusI=[16, 98, 161], White75=[180, 128, 128], Blue100=[32, 240, 118])
     Cyan100 = core.std.BlankClip(clip, d, p23, color=pattern2_colors['Cyan100'], **blkclip_args)
     plusI = core.std.BlankClip(clip, c, p23, color=pattern2_colors['plusI'], **blkclip_args)
     White75 = core.std.BlankClip(clip, c*6, p23, color=pattern2_colors['White75'], **blkclip_args)
     Blue100 = core.std.BlankClip(clip, d, p23, color=pattern2_colors['Blue100'], **blkclip_args)
     pattern2 = core.std.StackHorizontal([Cyan100, plusI, White75, Blue100])
-    
+
     pattern3_colors = dict(Yellow100=[219, 16, 138], Red100=[63, 102, 240])
     Yellow100 = core.std.BlankClip(clip, d, p23, color=pattern3_colors['Yellow100'], **blkclip_args)
     Y_Ramp_tmp = core.std.BlankClip(clip, c*7, 1, color=[0, 128, 128], **blkclip_args)
@@ -1974,7 +1974,7 @@ def ColorBarsHD(clip=None, width=1288, height=720):
     Y_Ramp = core.resize.Point(Y_Ramp, c*7, p23)
     Red100 = core.std.BlankClip(clip, d, p23, color=pattern3_colors['Red100'], **blkclip_args)
     pattern3 = core.std.StackHorizontal([Yellow100, Y_Ramp, Red100])
-    
+
     pattern4_colors = dict(Gray15=[49, 128, 128], Black0=[16, 128, 128], White100=[235, 128, 128], Black_neg2=[12, 128, 128], Black_pos2=[20, 128, 128], Black_pos4=[25, 128, 128])
     Gray15 = core.std.BlankClip(clip, d, p4, color=pattern4_colors['Gray15'], **blkclip_args)
     Black0_1 = core.std.BlankClip(clip, round(c*3/2), p4, color=pattern4_colors['Black0'], **blkclip_args)
@@ -1987,7 +1987,7 @@ def ColorBarsHD(clip=None, width=1288, height=720):
     Black_pos4 = core.std.BlankClip(clip, round(c/3), p4, color=pattern4_colors['Black_pos4'], **blkclip_args)
     Black0_5 = core.std.BlankClip(clip, c, p4, color=pattern4_colors['Black0'], **blkclip_args)
     pattern4 = core.std.StackHorizontal([Gray15, Black0_1, White100, Black0_2, Black_neg2, Black0_3, Black_pos2, Black0_4, Black_pos4, Black0_5, Gray15])
-    
+
     #pattern = core.std.StackVertical([pattern1, pattern2, pattern3, pattern4])
     #return pattern1, pattern2, pattern3, pattern4
     pattern = core.std.StackVertical([pattern1, pattern2, pattern3, pattern4])
@@ -2004,7 +2004,7 @@ def SeeSaw(clp, denoised=None, NRlimit=2, NRlimit2=None, Sstr=1.5, Slimit=None, 
     This function provides a (simple) implementation of the "crystality sharpen" principle.
     In conjunction with a user-specified denoised clip, the aim is to enhance
     weak detail, hopefully without oversharpening or creating jaggies on strong
-    detail, and produce a result that is temporally stable without detail shimmering, 
+    detail, and produce a result that is temporally stable without detail shimmering,
     while keeping everything within reasonable bitrate requirements.
     This is done by intermixing source, denoised source and a modified sharpening process,
     in a seesaw-like manner.
@@ -2026,7 +2026,7 @@ def SeeSaw(clp, denoised=None, NRlimit=2, NRlimit2=None, Sstr=1.5, Slimit=None, 
 
         Sstr: (float) Sharpening strength (don't touch this too much). Default is 1.5.
 
-        Slimit: (int) Positive: absolute limit for pixel change by sharpening. 
+        Slimit: (int) Positive: absolute limit for pixel change by sharpening.
             Negative: pixel's sharpening difference is reduced to diff = pow(diff,1/abs(limit)).
             Default is NRlimit+2.
 
@@ -2060,22 +2060,22 @@ def SeeSaw(clp, denoised=None, NRlimit=2, NRlimit2=None, Sstr=1.5, Slimit=None, 
 
     core = vs.get_core()
     funcName = 'SeeSaw'
-    
+
     if not isinstance(clp, vs.VideoNode) or clp.format.color_family not in [vs.GRAY, vs.YUV, vs.YCOCG]:
         raise TypeError(funcName + ': \"clp\" must be a Gray or YUV clip!')
-    
+
     isGray = clp.format.color_family == vs.GRAY
     bits = clp.format.bits_per_sample
-    
+
     if NRlimit2 is None:
         NRlimit2 = NRlimit + 1
-    
+
     if Slimit is None:
         Slimit = NRlimit + 2
-    
+
     if SdampLo is None:
         SdampLo = Spower + 1
-    
+
     if Smode is None:
         if ssx < 1.35:
             Smode = 11
@@ -2083,10 +2083,10 @@ def SeeSaw(clp, denoised=None, NRlimit=2, NRlimit2=None, Sstr=1.5, Slimit=None, 
             Smode = 20
         else:
             Smode = 19
-    
+
     if ssy is None:
         ssy = ssx
-    
+
     Szrp = Szp / pow(Sstr, 0.25) / pow((ssx + ssy) / 2, 0.5)
     SdampLo = SdampLo / pow(Sstr, 0.25) / pow((ssx + ssy) / 2, 0.5)
 
@@ -2118,19 +2118,19 @@ def SeeSaw(clp, denoised=None, NRlimit=2, NRlimit2=None, Sstr=1.5, Slimit=None, 
         clp = mvf.GetPlane(clp)
         denoised_src = denoised
         denoised = mvf.GetPlane(denoised) if clp_src != denoised_src else clp
-    
+
     NRdiff = core.std.MakeDiff(clp, denoised)
 
     tameexpr = 'x {NRLL} + y < x {NRL2} + x {NRLL} - y > x {NRL2} - x {BIAS1} * y {BIAS2} * + 100 / ? ?'.format(NRLL=NRLL, NRL2=NRL2, BIAS1=bias, BIAS2=100-bias)
     tame = core.std.Expr([clp, denoised], [tameexpr])
-    
+
     head = SeeSaw_sharpen2(tame, Sstr, Spower, Szp, SdampLo, SdampHi, 4)
 
     if ssx == 1 and ssy == 1:
         last = core.rgvs.Repair(SeeSaw_sharpen2(tame, Sstr, Spower, Szp, SdampLo, SdampHi, Smode), head, [1])
     else:
         last = core.rgvs.Repair(SeeSaw_sharpen2(tame.fmtc.resample(xss, yss, kernel='lanczos').fmtc.bitdepth(bits=bits), Sstr, Spower, Szp, SdampLo, SdampHi, Smode), head.fmtc.resample(xss, yss, kernel='bicubic', a1=-0.2, a2=0.6).fmtc.bitdepth(bits=bits), [1]).fmtc.resample(ox, oy, kernel='lanczos').fmtc.bitdepth(bits=bits)
-        
+
     last = SeeSaw_SootheSS(last, tame, sootheT, sootheS)
     sharpdiff = core.std.MakeDiff(tame, last)
 
@@ -2139,7 +2139,7 @@ def SeeSaw(clp, denoised=None, NRlimit=2, NRlimit2=None, Sstr=1.5, Slimit=None, 
     else:
         NRdiff = core.std.MakeDiff(clp, denoised)
         last = core.std.Expr([clp, NRdiff], ['y {neutral} {NRL} + > x {NRL} - y {neutral} {NRL} - < x {NRL} + x y {neutral} - - ? ?'.format(neutral=neutral, NRL=NRL)])
-    
+
     if Slimit >= 0:
         limitexpr = 'y {neutral} {SLIM} + > x {SLIM} - y {neutral} {SLIM} - < x {SLIM} + x y {neutral} - - ? ?'.format(neutral=neutral, SLIM=SLIM)
         last = core.std.Expr([last, sharpdiff], [limitexpr])
@@ -2159,10 +2159,10 @@ def SeeSaw_sharpen2(clp, strength, power, zp, lodmp, hidmp, rgmode):
 
     core = vs.get_core()
     funcName = 'SeeSaw_sharpen2'
-    
+
     if not isinstance(clp, vs.VideoNode) or clp.format.color_family not in [vs.GRAY, vs.YUV, vs.YCOCG]:
         raise TypeError(funcName + ': \"clp\" must be a Gray or YUV clip!')
-    
+
     isGray = clp.format.color_family == vs.GRAY
     bits = clp.format.bits_per_sample
     multiple = scale(1, bits)
@@ -2183,7 +2183,7 @@ def SeeSaw_sharpen2(clp, strength, power, zp, lodmp, hidmp, rgmode):
             tmp2 = tmp1 ** 2
             tmp3 = zp ** 2
             return min(max(math.floor(neutral + (tmp1 / zp) ** power * zp * (strength * multiple) * (1 if x > neutral else -1) * (tmp2 * (tmp3 + lodmp) / ((tmp2 + lodmp) * tmp3)) * ((1 + (0 if hidmp == 0 else (zp / hidmp) ** 4)) / (1 + (0 if hidmp == 0 else (tmp1 / hidmp) ** 4))) + 0.5), 0), peak)
-            
+
     method = clp.rgvs.RemoveGrain([rgmode] if isGray else [rgmode, 0])
     sharpdiff = core.std.MakeDiff(clp, method, [0]).std.Lut(function=get_lut1, planes=[0])
     return core.std.MergeDiff(clp, sharpdiff, [0])
@@ -2198,7 +2198,7 @@ def SeeSaw_SootheSS(sharp, orig, sootheT=25, sootheS=0):
 
     core = vs.get_core()
     funcName = 'SeeSaw_SootheSS'
-    
+
     if not isinstance(sharp, vs.VideoNode) or sharp.format.color_family not in [vs.GRAY, vs.YUV, vs.YCOCG]:
         raise TypeError(funcName + ': \"sharp\" must be a Gray or YUV clip!')
 
@@ -2214,7 +2214,7 @@ def SeeSaw_SootheSS(sharp, orig, sootheT=25, sootheS=0):
     ST = 100 - abs(sootheT)
     SSPT = 100 - abs(sootheS)
     last = core.std.MakeDiff(orig, sharp, [0])
-    
+
     neutral = 1 << (sharp.format.bits_per_sample - 1)
     isGray = sharp.format.color_family == vs.GRAY
 
@@ -2223,7 +2223,7 @@ def SeeSaw_SootheSS(sharp, orig, sootheT=25, sootheS=0):
         sharp = mvf.GetPlane(sharp)
         orig_src = orig
         orig = mvf.GetPlane(orig) if sharp_src != orig_src else sharp
-    
+
     expr1 = 'x {neutral} < y {neutral} < xor x {neutral} - 100 / {SSPT} * {neutral} + x {neutral} - abs y {neutral} - abs > x {SSPT} * y {i} * + 100 / x ? ?'.format(neutral=neutral, SSPT=SSPT, i=100-SSPT)
     expr2 = 'x {neutral} < y {neutral} < xor x {neutral} - 100 / {ST} * {neutral} + x {neutral} - abs y {neutral} - abs > x {ST} * y {i} * + 100 / x ? ?'.format(neutral=neutral, ST=ST, i=100-ST)
 
@@ -2258,16 +2258,16 @@ def abcxyz(clp, rad=3.0, ss=1.5):
 
     core = vs.get_core()
     funcName = 'abcxyz'
-    
+
     if not isinstance(clp, vs.VideoNode) or clp.format.color_family not in [vs.GRAY, vs.YUV, vs.YCOCG]:
         raise TypeError(funcName + ': \"clp\" must be a Gray or YUV clip!')
 
     ox = clp.width
     oy = clp.height
-    
+
     isGray = clp.format.color_family == vs.GRAY
     bits = clp.format.bits_per_sample
-    
+
     if not isGray:
         clp_src = clp
         clp = mvf.GetPlane(clp)
@@ -2283,10 +2283,10 @@ def abcxyz(clp, rad=3.0, ss=1.5):
         z2 = core.resize.Lanczos(clp, haf.m4(ox*ss), haf.m4(oy*ss))
         z2 = core.std.Expr([z2, maxbig, minbig], ['x y min z max']).resize.Lanczos(ox, oy)
         z1 = z2  # for simplicity
-    
+
     if not isGray:
         z1 = core.std.ShufflePlanes([z1, clp_src], list(range(clp_src.format.num_planes)), clp_src.format.color_family)
-    
+
     return z1
 
 
@@ -2295,7 +2295,7 @@ def Sharpen(clip, amountH=1.0, amountV=None, planes=None):
 
     Simple 3x3-kernel sharpening filter.
 
-    Args: 
+    Args:
         clip: Input clip.
 
         amountH, amountV: (float) Sharpen uses the kernel is [(1-2^amount)/2, 2^amount, (1-2^amount)/2].
@@ -2312,7 +2312,7 @@ def Sharpen(clip, amountH=1.0, amountV=None, planes=None):
 
     core = vs.get_core()
     funcName = 'Sharpen'
-    
+
     if not isinstance(clip, vs.VideoNode):
         raise TypeError(funcName + ': \"clip\" is not a clip!')
 
@@ -2349,10 +2349,10 @@ def Blur(clip, amountH=1.0, amountV=None, planes=None):
     """Avisynth's internel filter Blur()
 
     Simple 3x3-kernel blurring filter.
-    
+
     In fact Blur(n) is just an alias for Sharpen(-n).
 
-    Args: 
+    Args:
         clip: Input clip.
 
         amountH, amountV: (float) Blur uses the kernel is [(1-1/2^amount)/2, 1/2^amount, (1-1/2^amount)/2].
@@ -2369,7 +2369,7 @@ def Blur(clip, amountH=1.0, amountV=None, planes=None):
 
     core = vs.get_core()
     funcName = 'Blur'
-    
+
     if not isinstance(clip, vs.VideoNode):
         raise TypeError(funcName + ': \"clip\" is not a clip!')
 
@@ -2442,7 +2442,7 @@ def BlindDeHalo3(clp, rx=3.0, ry=3.0, strength=125, lodamp=0, hidamp=0, sharpnes
 
     core = vs.get_core()
     funcName = 'BlindDeHalo3'
-    
+
     if not isinstance(clp, vs.VideoNode):
         raise TypeError(funcName + ': \"clp\" is not a clip!')
 
@@ -2527,7 +2527,7 @@ def dfttestMC(input, pp=None, mc=2, mdg=False, planes=None, sigma=None, sbsize=N
         mc can be 0, and the function will simply be a pure dfttest().
 
     Args:
-        
+
         input: Input clip.
         pp: (clip) Clip to calculate vectors from. Default is \"input\".
         mc: (int) Number of frames in each direction to compensate. Range: 0 ~ 5. Default is 2.
@@ -2573,7 +2573,7 @@ def dfttestMC(input, pp=None, mc=2, mdg=False, planes=None, sigma=None, sbsize=N
     V = 2 in planes
 
     chroma = U or V
-    
+
     if not Y and U and not V:
         plane = 1
     elif not Y and not U and V:
@@ -2654,7 +2654,7 @@ def BalanceBorders(c, cTop=0, cBottom=0, cLeft=0, cRight=0, thresh=128, blur=999
     The following documentaion is mostly translated by Google Translate from Russian.
 
     The function changes the values of the extreme pixels of the clip,
-    so that they are "more similar" to the neighboring ones, 
+    so that they are "more similar" to the neighboring ones,
     which, perhaps, will prevent the "strong" use of Crop () to remove the "unpleasant edges"
     that are not very different from the "main" image.
 
@@ -2668,7 +2668,7 @@ def BalanceBorders(c, cTop=0, cBottom=0, cLeft=0, cRight=0, thresh=128, blur=999
                 For YV24, the it's also 2~inf. For YV12, the it's 4~inf. Default is 0.
         thresh: (int) Threshold of acceptable changes for local color matching in 8 bit scale.
             Range: 0~128. Recommend: [0~16 or 128]. Default is 128.
-        blur: (int) Degree of blur for local color matching. 
+        blur: (int) Degree of blur for local color matching.
             Smaller values give a more accurate color match,
             larger values give a more accurate picture transfer.
             Range: 1~inf. Recommend: [1~20 or 999]. Default is 999.
@@ -2741,7 +2741,7 @@ def BalanceTopBorder(c, cTop, thresh, blur):
     cHeight = c.height
     cTop = min(cTop, cHeight - 1)
     blurWidth = max(4, math.floor(cWidth / blur))
-    
+
     c2 = mvf.PointPower(c, 1, 1)
 
     last = core.std.CropRel(c2, 0, 0, cTop*2, (cHeight - cTop - 1) * 2)
@@ -2827,9 +2827,9 @@ def GuidedFilter(input, guidance=None, radius=4, regulation=0.01, regulation_mod
     It can be used as an edge-preserving smoothing operator like the popular bilateral filter,
     but it has better behaviors near edges.
 
-    The guided filter is also a more generic concept beyond smoothing: 
+    The guided filter is also a more generic concept beyond smoothing:
     It can transfer the structures of the guidance image to the filtering output,
-    enabling new filtering applications like detail enhancement, HDR compression, 
+    enabling new filtering applications like detail enhancement, HDR compression,
     image matting/feathering, dehazing, joint upsampling, etc.
 
     All the internal calculations are done at 32-bit float.
@@ -2987,7 +2987,7 @@ def GuidedFilter(input, guidance=None, radius=4, regulation=0.01, regulation_mod
         kk = -4 / (frameMin - alpha)
 
         return core.std.Expr([cov_Ip, weight_in, weight, var_I], ['x {eps} 1 1 1 {kk} y {alpha} - * exp + / - * z / + a {eps} z / + /'.format(eps=eps, kk=kk, alpha=alpha)])
-    
+
     # Compute local linear coefficients.
     mean_p = Filter(p)
     mean_I = Filter(I) if guidance is not None else mean_p
@@ -3009,14 +3009,14 @@ def GuidedFilter(input, guidance=None, radius=4, regulation=0.01, regulation_mod
         if regulation_mode == 1: # Weighted Guided Image Filter
             weight_in = var_I_1
         else: # regulation_mode == 2, Gradient Domain Guided Image Filter
-            weight_in = core.std.Expr([var_I, var_I_1], ['x y * sqrt']) 
+            weight_in = core.std.Expr([var_I, var_I_1], ['x y * sqrt'])
 
         eps0 = 0.001 ** 2 # Epsilon in [3] and [4]
         denominator = core.std.Expr([weight_in], ['1 x {} + /'.format(eps0)])
 
         denominator = core.std.PlaneStats(denominator, plane=[0])
         weight = core.std.FrameEval(denominator, functools.partial(FLT, clip=weight_in, core=core, eps0=eps0), prop_src=[denominator]) # equation (5) in [3], or equation (9) in [4]
-    
+
         if regulation_mode == 1: # Weighted Guided Image Filter
             a = core.std.Expr([cov_Ip, var_I, weight], ['x y {eps} z / + /'.format(eps=eps)])
         else: # regulation_mode == 2, Gradient Domain Guided Image Filter
@@ -3026,10 +3026,10 @@ def GuidedFilter(input, guidance=None, radius=4, regulation=0.01, regulation_mod
         a = core.std.Expr([cov_Ip, var_I], ['x y {} + /'.format(eps)])
 
     b = core.std.Expr([mean_p, a, mean_I], ['x y z * -'])
-    
+
     mean_a = Filter(a)
     mean_b = Filter(b)
-    
+
     # Fast guided filter's upsampling
     if fast:
         if use_fmtc2:
@@ -3041,7 +3041,7 @@ def GuidedFilter(input, guidance=None, radius=4, regulation=0.01, regulation_mod
 
     # Linear translation
     q = core.std.Expr([mean_a, I_src, mean_b], ['x y * z +'])
-    
+
     # Final bitdepth conversion
     return mvf.Depth(q, depth=bits, sample=sampleType, **depth_args)
 
@@ -3053,9 +3053,9 @@ def GuidedFilterColor(input, guidance, radius=4, regulation=0.01, use_gauss=Fals
 
     Most of the description of the guided filter can be found in the documentation of native guided filter above.
     Only the native guided filter is implemented.
-    
+
     A color guidance image can better preserve the edges that are not distinguishable in gray-scale.
-    
+
     It is also essential in the matting/feathering and dehazing applications,
     because the local linear model is more likely to be valid in the RGB color space than in gray-scale.
 
@@ -3063,7 +3063,7 @@ def GuidedFilterColor(input, guidance, radius=4, regulation=0.01, use_gauss=Fals
         input: Input clip. It should be a gray-scale/single channel image.
         guidance: Guidance clip used to compute the coefficient of the linear translation on 'input'.
             It must has no subsampling for the second and third plane in horizontal/vertical direction, e.g. RGB or YUV444.
-        
+
         Descriptions of other parameter can be found in the documentation of native guided filter above.
 
     Ref:
@@ -3180,14 +3180,14 @@ def GuidedFilterColor(input, guidance, radius=4, regulation=0.01, use_gauss=Fals
     a_r = core.std.Expr([inv_rr, cov_Ip_r, inv_rg, cov_Ip_g, inv_rb, cov_Ip_b], ['x y * z a * + b c * +'])
     a_g = core.std.Expr([inv_rg, cov_Ip_r, inv_gg, cov_Ip_g, inv_gb, cov_Ip_b], ['x y * z a * + b c * +'])
     a_b = core.std.Expr([inv_rb, cov_Ip_r, inv_gb, cov_Ip_g, inv_bb, cov_Ip_b], ['x y * z a * + b c * +'])
-    
+
     b = core.std.Expr([mean_p, a_r, mean_I_r, a_g, mean_I_g, a_b, mean_I_b], ['x y z * - a b * - c d * -'])
-    
+
     mean_a_r = Filter(a_r)
     mean_a_g = Filter(a_g)
     mean_a_b = Filter(a_b)
     mean_b = Filter(b)
-    
+
     # Fast guided filter's upsampling
     if fast:
         if use_fmtc2:
@@ -3203,7 +3203,7 @@ def GuidedFilterColor(input, guidance, radius=4, regulation=0.01, use_gauss=Fals
 
     # Linear translation
     q = core.std.Expr([mean_a_r, I_src_r, mean_a_g, I_src_g, mean_a_b, I_src_b, mean_b], ['x y * z a * + b c * + d +'])
-    
+
     # Final bitdepth conversion
     return mvf.Depth(q, depth=bits, sample=sampleType, **depth_args)
 
@@ -3211,11 +3211,11 @@ def GuidedFilterColor(input, guidance, radius=4, regulation=0.01, use_gauss=Fals
 def GMSD(clip1, clip2, plane=None, downsample=True, c=0.0026, show_map=False, **depth_args):
     """Gradient Magnitude Similarity Deviation Calculator
 
-    GMSD is a new effective and efficient image quality assessment (IQA) model, which utilizes the pixel-wise gradient magnitude similarity (GMS) 
+    GMSD is a new effective and efficient image quality assessment (IQA) model, which utilizes the pixel-wise gradient magnitude similarity (GMS)
     between the reference and distorted images combined with standard deviation of the GMS map to predict perceptual image quality.
 
     The distortion degree of the distorted image will be stored as frame property 'PlaneGMSD' in the output clip.
-    
+
     The value of GMSD reflects the range of distortion severities in an image.
     The lowerer the GMSD score, the higher the image perceptual quality.
     If "clip1" == "clip2", GMSD = 0.
@@ -3249,12 +3249,12 @@ def GMSD(clip1, clip2, plane=None, downsample=True, c=0.0026, show_map=False, **
 
     core = vs.get_core()
     funcName = 'GMSD'
-    
+
     if not isinstance(clip1, vs.VideoNode):
         raise TypeError(funcName + ': \"clip1\" must be a clip!')
     if not isinstance(clip2, vs.VideoNode):
         raise TypeError(funcName + ': \"clip2\" must be a clip!')
-    
+
     if clip1.format.id != clip2.format.id:
         raise ValueError(funcName + ': \"clip1\" and \"clip2\" must be of the same format!')
     if clip1.width != clip2.width or clip1.height != clip2.height:
@@ -3302,7 +3302,7 @@ def GMSD(clip1, clip2, plane=None, downsample=True, c=0.0026, show_map=False, **
         SDclip = core.std.PlaneStats(SDclip, plane=[0], prop='PlaneStats')
     else:
         SDclip = core.std.PlaneAverage(SDclip, plane=[0], prop='PlaneStatsAverage')
-        
+
     def _PlaneGMSDTransfer(n, f):
         fout = f[0].copy()
         fout.props.PlaneGMSD = math.sqrt(f[1].props.PlaneStatsAverage)
@@ -3317,7 +3317,7 @@ def SSIM(clip1, clip2, plane=None, downsample=True, k1=0.01, k2=0.03, fun=None, 
     """Structural SIMilarity Index Calculator
 
     The Structural SIMilarity (SSIM) index is a method for measuring the similarity between two images.
-    It is based on the hypothesis that the HVS is highly adapted for extracting structural information, 
+    It is based on the hypothesis that the HVS is highly adapted for extracting structural information,
     which compares local patterns of pixel intensities that have been normalized for luminance and contrast.
 
     The mean SSIM (MSSIM) index value of the distorted image will be stored as frame property 'PlaneSSIM' in the output clip.
@@ -3338,7 +3338,7 @@ def SSIM(clip1, clip2, plane=None, downsample=True, k1=0.01, k2=0.03, fun=None, 
         downsample: (bool) Whether to average the clips over local 2x2 window and downsample by a factor of 2 before calculation.
             Default is True.
 
-        k1, k2: (int) Constants in the SSIM index formula. 
+        k1, k2: (int) Constants in the SSIM index formula.
             According to the paper, the performance of the SSIM index algorithm is fairly insensitive to variations of these values.
             Default are 0.01 and 0.03.
 
@@ -3364,12 +3364,12 @@ def SSIM(clip1, clip2, plane=None, downsample=True, k1=0.01, k2=0.03, fun=None, 
 
     core = vs.get_core()
     funcName = 'SSIM'
-    
+
     if not isinstance(clip1, vs.VideoNode):
         raise TypeError(funcName + ': \"clip1\" must be a clip!')
     if not isinstance(clip2, vs.VideoNode):
         raise TypeError(funcName + ': \"clip2\" must be a clip!')
-    
+
     if clip1.format.id != clip2.format.id:
         raise ValueError(funcName + ': \"clip1\" and \"clip2\" must be of the same format!')
     if clip1.width != clip2.width or clip1.height != clip2.height:
@@ -3458,7 +3458,7 @@ def SSIM_downsample(clip, w, h, smooth=1, kernel='Bicubic', use_fmtc=False, epsi
     The solution is derived in closed-form, which leads to the simple, efficient implementation.
     The downscaled images retain perceptually important features and details,
     resulting in an accurate and spatio-temporally consistent representation of the high resolution input.
-    
+
     This is an pseudo-implementation of SSIM downsampler with slight modification.
     The pre-downsampling is performed by vszimg/fmtconv, and the behaviour of convolution at the border is uniform.
 

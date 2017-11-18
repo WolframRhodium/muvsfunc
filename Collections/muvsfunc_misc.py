@@ -11,10 +11,10 @@ Miscellaneous functions:
     BernsteinFilter
 """
 
+import functools
 import vapoursynth as vs
 import muvsfunc as muf
 import mvsfunc as mvf
-import functools
 
 def GPS(clip, gamma=None):
     """Get Power Spectrum
@@ -246,7 +246,7 @@ def tv(I, iter=5, dt=None, ep=1, lam=0, I0=None, C=0):
 
         I0: (clip) Input (noisy) image. Default is "I".
 
-    
+
     Ref:
         [1] Rudin, L. I., Osher, S., & Fatemi, E. (1992). Nonlinear total variation based noise removal algorithms. Physica D: Nonlinear Phenomena, 60(1-4), 259-268.
         [2] Total Variation Denoising : http://visl.technion.ac.il/~gilboa/PDE-filt/tv_denoising.html
