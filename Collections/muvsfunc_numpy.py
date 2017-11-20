@@ -77,7 +77,7 @@ def numpy_process(clip, numpy_function, per_plane=True, lock_source_array=True, 
 def L0Smooth(clip, lamda=2e-2, kappa=2, color=True, **depth_args):
     """L0 Smooth in VapourSynth
 
-    The official name is "L0 Gradient Minimization".
+    It is also known as "L0 Gradient Minimization".
 
     L0 smooth is a new image editing method, particularly effective for sharpening major edges
     by increasing the steepness of transitions while eliminating a manageable degree of low-amplitude structures.
@@ -173,7 +173,7 @@ def L0Smooth_generate_denormin2(size2D):
 def L0Smooth_core(src, lamda=2e-2, kappa=2, Denormin2=None, copy=False):
     """L0 Smooth in NumPy.
 
-    The official name is "L0 Gradient Minimization".
+    It is also known as "L0 Gradient Minimization".
 
     Args:
         src: 2-D or 3-D numpy array. The length along the second dimension must be even.
@@ -328,9 +328,9 @@ def L0GradientProjection(clip, alpha=0.08, precision=255, epsilon=0.0002, maxite
     """L0 Gradient Projection in VapourSynth
 
     L0 gradient projection is a new edge-preserving filtering method based on the L0 gradient.
-    In contrast to the L0 gradient minimization,  L0 gradient projection framework is intuitive
+    In contrast to the L0 gradient minimization, L0 gradient projection framework is intuitive
     because one can directly impose a desired L0 gradient value on the output image.
-    The constrained optimization problem is  minimizing the quadratic data-fidelity subject to the hard constraint that
+    The constrained optimization problem is minimizing the quadratic data-fidelity subject to the hard constraint that
     the L0 gradient is less than a user-given parameter "alpha".
     The solution is based on alternating direction method of multipliers (ADMM), while the hard constraint is handled by
     projection onto the mixed L1,0 pseudo-norm ball with variable splitting, and the computational complexity is O(NlogN).
@@ -401,7 +401,7 @@ def L0GradientProjection(clip, alpha=0.08, precision=255, epsilon=0.0002, maxite
 
     # Pre-calculate constant 2-D matrix
     size2D = (clip.height, clip.width)
-    Lap = L0GradProj_generate_Lap(size2D)
+    Lap = L0GradProj_generate_lap(size2D)
 
     # Process
     clip = numpy_process(clip, functools.partial(L0GradProj_core, alpha=alpha, precision=precision, epsilon=epsilon, maxiter=maxiter,
@@ -471,24 +471,23 @@ def L0GradProj_core(src, alpha=0.08, precision=255, epsilon=0.0002, maxiter=5000
         src = src[:, :, :, np.newaxis]
 
     # difference operators (periodic boundary)
-    D = lambda x: np.concatenate([x[np.r_[1:x.shape[0], 0], :, :, :] - x, x[:, np.r_[1:x.shape[1], 0], :, :] - x], axis=3)
-    Dt = lambda x: np.vstack([-x[:1, :, :, :1] + x[-1:, :, :, :1], -x[1:, :, :, :1] + x[:-1, :, :, :1]]) + np.hstack([-x[:, :1, :, 1:2] + x[:, -1:, :, 1:2], -x[:, 1:, :, 1:2] + x[:, :-1, :, 1:2]])
+    D = lambda z: np.concatenate([z[np.r_[1:z.shape[0], 0], :, :, :] - z, z[:, np.r_[1:z.shape[1], 0], :, :] - z], axis=3)
+    Dt = lambda z: np.vstack([-z[:1, :, :, :1] + z[-1:, :, :, :1], -z[1:, :, :, :1] + z[:-1, :, :, :1]]) + np.hstack([-z[:, :1, :, 1:2] + z[:, -1:, :, 1:2], -z[:, 1:, :, 1:2] + z[:, :-1, :, 1:2]])
 
     # for fftbased diagonilization
     if Lap is None:
-        Lap = L0GradProj_generate_Lap(src_shape[:2])
+        Lap = L0GradProj_generate_lap(src_shape[:2])
 
     if Lap.shape == src_shape[:2]:
-        Lap = Lap[:, :, np.newaxis, np.newaxis]
+        Lap = Lap[:, :src_shape[1]//2+1, np.newaxis, np.newaxis]
 
-    if Lap.shape != (*src_shape[:2], 1, 1):
+    if Lap.shape != (src_shape[0], src_shape[1]//2+1, 1, 1):
         raise ValueError(funcName + ': the shape of \"Lap\" must be {}!'.format(src_shape[:2]))
 
     # calculating L0 gradient value
-    def L0gradcalc(z):
-        # z: 3-D array
-        # return L0GradValue(D((z[:, :, :, np.newaxis] * 255).astype(np.uint8).astype(np.float32)))
-        return L0GradProj_L0GradValue(D(np.round(z[:, :, :, np.newaxis] * precision)))
+    # z: 3-D array
+    #L0gradcalc = lambda z: L0GradValue(D((z[:, :, :, np.newaxis] * 255).astype(np.uint8).astype(np.float32)))
+    L0gradcalc = lambda z: L0GradProj_L0GradValue(D(np.round(z[:, :, :, np.newaxis] * precision)))
 
     # variables
     u = np.empty_like(src)
@@ -498,7 +497,7 @@ def L0GradProj_core(src, alpha=0.08, precision=255, epsilon=0.0002, maxiter=5000
     for i in range(maxiter):
         rhs = src + Dt(v - w) / gamma
 
-        u[:] = np.real(np.fft.ifft2(np.fft.fft2(rhs, axes=(0, 1)) / (Lap / gamma + 1), axes=(0, 1)))
+        u[:] = np.fft.irfft2(np.fft.rfft2(rhs, axes=(0, 1)) / (Lap / gamma + 1), axes=(0, 1))
         v[:] = L0GradProj_ProjL1ball(D(u) + w, alpha)
         w += D(u) - v
 
@@ -513,14 +512,14 @@ def L0GradProj_core(src, alpha=0.08, precision=255, epsilon=0.0002, maxiter=5000
     return u
 
 
-def L0GradProj_ProjL1ball(Du, alpha):
+def L0GradProj_ProjL1ball(Du, epsilon):
     """Internal function for L0GradProj_core()
 
     Projection onto mixed L1,0 pseudo-norm ball with binary mask
 
     Args:
         Du: 4-D array
-        alpha: (int) Threshold of the constraint.
+        epsilon: (int) Threshold of the constraint.
 
     """
 
@@ -536,7 +535,7 @@ def L0GradProj_ProjL1ball(Du, alpha):
     sumDu = np.sum(Du ** 2, axis=(2, 3))
     # The worst-case complexity of Sort(modified quicksort actually) in MATLAB is O(n^2)
     # while it is O(n) for numpy.partition(introselect)
-    I = np.argpartition(-sumDu.reshape(-1), alpha)[:alpha]
+    I = np.argpartition(-sumDu.reshape(-1), epsilon)[:epsilon]
     threInd = np.zeros(sizeDu[:2])
     threInd.reshape(-1)[I] = 1; # set ones for values to be held
 
@@ -565,7 +564,7 @@ def L0GradProj_L0GradValue(Du):
     return np.count_nonzero(np.abs(Du).sum(axis=(2, 3)).round())
 
 
-def L0GradProj_generate_Lap(size2D):
+def L0GradProj_generate_lap(size2D):
     """Helper function to generate constant "Denormin2"
     """
     Lap = np.zeros(size2D)
