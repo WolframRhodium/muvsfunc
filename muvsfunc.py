@@ -2984,7 +2984,7 @@ def GuidedFilter(input, guidance=None, radius=4, regulation=0.01, regulation_mod
         frameMin = f.props.PlaneStatsMin
 
         alpha = frameMean
-        kk = -4 / (frameMin - alpha)
+        kk = -4 / (frameMin - alpha - 1e-6) # Add a small num to prevent divided by 0
 
         return core.std.Expr([cov_Ip, weight_in, weight, var_I], ['x {eps} 1 1 1 {kk} y {alpha} - * exp + / - * z / + a {eps} z / + /'.format(eps=eps, kk=kk, alpha=alpha)])
 
