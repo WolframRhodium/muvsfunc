@@ -1,13 +1,16 @@
 """
 VapourSynth functions:
     numpy_process (helper function)
+    numpy_process_val (helper function)
     L0Smooth
     L0GradientProjection
+    IEDD
 
 NumPy functions:
     L0Smooth_core
     psf2otf
     L0GradProj_core
+    IEDD_core
 """
 
 import functools
@@ -15,6 +18,7 @@ import math
 import vapoursynth as vs
 import mvsfunc as mvf
 import numpy as np
+from scipy.fftpack import dct
 
 def numpy_process(clip, numpy_function, per_plane=True, lock_source_array=True, **fun_args):
     """Helper function for filtering clip in NumPy
@@ -36,6 +40,7 @@ def numpy_process(clip, numpy_function, per_plane=True, lock_source_array=True, 
     """
 
     core = vs.get_core()
+
 
     # The following code is modified from https://github.com/KotoriCANOE/MyTF/blob/master/utils/vshelper.py
     def FLT(n, f):
@@ -67,6 +72,64 @@ def numpy_process(clip, numpy_function, per_plane=True, lock_source_array=True, 
                 d = np.asarray(fout.get_write_array(p))
                 np.copyto(d, fs[:, :, p])
                 del d
+        return fout
+
+    flt = core.std.ModifyFrame(clip, clip, FLT)
+
+    return flt
+
+
+def numpy_process_val(clip, numpy_function, props_name, per_plane=True, lock_source_array=True, **fun_args):
+    """Helper function for filtering clip in NumPy
+
+    Args:
+        clip: Input cilp.
+
+        numpy_function: Spatial function to process numpy data. The output of the function should be single or multiple values.
+
+        props_name: The name of property to be stored in each frame. It should be a list of strings.
+
+        per_plane: (bool) Whether to process data by plane. If not, data would be processed by frame.
+            Default is True.
+
+        lock_source_array: (bool) Whether to lock the source array to avoid unintentionally overwrite the data.
+            Default is True.
+
+        fun_args: (dict) Additional arguments passed to “numpy_function” in the form of keyword arguments.
+            Default is {}.
+
+    """
+
+    core = vs.get_core()
+
+
+    # The following code is modified from https://github.com/KotoriCANOE/MyTF/blob/master/utils/vshelper.py
+    def FLT(n, f):
+        fout = f.copy()
+        planes = fout.format.num_planes
+
+        val = []
+        if per_plane:
+            for p in range(planes):
+                s = np.asarray(f.get_read_array(p))
+                if lock_source_array:
+                    s.flags.writeable = False # Lock the source data, making it read-only
+
+                val.append(numpy_function(s, **fun_args))
+        else:
+            s_list = []
+            for p in range(planes):
+                arr = np.asarray(f.get_read_array(p)) # This is a 2-D array
+                s_list.append(arr)
+            s = np.stack(s_list, axis=2) # "s" is a 3-D array
+            if lock_source_array:
+                s.flags.writeable = False # Lock the source data, making it read-only
+
+            val.append(numpy_function(s, **fun_args))
+
+        for i, j in enumerate(val):
+            fout.props[props_name[i]] = j
+
         return fout
 
     flt = core.std.ModifyFrame(clip, clip, FLT)
@@ -535,7 +598,7 @@ def L0GradProj_ProjL1ball(Du, epsilon):
     sumDu = np.sum(Du ** 2, axis=(2, 3))
     # The worst-case complexity of Sort(modified quicksort actually) in MATLAB is O(n^2)
     # while it is O(n) for numpy.partition(introselect)
-    I = np.argpartition(-sumDu.reshape(-1), epsilon)[:epsilon]
+    I = np.argpartition(-sumDu.reshape(-1), epsilon-1)[:epsilon]
     threInd = np.zeros(sizeDu[:2])
     threInd.reshape(-1)[I] = 1; # set ones for values to be held
 
@@ -576,3 +639,131 @@ def L0GradProj_generate_lap(size2D):
     Lap = np.fft.fft2(Lap, axes=(0, 1))
 
     return Lap
+
+
+def IEDD(clip, blockSize=8, K=49, iteration=3):
+    """IEDD in VapourSynth
+
+    IEDD (Iterative Estimation in DCT Domain) is a method of blind estimation of white Gaussian noise variance in highly textured images.
+    For a spatially correlated noise it is unusable.
+
+    An input image is divided into 8x8 blocks and discrete cosine transform (DCT) is performed for each block.
+    A part of 64 DCT coefficients with lowest energy calculated through all blocks is selected for further analysis.
+    For the DCT coefficients, a robust estimate of noise variance is calculated.
+    Corresponding to the obtained estimate, a part of blocks having very large values of local variance
+    calculated only for the selected DCT coefficients are excluded from the further analysis.
+    These two steps (estimation of noise variance and exclusion of blocks) are iteratively repeated three times.
+    On the new noise-free test image database TAMPERE17,
+    the method provides approximately two times lower estimation root mean square error than other methods.
+
+    The result of each plane will be stored as frame property 'IEDD_AWGN_variance_{i}' in the output clip, where "i" stands for the index of plane.
+
+    Args:
+        clip: Input clip with no chroma subsampling.
+
+        blockSize: The side length of of block. Default is 8.
+
+        K: Number of DCT coefficients with lowest energy to be calculated.
+            Lower value of K provides better robustness to a presence of textures.
+            Higher value of K provides better accuracy of noise variance estimates.
+            Default is 49.
+
+        iteration: Number of iterations. Default is 3.
+
+    Ref:
+        [1] Ponomarenko, M., Gapon, N., Voronin, V., & Egiazarian, K (2018). Blind estimation of white Gaussian noise variance in highly textured images. Image Processing: Algorithms and Systems (p. 5)
+        [2] http://ponomarenko.info/iedd.html
+
+    TODO: Optimize DCT using pyfftw library.
+
+    """
+
+    funcName = 'IEDD'
+
+    if not isinstance(clip, vs.VideoNode) or any((clip.format.subsampling_w, clip.format.subsampling_h)):
+        raise TypeError(funcName + ': \"clip\" must be a clip with no chroma subsampling!')
+
+    props_name = ['IEDD_AWGN_variance_{}'.format(i) for i in range(clip.format.num_planes)]
+
+    clip = numpy_process_val(clip, functools.partial(IEDD_core, blockSize=blockSize, K=K, iteration=iteration), props_name, per_plane=True)
+
+    return clip
+
+
+def IEDD_core(src, blockSize=8, K=49, iteration=3, copy=False):
+    """IEDD in NumPy
+
+    IEDD is a method of blind estimation of white Gaussian noise variance in highly textured images.
+    
+    Args:
+        src: 2-D numpy array.
+
+        blockSize: (int) The side length of of block. Default is 8.
+
+        K: (int) Number of DCT coefficients with lowest energy to be calculated. Default is 49.
+
+        iteration: (int) Number of iterations. Default is 3.
+
+        copy: (bool) Whether to copy the data before processing. Default is False.
+
+    TODO: Optimize DCT using pyfftw library.
+
+    """
+
+    funcName = 'IEDD_core'
+
+    if not isinstance(src, np.ndarray) or src.ndim != 2:
+        raise TypeError(funcName + ': \"src\" must be 2-D numpy data!')
+
+    if copy:
+        src = src.copy()
+
+
+    # copied from https://stackoverflow.com/questions/30109068/implement-matlabs-im2col-sliding-in-python/30110497#30110497
+    def im2col_sliding_broadcasting(A, BSZ, stepsize=1):
+        # Parameters
+        M,N = A.shape
+        col_extent = N - BSZ[1] + 1
+        row_extent = M - BSZ[0] + 1
+
+        # Get Starting block indices
+        start_idx = np.arange(BSZ[0])[:,None]*N + np.arange(BSZ[1])
+
+        # Get offsetted indices across the height and width of input array
+        offset_idx = np.arange(row_extent)[:,None]*N + np.arange(col_extent)
+
+        # Get all actual indices & index into input array for final output
+        return np.take(A,start_idx.ravel()[:,None] + offset_idx.ravel()[::stepsize])
+
+
+    def mymad(d):
+        d = d.flatten()
+        m = np.median(d)
+        return np.median(np.abs(d-m)) * 1.4826
+
+    # function dctm
+    blks = im2col_sliding_broadcasting(src.T.astype('float64', copy=False), [blockSize, blockSize])
+    T = dct(np.eye(blockSize), axis=0, norm='ortho')
+    blks = np.kron(T, T).dot(blks)
+
+    ene = np.sum(blks ** 2, axis=1)
+    m2 = np.argsort(ene)
+    m1 = ene[m2]
+    pz = np.nonzero(m2 == blockSize*blockSize-1)[0]
+    m2 = m2[:K]
+    if pz < K and m1[pz] < m1[0] * 1.3:
+        m2[pz] = m2[0]
+        m2[0] = blockSize * blockSize - 1
+
+    m = mymad(blks[m2[0]])
+
+    for i in range(iteration):
+        z = blks[m2]
+        y = np.mean(z ** 2, axis=0)
+        mp = y < (1 + np.sqrt(blockSize / K)) * m ** 2
+        if np.count_nonzero(mp) > (blockSize*4)**2:
+            m = mymad(z[:1, mp])
+
+    variance_estimate = m ** 2
+
+    return variance_estimate
