@@ -5,6 +5,7 @@ VapourSynth functions:
     L0Smooth
     L0GradientProjection
     IEDD
+    DNCNN
 
 NumPy functions:
     L0Smooth_core
@@ -523,7 +524,6 @@ def L0GradProj_core(src, alpha=0.08, precision=255, epsilon=0.0002, maxiter=5000
     src_ndim = src.ndim
     src_shape = src.shape
 
-
     N = src_shape[0] * src_shape[1]
     alpha = round(alpha * N)
     epsilon *= N
@@ -661,14 +661,14 @@ def IEDD(clip, blockSize=8, K=49, iteration=3):
     Args:
         clip: Input clip with no chroma subsampling.
 
-        blockSize: The side length of of block. Default is 8.
+        blockSize: (int) The side length of of block. Default is 8.
 
-        K: Number of DCT coefficients with lowest energy to be calculated.
+        K: (int) Number of DCT coefficients with lowest energy to be calculated.
             Lower value of K provides better robustness to a presence of textures.
             Higher value of K provides better accuracy of noise variance estimates.
             Default is 49.
 
-        iteration: Number of iterations. Default is 3.
+        iteration: (int) Number of iterations. Default is 3.
 
     Ref:
         [1] Ponomarenko, M., Gapon, N., Voronin, V., & Egiazarian, K (2018). Blind estimation of white Gaussian noise variance in highly textured images. Image Processing: Algorithms and Systems (p. 5)
@@ -690,7 +690,7 @@ def IEDD(clip, blockSize=8, K=49, iteration=3):
     return clip
 
 
-def IEDD_core(src, blockSize=8, K=49, iteration=3, copy=False):
+def IEDD_core(src, blockSize=8, K=49, iteration=3):
     """IEDD in NumPy
 
     IEDD is a method of blind estimation of white Gaussian noise variance in highly textured images.
@@ -704,8 +704,6 @@ def IEDD_core(src, blockSize=8, K=49, iteration=3, copy=False):
 
         iteration: (int) Number of iterations. Default is 3.
 
-        copy: (bool) Whether to copy the data before processing. Default is False.
-
     TODO: Optimize DCT using pyfftw library.
 
     """
@@ -714,9 +712,6 @@ def IEDD_core(src, blockSize=8, K=49, iteration=3, copy=False):
 
     if not isinstance(src, np.ndarray) or src.ndim != 2:
         raise TypeError(funcName + ': \"src\" must be 2-D numpy data!')
-
-    if copy:
-        src = src.copy()
 
 
     # copied from https://stackoverflow.com/questions/30109068/implement-matlabs-im2col-sliding-in-python/30110497#30110497
@@ -727,19 +722,19 @@ def IEDD_core(src, blockSize=8, K=49, iteration=3, copy=False):
         row_extent = M - BSZ[0] + 1
 
         # Get Starting block indices
-        start_idx = np.arange(BSZ[0])[:,None]*N + np.arange(BSZ[1])
+        start_idx = np.arange(BSZ[0])[:, np.newaxis] * N + np.arange(BSZ[1])
 
         # Get offsetted indices across the height and width of input array
-        offset_idx = np.arange(row_extent)[:,None]*N + np.arange(col_extent)
+        offset_idx = np.arange(row_extent)[:, np.newaxis] * N + np.arange(col_extent)
 
         # Get all actual indices & index into input array for final output
-        return np.take(A,start_idx.ravel()[:,None] + offset_idx.ravel()[::stepsize])
+        return np.take(A,start_idx.ravel()[:, np.newaxis] + offset_idx.ravel()[::stepsize])
 
 
     def mymad(d):
         d = d.flatten()
         m = np.median(d)
-        return np.median(np.abs(d-m)) * 1.4826
+        return np.median(np.abs(d - m)) * 1.4826
 
     # function dctm
     blks = im2col_sliding_broadcasting(src.T.astype('float64', copy=False), [blockSize, blockSize])
@@ -749,7 +744,7 @@ def IEDD_core(src, blockSize=8, K=49, iteration=3, copy=False):
     ene = np.sum(blks ** 2, axis=1)
     m2 = np.argsort(ene)
     m1 = ene[m2]
-    pz = np.nonzero(m2 == blockSize*blockSize-1)[0]
+    pz = np.nonzero(m2 == blockSize * blockSize - 1)[0]
     m2 = m2[:K]
     if pz < K and m1[pz] < m1[0] * 1.3:
         m2[pz] = m2[0]
@@ -761,9 +756,94 @@ def IEDD_core(src, blockSize=8, K=49, iteration=3, copy=False):
         z = blks[m2]
         y = np.mean(z ** 2, axis=0)
         mp = y < (1 + np.sqrt(blockSize / K)) * m ** 2
-        if np.count_nonzero(mp) > (blockSize*4)**2:
+        if np.count_nonzero(mp) > (blockSize * 4) ** 2:
             m = mymad(z[:1, mp])
 
     variance_estimate = m ** 2
 
     return variance_estimate
+
+
+def DNCNN(clip, symbol_path, params_path, patch_size=[640, 640], device_id=0, **depth_args):
+    """DnCNN in NumPy
+
+    DnCNN is a deep convolutional neural network for image denoising.
+    It can handel blind Gaussian denoising or even general image denoising tasks.
+
+    It's much slower than its C++ counterpart. (See https://github.com/kice/vs_mxDnCNN)
+
+    Requirment: MXNet, pre-trained models.
+
+    Args:
+        clip: Input YUV clip with no chroma subsampling.
+
+        symbol_path, params_path: Path to the model and params.
+
+        patch_size: ([int, int]) The horizontal block size for dividing the image during processing.
+            Smaller value results in lower VRAM usage or possibly border distortion, while larger value may not necessarily give faster speed.
+            Default is [640, 640].
+
+        device_id: (int) Which device to use. Starting with 0. If it is smaller than 0, CPU will be used.
+            Default is 0.
+
+        depth_args: (dict) Additional arguments passed to mvf.Depth() in the form of keyword arguments.
+            Default is {}.
+
+    """
+
+    core = vs.get_core()
+
+    import mxnet as mx
+    from collections import namedtuple
+    
+    if clip.format.color_family != vs.YUV or any([clip.format.subsampling_w, clip.format.subsampling_h]):
+        raise TypeError('Invalid type')
+
+    # Load the model
+    ctx = mx.gpu(device_id) if device_id >= 0 else mx.cpu()
+    model = mx.mod.Module(mx.symbol.load(symbol_path), context=ctx, data_names=['data'])
+    param = mx.nd.load(params_path)
+
+    arg_param = {}
+    aux_param = {}
+
+    for k, v in param.items():
+        if k.find("arg") != -1:
+            arg_param[k.split(":")[1]] = v
+        if k.find("aux") != -1:
+            aux_param[k.split(":")[1]] = v
+
+    model.bind(data_shapes=[('data', [1, 3, *patch_size])], for_training=False)
+    model.set_params(arg_params=arg_param, aux_params=aux_param)
+
+    # Execute
+    def DNCNN_core(img, model):
+        img = img.copy()
+        img[:, :, 1:] += 0.5
+        Batch = namedtuple('Batch', ['data'])
+
+        data = mx.nd.expand_dims(mx.nd.array(img), axis=0)
+        data = mx.nd.transpose(data, axes=(0, 3, 1, 2)).astype('float32')
+        pred = mx.nd.empty(data.shape)
+
+        for i in range(math.ceil(data.shape[2]/patch_size[0])):
+            for j in range(math.ceil(data.shape[3]/patch_size[1])):
+                model.forward(data_batch=Batch([data[:, :, i*patch_size[0]:min((i+1)*patch_size[0], img.shape[0]), j*patch_size[1]:min((j+1)*patch_size[1], img.shape[1])].copy()]), is_train=False)
+                pred[:, :, i*patch_size[0]:min((i+1)*patch_size[0], img.shape[0]), j*patch_size[1]:min((j+1)*patch_size[1], img.shape[1])] = model.get_outputs()[0]
+
+        pred = mx.nd.transpose(pred, axes=(0, 2, 3, 1)).reshape(img.shape).asnumpy()
+
+        output = img - pred
+        
+        output[:, :, 1:] -= 0.5
+
+        return output
+
+    bits = clip.format.bits_per_sample
+    sampleType = clip.format.sample_type
+
+    clip = mvf.Depth(clip, depth=32, sample=vs.FLOAT, **depth_args)
+    clip = numpy_process(clip, DNCNN_core, per_plane=False, model=model) # Forward
+    clip = mvf.Depth(clip, depth=bits, sample=sampleType, **depth_args)
+
+    return clip
