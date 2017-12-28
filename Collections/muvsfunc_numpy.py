@@ -6,12 +6,15 @@ VapourSynth functions:
     L0GradientProjection
     IEDD
     DNCNN
+    BNNMDenoise
 
 NumPy functions:
     L0Smooth_core
     psf2otf
     L0GradProj_core
     IEDD_core
+    get_blockwise_view
+    BNNMDenoise_core
 """
 
 import functools
@@ -19,7 +22,6 @@ import math
 import vapoursynth as vs
 import mvsfunc as mvf
 import numpy as np
-from scipy.fftpack import dct
 
 def numpy_process(clip, numpy_function, per_plane=True, lock_source_array=True, **fun_args):
     """Helper function for filtering clip in NumPy
@@ -28,6 +30,8 @@ def numpy_process(clip, numpy_function, per_plane=True, lock_source_array=True, 
         clip: Input cilp.
 
         numpy_function: Spatial function to process numpy data. It should not change the dimensions or data type of its input.
+            The format of the data provided to the function is "HWC", 
+            i.e. number of pixels in vertical(height), horizontal(width) dimension and channels respectively.
 
         per_plane: (bool) Whether to process data by plane. If not, data would be processed by frame.
             Default is True.
@@ -87,6 +91,8 @@ def numpy_process_val(clip, numpy_function, props_name, per_plane=True, lock_sou
         clip: Input cilp.
 
         numpy_function: Spatial function to process numpy data. The output of the function should be single or multiple values.
+            The format of the data provided to the function is "HWC", 
+            i.e. number of pixels in vertical(height), horizontal(width) dimension and channels respectively.
 
         props_name: The name of property to be stored in each frame. It should be a list of strings.
 
@@ -240,7 +246,7 @@ def L0Smooth_core(src, lamda=2e-2, kappa=2, Denormin2=None, copy=False):
     It is also known as "L0 Gradient Minimization".
 
     Args:
-        src: 2-D or 3-D numpy array. The length along the second dimension must be even.
+        src: 2-D or 3-D numpy array in the form of "HWC". The length along the second dimension must be even.
             3-D data will be processed collaboratively, which is the same as the official MATLAB version.
 
         lamda: (float) Smoothing parameter controlling the degree of smooth.
@@ -485,7 +491,7 @@ def L0GradProj_core(src, alpha=0.08, precision=255, epsilon=0.0002, maxiter=5000
     """L0 Gradient Projection in NumPy.
 
     Args:
-        src: 2-D or 3-D numpy array. The length along the second dimension must be even.
+        src: 2-D or 3-D numpy array in the form of "HWC". The length along the second dimension must be even.
             3-D data will be processed collaboratively, which is the same as the official MATLAB version.
 
         alpha: (float) L0 gradient of output in percentage form, i.e. the range is [0, 1]. Default is 0.08.
@@ -696,7 +702,7 @@ def IEDD_core(src, blockSize=8, K=49, iteration=3):
     IEDD is a method of blind estimation of white Gaussian noise variance in highly textured images.
     
     Args:
-        src: 2-D numpy array.
+        src: 2-D numpy array in the form of "HW".
 
         blockSize: (int) The side length of of block. Default is 8.
 
@@ -707,6 +713,8 @@ def IEDD_core(src, blockSize=8, K=49, iteration=3):
     TODO: Optimize DCT using pyfftw library.
 
     """
+
+    from scipy.fftpack import dct
 
     funcName = 'IEDD_core'
 
@@ -768,9 +776,11 @@ def DNCNN(clip, symbol_path, params_path, patch_size=[640, 640], device_id=0, **
     """DnCNN in NumPy
 
     DnCNN is a deep convolutional neural network for image denoising.
-    It can handel blind Gaussian denoising or even general image denoising tasks.
+    It can handel blind gaussian denoising or even general image denoising tasks.
 
-    It's much slower than its C++ counterpart. (See https://github.com/kice/vs_mxDnCNN)
+    It's much slower than its C++ counterpart, and the GPU memory consumption is high. (See https://github.com/kice/vs_mxDnCNN)
+
+    All the internal calculations are done at 32-bit float.
 
     Requirment: MXNet, pre-trained models.
 
@@ -816,6 +826,7 @@ def DNCNN(clip, symbol_path, params_path, patch_size=[640, 640], device_id=0, **
     model.bind(data_shapes=[('data', [1, 3, *patch_size])], for_training=False)
     model.set_params(arg_params=arg_param, aux_params=aux_param)
 
+
     # Execute
     def DNCNN_core(img, model):
         img = img.copy()
@@ -847,3 +858,106 @@ def DNCNN(clip, symbol_path, params_path, patch_size=[640, 640], device_id=0, **
     clip = mvf.Depth(clip, depth=bits, sample=sampleType, **depth_args)
 
     return clip
+
+
+def get_blockwise_view(input_2D, block_size=8, stride=1, writeable=False):
+    """Get block-wise view of an 2-D array.
+
+    Args:
+        input_2D: 2-D array.
+
+        block_size: (int or [int, int]) The size of the block. It can be a single integer, which means the block is a square, 
+            or a list of two integers specifying the height and width of the block respectively.
+            Default is 8.
+
+        stride: (int or [int, int]) The stride between the blocks. The format is similar to "patch_size".
+            Default is 1.
+        
+        writeable: (bool) If set to False, the returned array will always be readonly.
+            Otherwise it will be writable if the original array was. It is advisable to set this to False if possible.
+            Default is False.
+
+    """
+
+    from numpy.lib.stride_tricks import as_strided
+
+    w, h = input_2D.shape
+
+    if isinstance(block_size, int):
+        block_size = [block_size]
+
+    block_size_h = block_size[0]
+    block_size_v = block_size[-1]
+
+    if isinstance(stride, int):
+        stride = [stride]
+
+    stride_h = stride[0]
+    stride_v = stride[-1]
+
+    # assert(not any([(w-block_size_h) % stride_h, (h-block_size_v) % stride_v]))
+    return as_strided(input_2D, shape=[(w-block_size_h)//stride_h+1, (h-block_size_v)//stride_v+1, block_size_h, block_size_v], 
+                    strides=(input_2D.strides[0]*stride_h, input_2D.strides[1]*stride_v, *input_2D.strides), writeable=writeable)
+
+
+def BNNMDenoise(clip, lamda=0.01, block_size=8, **depth_args):
+    """Block-wise nuclear norm ninimization (NNM) based denoiser in VapourSynth
+
+    Nuclear norm minimization methods is one category of low rank matrix approximation methods.
+
+    This function minimize the following energy function given noisy patch Y:
+        E(X) = ||Y - X||_{F}^{2} + λ||X||_{*}
+    where F stands for Frobenius norm, * is the nuclear norm, i.e. sum of the singular values.
+
+    It has been proved in [2] that such NNM based low rank matrix approximation problem with F-norm data fidelity
+    can be solved by a soft-thresholding operation on the singular values of observation matrix.
+
+    All the internal calculations are done at 32-bit float. Each plane is processed separately.
+
+    Args:
+        clip: Input clip.
+
+        lamda: (float) The strength of the denoiser.
+            Default is  0.01
+
+        block_size: (int or [int, int]) The size of the block. It can be a single integer, which means the block is a square, 
+            or a list of two integers specifying the height and width of the block respectively.
+            Default is 8.
+
+
+    Ref:
+        [1] Gu, S., Xie, Q., Meng, D., Zuo, W., Feng, X., & Zhang, L. (2017). Weighted nuclear norm minimization and its applications to low level vision. International journal of computer vision, 121(2), 183-208.
+        [2] Cai, J. F., Candès, E. J., & Shen, Z. (2010). A singular value thresholding algorithm for matrix completion. SIAM Journal on Optimization, 20(4), 1956-1982.
+
+    """
+
+    bits = clip.format.bits_per_sample
+    sampleType = clip.format.sample_type
+
+    clip = mvf.Depth(clip, depth=32, sample=vs.FLOAT, **depth_args)
+    clip = numpy_process(clip, functools.partial(BNNMDenoise_core, block_size=block_size, lamda=lamda), per_plane=True)
+    clip = mvf.Depth(clip, depth=bits, sample=sampleType, **depth_args)
+
+    return clip
+
+
+def BNNMDenoise_core(input_2D, block_size=8, lamda=0.01):
+    """Block-wise nuclear norm ninimization (NNM) based denoiser in NumPY
+
+    This function minimize the following energy function given noisy patch Y:
+        E(X) = ||Y - X||_{F}^{2} + λ||X||_{*}
+
+    For detailed documentation, please refer to the documentation of "BNNMDenoise" funcion in current library.
+
+    """
+
+    output_2D = input_2D.copy()
+
+    block_view = get_blockwise_view(output_2D, block_size=block_size, stride=block_size, writeable=True) # No overlapping
+
+    # Soft-thresholding
+    u, s, v = np.linalg.svd(block_view, full_matrices=False, compute_uv=True)
+    s[:] = np.maximum(s - lamda, 0.)
+    block_view[:] = u * s[:, :, np.newaxis, :] @ v
+
+    return output_2D
