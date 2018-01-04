@@ -946,7 +946,7 @@ def BNNMDenoise(clip, lamda=0.01, block_size=8, **depth_args):
 
 
 def BNNMDenoise_core(input_2D, block_size=8, lamda=0.01):
-    """Block-wise nuclear norm ninimization (NNM) based denoiser in NumPY
+    """Block-wise nuclear norm ninimization (NNM) based denoiser in NumPy
 
     This function minimize the following energy function given noisy patch Y:
         E(X) = ||Y - X||_{F}^{2} + λ||X||_{*}
@@ -1050,7 +1050,7 @@ def FGS_2D_core(image_2D, joint_image_2D=None, sigma=0.1, lamda=900, solver_iter
 
             tmp = image_2D[i, :].copy()
             # solve tridiagonal system
-            image_2D[i, :] = solve_banded((1, 1), ab_h, tmp)
+            image_2D[i, :] = solve_banded((1, 1), ab_h, tmp, overwrite_ab=True, overwrite_b=True, check_finite=False)
 
         # for each column
         for j in range(w):
@@ -1065,7 +1065,7 @@ def FGS_2D_core(image_2D, joint_image_2D=None, sigma=0.1, lamda=900, solver_iter
 
             tmp = image_2D[:, j].copy()
             # solve tridiagonal system
-            image_2D[:, j] = solve_banded((1, 1), ab_w, tmp)
+            image_2D[:, j] = solve_banded((1, 1), ab_w, tmp, overwrite_ab=True, overwrite_b=True, check_finite=False)
 
         # variation of lamda
         lamda_in /= solver_attenuation
