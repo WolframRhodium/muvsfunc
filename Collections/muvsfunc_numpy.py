@@ -7,6 +7,7 @@ VapourSynth functions:
     IEDD
     DNCNN
     BNNMDenoise
+    FGS
 
 NumPy functions:
     L0Smooth_core
@@ -15,6 +16,7 @@ NumPy functions:
     IEDD_core
     get_blockwise_view
     BNNMDenoise_core
+    FGS_2D_core
 """
 
 import functools
@@ -924,6 +926,8 @@ def BNNMDenoise(clip, lamda=0.01, block_size=8, **depth_args):
             or a list of two integers specifying the height and width of the block respectively.
             Default is 8.
 
+        depth_args: (dict) Additional arguments passed to mvf.Depth() in the form of keyword arguments.
+            Default is {}.
 
     Ref:
         [1] Gu, S., Xie, Q., Meng, D., Zuo, W., Feng, X., & Zhang, L. (2017). Weighted nuclear norm minimization and its applications to low level vision. International journal of computer vision, 121(2), 183-208.
@@ -957,7 +961,113 @@ def BNNMDenoise_core(input_2D, block_size=8, lamda=0.01):
 
     # Soft-thresholding
     u, s, v = np.linalg.svd(block_view, full_matrices=False, compute_uv=True)
-    s[:] = np.maximum(s - lamda, 0.)
+    s[:] = np.maximum(s - lamda / 2, 0.)
     block_view[:] = u * s[:, :, np.newaxis, :] @ v
 
     return output_2D
+
+
+def FGS(clip, sigma=0.1, lamda=900, solver_iteration=3, solver_attenuation=4, **depth_args):
+    """Fast Global Smoothing in VapourSynth
+
+    Fast global smoother is a spatially inhomogeneous edge-preserving image smoothing technique, which has a comparable
+    runtime to the fast edge-preserving filters, but its global optimization formulation overcomes many limitations of the
+    local filtering approaches (halo, etc) and achieves high-quality results as the state-of-the-art optimization-based techniques.
+
+    All the internal calculations are done at 32-bit float. Each plane is processed separately.
+
+    Args:
+        clip: Input clip.
+
+        sigma: (float) The standard deviation of the gaussian kernel defined on reference image.
+            Default is 0.1.
+
+        lamda: (float) The balance between the fidelity term and the regularization term.
+            It can be treated as the strength of smoothing on the source image.
+            Default is 900.
+
+        solver_iterations: (int) Number of iterations to perform.
+            Default is 3.
+
+        solver_attenuation: (float) Attenuation factor for iteration.
+            Default is 4.
+
+        depth_args: (dict) Additional arguments passed to mvf.Depth() in the form of keyword arguments.
+            Default is {}.
+
+    Ref:
+        [1] Min, D., Choi, S., Lu, J., Ham, B., Sohn, K., & Do, M. N. (2014). Fast global image smoothing based on weighted least squares. IEEE Transactions on Image Processing, 23(12), 5638-5653.
+        [2] https://sites.google.com/site/globalsmoothing/
+
+    """
+
+    bits = clip.format.bits_per_sample
+    sampleType = clip.format.sample_type
+
+    clip = mvf.Depth(clip, depth=32, sample=vs.FLOAT, **depth_args)
+    clip = numpy_process(clip, functools.partial(FGS_2D_core, sigma=sigma, lamda=lamda, 
+        solver_iteration=solver_iteration, solver_attenuation=solver_attenuation), per_plane=True)
+    clip = mvf.Depth(clip, depth=bits, sample=sampleType, **depth_args)
+
+    return clip
+
+
+def FGS_2D_core(image_2D, joint_image_2D=None, sigma=0.1, lamda=900, solver_iteration=3, solver_attenuation=4):
+    """Fast Global Smoothing in NumPy
+
+    Uncompleted. Only filtering on input image with one channel without guidance image is implemented.
+
+    For detailed documentation, please refer to the documentation of "FGS" funcion in current library.
+
+    """
+
+    from scipy.linalg import solve_banded
+
+    image_2D = image_2D.copy()
+    joint_image_2D = image_2D#.copy()
+
+    # variation of lamda
+    lamda_in = 1.5 * lamda * 4**(solver_iteration - 1) / (4**solver_iteration - 1)
+    h, w = image_2D.shape
+
+    # bilateral kernel weight
+    BLF = lambda x, sigma: np.exp(-np.abs(x) * (1/sigma))
+
+    ab_h = np.empty((3, w), dtype=image_2D.dtype)
+    ab_w = np.empty((3, h), dtype=image_2D.dtype)
+
+    for _ in range(solver_iteration):
+        # for each row
+        for i in range(h):
+            # a_vec
+            ab_h[2, :-1] = -lamda_in * BLF(joint_image_2D[i, 1:] - joint_image_2D[i, :-1], sigma)
+            ab_h[2, -1] = 0
+            # c_vec
+            ab_h[0, 0] = 0
+            ab_h[0, 1:] = ab_h[2, :-1]
+            # b_vec
+            ab_h[1, :] = 1 - ab_h[0, :] - ab_h[2, :]
+
+            tmp = image_2D[i, :].copy()
+            # solve tridiagonal system
+            image_2D[i, :] = solve_banded((1, 1), ab_h, tmp)
+
+        # for each column
+        for j in range(w):
+            # a_vec
+            ab_w[2, :-1] = -lamda_in * BLF(joint_image_2D[1:, j] - joint_image_2D[:-1, j], sigma)
+            ab_w[2, -1] = 0
+            # c_vec
+            ab_w[0, 0] = 0
+            ab_w[0, 1:] = ab_w[2, :-1]
+            # b_vec
+            ab_w[1, :] = 1 - ab_w[0, :] - ab_w[2, :]
+
+            tmp = image_2D[:, j].copy()
+            # solve tridiagonal system
+            image_2D[:, j] = solve_banded((1, 1), ab_w, tmp)
+
+        # variation of lamda
+        lamda_in /= solver_attenuation
+
+    return image_2D
