@@ -1023,15 +1023,49 @@ def FGS_2D_core(image_2D, joint_image_2D=None, sigma=0.1, lamda=900, solver_iter
 
     from scipy.linalg import solve_banded
 
-    image_2D = image_2D.copy()
-    joint_image_2D = image_2D#.copy()
+    h, w = image_2D.shape
 
     # variation of lamda
     lamda_in = 1.5 * lamda * 4**(solver_iteration - 1) / (4**solver_iteration - 1)
-    h, w = image_2D.shape
 
     # bilateral kernel weight
-    BLF = lambda x, sigma: np.exp(-np.abs(x) * (1/sigma))
+    BLF = lambda x, sigma: np.exp(-np.abs(x) * (1 / sigma))
+
+    image_2D = np.pad(image_2D, pad_width=((1, 0), (1, 0)), mode='constant') # a copy
+    joint_image_2D = image_2D # a view
+
+    ab = np.empty((3, w * h), dtype=image_2D.dtype) # buffer
+
+    for _ in range(solver_iteration):
+        # for each row
+        ab[0, :] = -lamda_in * BLF((joint_image_2D[1:, 1:] - joint_image_2D[1:, :-1]).ravel(order='C'), sigma)
+        ab[0, ::w] = 0
+        ab[2, :-1] = ab[0, 1:]
+        ab[2, -1] = 0
+        ab[1, :] = 1 - ab[0, :] - ab[2, :]
+
+        tmp = image_2D[1:, 1:].ravel(order='C') # a copy
+        image_2D[1:, 1:] = solve_banded((1, 1), ab, tmp, overwrite_ab=True, overwrite_b=True, check_finite=False).reshape((h, w), order='C')
+
+        # for each column
+        ab[0, :] = -lamda_in * BLF((joint_image_2D[1:, 1:] - joint_image_2D[:-1, 1:]).ravel(order='F'), sigma)
+        ab[0, ::h] = 0
+        ab[2, :-1] = ab[0, 1:]
+        ab[2, -1] = 0
+        ab[1, :] = 1 - ab[0, :] - ab[2, :]
+
+        tmp = image_2D[1:, 1:].ravel(order='F') # a copy
+        image_2D[1:, 1:] = solve_banded((1, 1), ab, tmp, overwrite_ab=True, overwrite_b=True, check_finite=False).reshape((h, w), order='F')
+
+        lamda_in /= solver_attenuation
+
+    return image_2D[1:, 1:]
+
+    """
+    # Old algorithms
+
+    image_2D = image_2D.copy()
+    joint_image_2D = image_2D#.copy()
 
     ab_h = np.empty((3, w), dtype=image_2D.dtype)
     ab_w = np.empty((3, h), dtype=image_2D.dtype)
@@ -1071,3 +1105,4 @@ def FGS_2D_core(image_2D, joint_image_2D=None, sigma=0.1, lamda=900, solver_iter
         lamda_in /= solver_attenuation
 
     return image_2D
+    """
