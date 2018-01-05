@@ -217,7 +217,7 @@ def L0Smooth(clip, lamda=2e-2, kappa=2, color=True, **depth_args):
     Denormin2 = L0Smooth_generate_denormin2(size2D)
 
     # Process
-    clip = numpy_process(clip, functools.partial(L0Smooth_core, lamda=lamda, kappa=kappa, Denormin2=Denormin2, copy=True), per_plane=per_plane)
+    clip = numpy_process(clip, functools.partial(L0Smooth_core, lamda=lamda, kappa=kappa, Denormin2=Denormin2), per_plane=per_plane, copy=True)
 
     # Crop the padding
     if pad:
@@ -477,7 +477,7 @@ def L0GradientProjection(clip, alpha=0.08, precision=255, epsilon=0.0002, maxite
 
     # Process
     clip = numpy_process(clip, functools.partial(L0GradProj_core, alpha=alpha, precision=precision, epsilon=epsilon, maxiter=maxiter,
-        gamma=gamma, eta=eta, Lap=Lap, copy=True), per_plane=per_plane)
+        gamma=gamma, eta=eta, Lap=Lap), per_plane=per_plane, copy=True)
 
     # Crop the padding
     if pad:
@@ -939,13 +939,13 @@ def BNNMDenoise(clip, lamda=0.01, block_size=8, **depth_args):
     sampleType = clip.format.sample_type
 
     clip = mvf.Depth(clip, depth=32, sample=vs.FLOAT, **depth_args)
-    clip = numpy_process(clip, functools.partial(BNNMDenoise_core, block_size=block_size, lamda=lamda), per_plane=True)
+    clip = numpy_process(clip, functools.partial(BNNMDenoise_core, block_size=block_size, lamda=lamda), per_plane=True, copy=True)
     clip = mvf.Depth(clip, depth=bits, sample=sampleType, **depth_args)
 
     return clip
 
 
-def BNNMDenoise_core(input_2D, block_size=8, lamda=0.01):
+def BNNMDenoise_core(input_2D, block_size=8, lamda=0.01, copy=False):
     """Block-wise nuclear norm ninimization (NNM) based denoiser in NumPy
 
     This function minimize the following energy function given noisy patch Y:
@@ -955,7 +955,10 @@ def BNNMDenoise_core(input_2D, block_size=8, lamda=0.01):
 
     """
 
-    output_2D = input_2D.copy()
+    if copy:
+        output_2D = input_2D.copy()
+    else:
+        output_2D = input_2D
 
     block_view = get_blockwise_view(output_2D, block_size=block_size, stride=block_size, writeable=True) # No overlapping
 
@@ -1006,13 +1009,13 @@ def FGS(clip, sigma=0.1, lamda=900, solver_iteration=3, solver_attenuation=4, **
 
     clip = mvf.Depth(clip, depth=32, sample=vs.FLOAT, **depth_args)
     clip = numpy_process(clip, functools.partial(FGS_2D_core, sigma=sigma, lamda=lamda, 
-        solver_iteration=solver_iteration, solver_attenuation=solver_attenuation), per_plane=True)
+        solver_iteration=solver_iteration, solver_attenuation=solver_attenuation), per_plane=True, copy=True)
     clip = mvf.Depth(clip, depth=bits, sample=sampleType, **depth_args)
 
     return clip
 
 
-def FGS_2D_core(image_2D, joint_image_2D=None, sigma=0.1, lamda=900, solver_iteration=3, solver_attenuation=4):
+def FGS_2D_core(image_2D, joint_image_2D=None, sigma=0.1, lamda=900, solver_iteration=3, solver_attenuation=4, copy=False):
     """Fast Global Smoothing in NumPy
 
     Uncompleted. Only filtering on input image with one channel without guidance image is implemented.
@@ -1023,6 +1026,14 @@ def FGS_2D_core(image_2D, joint_image_2D=None, sigma=0.1, lamda=900, solver_iter
 
     from scipy.linalg import solve_banded
 
+    if copy:
+        image_2D = image_2D.copy()
+
+    if joint_image_2D is None:
+        joint_image_2D = image_2D
+    else:
+        raise RuntimeError("This feature has not been implemented yet.")
+
     h, w = image_2D.shape
 
     # variation of lamda
@@ -1031,44 +1042,40 @@ def FGS_2D_core(image_2D, joint_image_2D=None, sigma=0.1, lamda=900, solver_iter
     # bilateral kernel weight
     BLF = lambda x, sigma: np.exp(-np.abs(x) * (1 / sigma))
 
-    image_2D = np.pad(image_2D, pad_width=((1, 0), (1, 0)), mode='constant') # a copy
-    joint_image_2D = image_2D # a view
-
     ab = np.empty((3, w * h), dtype=image_2D.dtype) # buffer
 
     for _ in range(solver_iteration):
         # for each row
-        ab[0, :] = -lamda_in * BLF((joint_image_2D[1:, 1:] - joint_image_2D[1:, :-1]).ravel(order='C'), sigma)
+        hflat = joint_image_2D.ravel(order='C')
+        ab[0, 1:] = -lamda_in * BLF((hflat[1:] - hflat[:-1]).ravel(order='C'), sigma)
         ab[0, ::w] = 0
         ab[2, :-1] = ab[0, 1:]
         ab[2, -1] = 0
         ab[1, :] = 1 - ab[0, :] - ab[2, :]
 
-        tmp = image_2D[1:, 1:].ravel(order='C') # a copy
-        image_2D[1:, 1:] = solve_banded((1, 1), ab, tmp, overwrite_ab=True, overwrite_b=True, check_finite=False).reshape((h, w), order='C')
+        tmp = image_2D.ravel(order='C')
+        image_2D[:] = solve_banded((1, 1), ab, tmp, overwrite_ab=True, overwrite_b=True, check_finite=False).reshape((h, w), order='C')
 
         # for each column
-        ab[0, :] = -lamda_in * BLF((joint_image_2D[1:, 1:] - joint_image_2D[:-1, 1:]).ravel(order='F'), sigma)
+        vflat = joint_image_2D.ravel(order='F')
+        ab[0, 1:] = -lamda_in * BLF((vflat[1:] - vflat[:-1]).ravel(order='F'), sigma)
         ab[0, ::h] = 0
         ab[2, :-1] = ab[0, 1:]
         ab[2, -1] = 0
         ab[1, :] = 1 - ab[0, :] - ab[2, :]
 
-        tmp = image_2D[1:, 1:].ravel(order='F') # a copy
-        image_2D[1:, 1:] = solve_banded((1, 1), ab, tmp, overwrite_ab=True, overwrite_b=True, check_finite=False).reshape((h, w), order='F')
+        tmp = image_2D.ravel(order='F') # a copy
+        image_2D[:] = solve_banded((1, 1), ab, tmp, overwrite_ab=True, overwrite_b=True, check_finite=False).reshape((h, w), order='F')
 
         lamda_in /= solver_attenuation
 
-    return image_2D[1:, 1:]
+    return image_2D
 
     """
     # Old algorithms
 
     image_2D = image_2D.copy()
     joint_image_2D = image_2D#.copy()
-
-    ab_h = np.empty((3, w), dtype=image_2D.dtype)
-    ab_w = np.empty((3, h), dtype=image_2D.dtype)
 
     for _ in range(solver_iteration):
         # for each row
