@@ -1162,6 +1162,9 @@ def FDD(clip, kappa=0.03, lamda=100, beta=None, epsilon=1.2, solver_iteration=3,
     bits = clip.format.bits_per_sample
     sampleType = clip.format.sample_type
 
+    if beta is None:
+        beta = math.sqrt(lamda) / 2
+
     clip = mvf.Depth(clip, depth=32, sample=vs.FLOAT, **depth_args)
     clip = numpy_process(clip, functools.partial(FDD_2D_core, kappa=kappa, lamda=lamda, beta=beta, 
         epsilon=epsilon, solver_iteration=solver_iteration), per_plane=True, copy=True)
@@ -1189,9 +1192,6 @@ def FDD_2D_core(image_2D, joint_image_2D=None, kappa=0.03, lamda=100, beta=None,
     else:
         raise RuntimeError("This feature has not been implemented yet.")
 
-    if beta is None:
-        beta = math.sqrt(lamda) / 2
-
     h, w = image_2D.shape
 
     if callable(kappa):
@@ -1199,9 +1199,7 @@ def FDD_2D_core(image_2D, joint_image_2D=None, kappa=0.03, lamda=100, beta=None,
     else:
         BLF = lambda x, y: np.exp(-(x - y) ** 2 / kappa)
 
-    # buffer
-    ab_h = np.empty((3, w), dtype=image_2D.dtype)
-    ab_w = np.empty((3, h), dtype=image_2D.dtype)
+    ab = np.empty((3, w * h), dtype=image_2D.dtype) # buffer
 
     alpha = 1
     v_pre = image_2D.copy()
@@ -1211,46 +1209,36 @@ def FDD_2D_core(image_2D, joint_image_2D=None, kappa=0.03, lamda=100, beta=None,
     gamma_pre = np.zeros_like(image_2D)
     gamma_curr = np.empty_like(image_2D)
     gamma_hat_curr = np.zeros_like(image_2D)
+    f = np.empty_like(image_2D)
 
     for _ in range(solver_iteration):
         # for each row
-        for i in range(h):
-            fx = (1 / (1 + beta)) * (image_2D[i, :] + beta * (v_hat_curr[i, :] + gamma_hat_curr[i, :]))
-
-            # a_vec
-            ab_h[2, :-1] = -2 * lamda / (1 + beta) * BLF(joint_image_2D[i, 1:], joint_image_2D[i, :-1])
-            ab_h[2, -1] = 0
-            # c_vec
-            ab_h[0, 0] = 0
-            ab_h[0, 1:] = ab_h[2, :-1]
-            # b_vec
-            ab_h[1, :] = 1 - ab_h[0, :] - ab_h[2, :]
-
-            # solve tridiagonal system
-            u[i, :] = solve_banded((1, 1), ab_h, fx, overwrite_ab=True, overwrite_b=True, check_finite=False)
+        f[:] = (1 / (1 + beta)) * (image_2D + beta * (v_hat_curr + gamma_hat_curr))
+        hflat = joint_image_2D.ravel(order='C')
+        ab[0, 1:] = -2 * lamda / (1 + beta) * BLF(hflat[1:], hflat[:-1])
+        ab[0, ::w] = 0
+        ab[2, :-1] = ab[0, 1:]
+        ab[2, -1] = 0
+        ab[1, :] = 1 - ab[0, :] - ab[2, :]
+        u[:] = solve_banded((1, 1), ab, f.ravel(order='C'), overwrite_ab=True, overwrite_b=True, check_finite=False).reshape((h, w), order='C')
 
         if _ == solver_iteration - 1:
             return u
 
         # for each column
-        for j in range(w):
-            fy = (1 / (1 + beta)) * (image_2D[:, j] + beta * (u[:, j] - gamma_hat_curr[:, j]))
+        f[:] = (1 / (1 + beta)) * (image_2D + beta * (u - gamma_hat_curr))
+        vflat = joint_image_2D.ravel(order='F')
+        ab[0, 1:] = -2 * lamda / (1 + beta) * BLF(vflat[1:], vflat[:-1])
+        ab[0, ::h] = 0
+        ab[2, :-1] = ab[0, 1:]
+        ab[2, -1] = 0
+        ab[1, :] = 1 - ab[0, :] - ab[2, :]
+        v_curr[:] = solve_banded((1, 1), ab, f.ravel(order='F'), overwrite_ab=True, overwrite_b=True, check_finite=False).reshape((h, w), order='F')
 
-            # a_vec
-            ab_w[2, :-1] = -2 * lamda / (1 + beta) * BLF(joint_image_2D[1:, j], joint_image_2D[:-1, j])
-            ab_w[2, -1] = 0
-            # c_vec
-            ab_w[0, 0] = 0
-            ab_w[0, 1:] = ab_w[2, :-1]
-            # b_vec
-            ab_w[1, :] = 1 - ab_w[0, :] - ab_w[2, :]
-
-            # solve tridiagonal system
-            v_curr[:, j] = solve_banded((1, 1), ab_w, fy, overwrite_ab=True, overwrite_b=True, check_finite=False)
-
+        # update parameters
         gamma_curr[:] = gamma_hat_curr - (u - v_curr)
         beta *= epsilon
-        alpha = (1 + math.sqrt(1 + 4 * alpha**2)) / 2
+        alpha = (1 + math.sqrt(1 + 4 * alpha ** 2)) / 2
         gamma_hat_curr[:] = gamma_curr + (alpha - 1) / alpha * (gamma_curr - gamma_pre)
         v_hat_curr[:] = v_curr + (alpha - 1) / alpha * (v_curr - v_pre)
 
