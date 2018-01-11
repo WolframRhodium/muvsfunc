@@ -972,7 +972,7 @@ def BNNMDenoise_core(input_2D, block_size=8, lamda=0.01, copy=False):
     return output_2D
 
 
-def FGS(clip, sigma=0.1, lamda=900, solver_iteration=3, solver_attenuation=4, **depth_args):
+def FGS(clip, sigma=0.03, lamda=100, solver_iteration=3, solver_attenuation=4, **depth_args):
     """Fast Global Smoothing in VapourSynth
 
     Fast global smoother is a spatially inhomogeneous edge-preserving image smoothing technique, which has a comparable
@@ -980,6 +980,8 @@ def FGS(clip, sigma=0.1, lamda=900, solver_iteration=3, solver_attenuation=4, **
     local filtering approaches (halo, etc) and achieves high-quality results as the state-of-the-art optimization-based techniques.
 
     All the internal calculations are done at 32-bit float. Each plane is processed separately.
+
+    The default parameters and the weight function is slightly dfferent from the original paper, in order to be similar to FDD().
 
     Args:
         clip: Input clip.
@@ -1018,10 +1020,12 @@ def FGS(clip, sigma=0.1, lamda=900, solver_iteration=3, solver_attenuation=4, **
     return clip
 
 
-def FGS_2D_core(image_2D, joint_image_2D=None, sigma=0.1, lamda=900, solver_iteration=3, solver_attenuation=4, copy=False):
+def FGS_2D_core(image_2D, joint_image_2D=None, sigma=0.03, lamda=100, solver_iteration=3, solver_attenuation=4, copy=False):
     """Fast Global Smoothing in NumPy
 
     Uncompleted. Only filtering on input image with one channel without guidance image is implemented.
+
+    The default parameters and the weight function is slightly dfferent from the original paper, in order to be similar to FDD().
 
     For detailed documentation, please refer to the documentation of "FGS" funcion in current library.
 
@@ -1046,7 +1050,7 @@ def FGS_2D_core(image_2D, joint_image_2D=None, sigma=0.1, lamda=900, solver_iter
     if callable(sigma):
         BLF = sigma
     else:
-        BLF = lambda x, y: np.exp(-np.abs(x - y) * (1 / sigma))
+        BLF = lambda x, y: np.exp(-(x - y) ** 2 / sigma)
 
     ab = np.empty((3, w * h), dtype=image_2D.dtype) # buffer
 
@@ -1121,7 +1125,7 @@ def FGS_2D_core(image_2D, joint_image_2D=None, sigma=0.1, lamda=900, solver_iter
     """
 
 
-def FDD(clip, kappa=0.03, lamda=100, beta=None, epsilon=1.2, solver_iteration=3, **depth_args):
+def FDD(clip, sigma=0.03, lamda=100, beta=None, epsilon=1.2, solver_iteration=3, **depth_args):
     """Fast Domain Decomposition in VapourSynth
 
     Fast domain decomposition is a fast and linear time algorithm for global edge-preserving smoothing technique.
@@ -1130,11 +1134,14 @@ def FDD(clip, kappa=0.03, lamda=100, beta=None, epsilon=1.2, solver_iteration=3,
 
     All the internal calculations are done at 32-bit float. Each plane is processed separately.
 
+    The default parameters and the weight function is slightly dfferent from the original paper, in order to be similar to FGS().
+
     Args:
         clip: Input clip.
 
-        kappa: (float or function) The standard deviation of the gaussian kernel defined on reference image.
+        sigma: (float or function) The standard deviation of the gaussian kernel defined on reference image.
             It can also be a function which takes two inputs and operates on vector in NumPy. The size of the output should be identical to the input.
+            It is named as "kappa" in the paper.
             Default is 0.03.
 
         lamda: (float) The balance between the fidelity term and the regularization term.
@@ -1166,17 +1173,19 @@ def FDD(clip, kappa=0.03, lamda=100, beta=None, epsilon=1.2, solver_iteration=3,
         beta = math.sqrt(lamda) / 2
 
     clip = mvf.Depth(clip, depth=32, sample=vs.FLOAT, **depth_args)
-    clip = numpy_process(clip, functools.partial(FDD_2D_core, kappa=kappa, lamda=lamda, beta=beta, 
+    clip = numpy_process(clip, functools.partial(FDD_2D_core, sigma=sigma, lamda=lamda, beta=beta, 
         epsilon=epsilon, solver_iteration=solver_iteration), per_plane=True, copy=True)
     clip = mvf.Depth(clip, depth=bits, sample=sampleType, **depth_args)
 
     return clip
 
 
-def FDD_2D_core(image_2D, joint_image_2D=None, kappa=0.03, lamda=100, beta=None, epsilon=1.2, solver_iteration=3, copy=False):
+def FDD_2D_core(image_2D, joint_image_2D=None, sigma=0.03, lamda=100, beta=None, epsilon=1.2, solver_iteration=3, copy=False):
     """Fast Domain Decomposition in NumPy
 
     Uncompleted. Only filtering on input image with one channel without guidance image is implemented.
+
+    The default parameters and the weight function is slightly dfferent from the original paper, in order to be similar to FGS().
 
     For detailed documentation, please refer to the documentation of "FDD" funcion in current library.
 
@@ -1194,10 +1203,10 @@ def FDD_2D_core(image_2D, joint_image_2D=None, kappa=0.03, lamda=100, beta=None,
 
     h, w = image_2D.shape
 
-    if callable(kappa):
-        BLF = kappa
+    if callable(sigma):
+        BLF = sigma
     else:
-        BLF = lambda x, y: np.exp(-(x - y) ** 2 / kappa)
+        BLF = lambda x, y: np.exp(-(x - y) ** 2 / sigma)
 
     ab = np.empty((3, w * h), dtype=image_2D.dtype) # buffer
 
