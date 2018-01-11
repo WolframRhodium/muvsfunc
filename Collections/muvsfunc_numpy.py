@@ -8,6 +8,7 @@ VapourSynth functions:
     DNCNN
     BNNMDenoise
     FGS
+    FDD
 
 NumPy functions:
     L0Smooth_core
@@ -17,6 +18,7 @@ NumPy functions:
     get_blockwise_view
     BNNMDenoise_core
     FGS_2D_core
+    FDD_2D_core
 """
 
 import functools
@@ -1117,3 +1119,142 @@ def FGS_2D_core(image_2D, joint_image_2D=None, sigma=0.1, lamda=900, solver_iter
 
     return image_2D
     """
+
+
+def FDD(clip, kappa=0.03, lamda=100, beta=None, epsilon=1.2, solver_iteration=3, **depth_args):
+    """Fast Domain Decomposition in VapourSynth
+
+    Fast domain decomposition is a fast and linear time algorithm for global edge-preserving smoothing technique.
+    It uses an efficient decomposition-based method to solve a sequence of 1-D sub-problems.
+    An alternating direction method of multipliers algorithm is adopted to guarantee fast convergence.
+
+    All the internal calculations are done at 32-bit float. Each plane is processed separately.
+
+    Args:
+        clip: Input clip.
+
+        kappa: (float or function) The standard deviation of the gaussian kernel defined on reference image.
+            It can also be a function which takes two inputs and operates on vector in NumPy. The size of the output should be identical to the input.
+            Default is 0.03.
+
+        lamda: (float) The balance between the fidelity term and the regularization term.
+            It can be treated as the strength of smoothing on the source image.
+            Default is 900.
+
+        beta: (float) Penalty parameter of augmented Lagrangian method. It will be increase during iteration by a factor of "epsilon".
+            If it is None, it will be automatically set as sqrt(lamda)/2.
+            Default is None.
+
+        epsilon: (float) Multiplier of "beta" of each iteration.
+            Default is 1.2.
+
+        solver_iterations: (int) Number of iterations to perform.
+            Default is 3.
+
+        depth_args: (dict) Additional arguments passed to mvf.Depth() in the form of keyword arguments.
+            Default is {}.
+
+    Ref:
+        [1] Kim, Y., Min, D., Ham, B., & Sohn, K. (2017). Fast Domain Decomposition for Global Image Smoothing. IEEE Transactions on Image Processing.
+
+    """
+
+    bits = clip.format.bits_per_sample
+    sampleType = clip.format.sample_type
+
+    clip = mvf.Depth(clip, depth=32, sample=vs.FLOAT, **depth_args)
+    clip = numpy_process(clip, functools.partial(FDD_2D_core, kappa=kappa, lamda=lamda, beta=beta, 
+        epsilon=epsilon, solver_iteration=solver_iteration), per_plane=True, copy=True)
+    clip = mvf.Depth(clip, depth=bits, sample=sampleType, **depth_args)
+
+    return clip
+
+
+def FDD_2D_core(image_2D, joint_image_2D=None, kappa=0.03, lamda=100, beta=None, epsilon=1.2, solver_iteration=3, copy=False):
+    """Fast Domain Decomposition in NumPy
+
+    Uncompleted. Only filtering on input image with one channel without guidance image is implemented.
+
+    For detailed documentation, please refer to the documentation of "FDD" funcion in current library.
+
+    """
+
+    from scipy.linalg import solve_banded
+
+    if copy:
+        image_2D = image_2D.copy()
+
+    if joint_image_2D is None:
+        joint_image_2D = image_2D
+    else:
+        raise RuntimeError("This feature has not been implemented yet.")
+
+    if beta is None:
+        beta = math.sqrt(lamda) / 2
+
+    h, w = image_2D.shape
+
+    if callable(kappa):
+        BLF = kappa
+    else:
+        BLF = lambda x, y: np.exp(-(x - y) ** 2 / kappa)
+
+    # buffer
+    ab_h = np.empty((3, w), dtype=image_2D.dtype)
+    ab_w = np.empty((3, h), dtype=image_2D.dtype)
+
+    alpha = 1
+    v_pre = image_2D.copy()
+    v_curr = np.empty_like(image_2D)
+    v_hat_curr = image_2D.copy()
+    u = np.empty_like(image_2D)
+    gamma_pre = np.zeros_like(image_2D)
+    gamma_curr = np.empty_like(image_2D)
+    gamma_hat_curr = np.zeros_like(image_2D)
+
+    for _ in range(solver_iteration):
+        # for each row
+        for i in range(h):
+            fx = (1 / (1 + beta)) * (image_2D[i, :] + beta * (v_hat_curr[i, :] + gamma_hat_curr[i, :]))
+
+            # a_vec
+            ab_h[2, :-1] = -2 * lamda / (1 + beta) * BLF(joint_image_2D[i, 1:], joint_image_2D[i, :-1])
+            ab_h[2, -1] = 0
+            # c_vec
+            ab_h[0, 0] = 0
+            ab_h[0, 1:] = ab_h[2, :-1]
+            # b_vec
+            ab_h[1, :] = 1 - ab_h[0, :] - ab_h[2, :]
+
+            # solve tridiagonal system
+            u[i, :] = solve_banded((1, 1), ab_h, fx, overwrite_ab=True, overwrite_b=True, check_finite=False)
+
+        if _ == solver_iteration - 1:
+            return u
+
+        # for each column
+        for j in range(w):
+            fy = (1 / (1 + beta)) * (image_2D[:, j] + beta * (u[:, j] - gamma_hat_curr[:, j]))
+
+            # a_vec
+            ab_w[2, :-1] = -2 * lamda / (1 + beta) * BLF(joint_image_2D[1:, j], joint_image_2D[:-1, j])
+            ab_w[2, -1] = 0
+            # c_vec
+            ab_w[0, 0] = 0
+            ab_w[0, 1:] = ab_w[2, :-1]
+            # b_vec
+            ab_w[1, :] = 1 - ab_w[0, :] - ab_w[2, :]
+
+            # solve tridiagonal system
+            v_curr[:, j] = solve_banded((1, 1), ab_w, fy, overwrite_ab=True, overwrite_b=True, check_finite=False)
+
+        gamma_curr[:] = gamma_hat_curr - (u - v_curr)
+        beta *= epsilon
+        alpha = (1 + math.sqrt(1 + 4 * alpha**2)) / 2
+        gamma_hat_curr[:] = gamma_curr + (alpha - 1) / alpha * (gamma_curr - gamma_pre)
+        v_hat_curr[:] = v_curr + (alpha - 1) / alpha * (v_curr - v_pre)
+
+        v_pre[:] = v_curr
+        gamma_pre[:] = gamma_curr
+
+    # return u
