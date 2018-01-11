@@ -808,7 +808,7 @@ def DNCNN(clip, symbol_path, params_path, patch_size=[640, 640], device_id=0, **
     import mxnet as mx
     from collections import namedtuple
     
-    if clip.format.color_family != vs.YUV or any([clip.format.subsampling_w, clip.format.subsampling_h]):
+    if any([clip.format.subsampling_w, clip.format.subsampling_h]):
         raise TypeError('Invalid type')
 
     # Load the model
@@ -982,7 +982,8 @@ def FGS(clip, sigma=0.1, lamda=900, solver_iteration=3, solver_attenuation=4, **
     Args:
         clip: Input clip.
 
-        sigma: (float) The standard deviation of the gaussian kernel defined on reference image.
+        sigma: (float or function) The standard deviation of the gaussian kernel defined on reference image.
+            It can also be a function which takes two inputs and operates on vector in NumPy. The size of the output should be identical to the input.
             Default is 0.1.
 
         lamda: (float) The balance between the fidelity term and the regularization term.
@@ -1040,14 +1041,17 @@ def FGS_2D_core(image_2D, joint_image_2D=None, sigma=0.1, lamda=900, solver_iter
     lamda_in = 1.5 * lamda * 4**(solver_iteration - 1) / (4**solver_iteration - 1)
 
     # bilateral kernel weight
-    BLF = lambda x, sigma: np.exp(-np.abs(x) * (1 / sigma))
+    if callable(sigma):
+        BLF = sigma
+    else:
+        BLF = lambda x, y: np.exp(-np.abs(x - y) * (1 / sigma))
 
     ab = np.empty((3, w * h), dtype=image_2D.dtype) # buffer
 
     for _ in range(solver_iteration):
         # for each row
         hflat = joint_image_2D.ravel(order='C')
-        ab[0, 1:] = -lamda_in * BLF((hflat[1:] - hflat[:-1]).ravel(order='C'), sigma)
+        ab[0, 1:] = -lamda_in * BLF(hflat[1:], hflat[:-1])
         ab[0, ::w] = 0
         ab[2, :-1] = ab[0, 1:]
         ab[2, -1] = 0
@@ -1058,13 +1062,13 @@ def FGS_2D_core(image_2D, joint_image_2D=None, sigma=0.1, lamda=900, solver_iter
 
         # for each column
         vflat = joint_image_2D.ravel(order='F')
-        ab[0, 1:] = -lamda_in * BLF((vflat[1:] - vflat[:-1]).ravel(order='F'), sigma)
+        ab[0, 1:] = -lamda_in * BLF(vflat[1:], vflat[:-1])
         ab[0, ::h] = 0
         ab[2, :-1] = ab[0, 1:]
         ab[2, -1] = 0
         ab[1, :] = 1 - ab[0, :] - ab[2, :]
 
-        tmp = image_2D.ravel(order='F') # a copy
+        tmp = image_2D.ravel(order='F')
         image_2D[:] = solve_banded((1, 1), ab, tmp, overwrite_ab=True, overwrite_b=True, check_finite=False).reshape((h, w), order='F')
 
         lamda_in /= solver_attenuation
