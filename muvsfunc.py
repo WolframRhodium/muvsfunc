@@ -41,6 +41,8 @@ Functions:
     GMSD
     SSIM
     SSIM_downsample
+    LocalStatisticsMatching
+    LocalStatistics
 '''
 
 import functools
@@ -3535,3 +3537,79 @@ def SSIM_downsample(clip, w, h, smooth=1, kernel='Bicubic', use_fmtc=False, epsi
     out = mvf.Depth(d, depth=bits, sample=sampleType, **depth_args)
 
     return out
+
+
+def LocalStatisticsMatching(src, ref, radius=1, **depth_args):
+    """Local statistics matcher
+
+    Match the local statistics (mean, variance) of "src" with "ref".
+
+    All the internal calculations are done at 32-bit float.
+
+    Args:
+        src, ref: Inputs.
+
+        radius: (int or function) If it is an integer, it specifies the radius of mean filter.
+            It can also be a custom function.
+            Default is 1.
+
+        depth_args: (dict) Additional arguments passed to mvf.Depth().
+            Default is {}.
+
+    """
+
+    funcName = 'LocalStatisticsMatching'
+
+    core = vs.get_core()
+
+    if not isinstance(src, vs.VideoNode):
+        raise TypeError(funcName + ': \"src\" must be a clip!')
+    if not isinstance(ref, vs.VideoNode):
+        raise TypeError(funcName + ': \"ref\" must be a clip!')
+
+    bits = src.format.bits_per_sample
+    sampleType = src.format.sample_type
+    epsilon = 1e-7 # small positive number to avoid dividing by 0
+
+    src, src_mean, src_var = LocalStatistics(src, radius=radius, **depth_args)
+    _, ref_mean, ref_var = LocalStatistics(ref, radius=radius, **depth_args)
+
+    flt = core.std.Expr([src, src_mean, src_var, ref_mean, ref_var], ['x y - z sqrt {} + / b sqrt * a +'.format(epsilon)])
+
+    return mvf.Depth(flt, depth=bits, sample=sampleType, **depth_args)
+
+
+def LocalStatistics(clip, radius=1, **depth_args):
+    """Local statistics calculator
+
+    The local mean and variance will be returned.
+
+    All the internal calculations are done at 32-bit float.
+
+    Args:
+        src, ref: Inputs.
+
+        radius: (int or function) If it is an integer, it specifies the radius of mean filter.
+            It can also be a custom function.
+            Default is 1.
+
+    Returns:
+        A list containing three clips (source, mean, variance) in 32bit float.
+
+    """
+
+    funcName = 'LocalStatistics'
+
+    core = vs.get_core()
+
+    if not isinstance(clip, vs.VideoNode):
+        raise TypeError(funcName + ': \"clip\" must be a clip!')
+
+    expectation = radius if callable(radius) else functools.partial(BoxFilter, radius=radius+1)
+
+    clip = mvf.Depth(clip, depth=32, sample=vs.FLOAT, **depth_args)
+
+    mean = expectation(clip)
+    var = expectation(core.std.Expr([clip, mean], ['x y - dup *']))
+
+    return clip, mean, var
