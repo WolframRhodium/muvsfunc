@@ -9,6 +9,7 @@ VapourSynth functions:
     BNNMDenoise
     FGS
     FDD
+    SSFDeband
 
 NumPy functions:
     L0Smooth_core
@@ -19,6 +20,7 @@ NumPy functions:
     BNNMDenoise_core
     FGS_2D_core
     FDD_2D_core
+    SSFDeband_core
 """
 
 import functools
@@ -26,6 +28,7 @@ import math
 import vapoursynth as vs
 import mvsfunc as mvf
 import numpy as np
+from numpy.lib.stride_tricks import as_strided
 
 def numpy_process(clip, numpy_function, per_plane=True, lock_source_array=True, **fun_args):
     """Helper function for filtering clip in NumPy
@@ -883,8 +886,6 @@ def get_blockwise_view(input_2D, block_size=8, stride=1, writeable=False):
 
     """
 
-    from numpy.lib.stride_tricks import as_strided
-
     w, h = input_2D.shape
 
     if isinstance(block_size, int):
@@ -1255,3 +1256,90 @@ def FDD_2D_core(image_2D, joint_image_2D=None, sigma=0.03, lamda=100, beta=None,
         gamma_pre[:] = gamma_curr
 
     # return u
+
+
+def SSFDeband(clip, thr=1, smooth_taps=2, edge_taps=3, strides=3, auto_scale_thr=True):
+    """Selective sparse debanding in VapourSynth
+
+    Deband using a selective sparse filter which combines smooth region detection and banding reduction.
+
+    All the internal calculations are done at 32-bit float. Each plane is processed separately.
+
+    Args:
+        clip: Input clip.
+
+        thr: (int) Threshold of banding detection.
+            Default is 1.
+
+        smooth_taps: (int) Taps of the sparse filter, the larger, the smoother.
+            Default is 1.
+
+        edge_taps: (int) Taps of the edge detector, the larger, smaller region will be smoothed.
+            Default is 3.
+
+        auto_scale_thr: (bool) Whether to automatically scale the "thr" according to the bit depth and sample type.
+            Default is True.
+
+    Ref:
+        [1] Song, Q., Su, G. M., & Cosman, P. C. (2016, September). Hardware-efficient debanding and visual enhancement filter for inverse tone mapped high dynamic range images and videos. In Image Processing (ICIP), 2016 IEEE International Conference on (pp. 3299-3303). IEEE.
+
+    """
+
+    bits = clip.format.bits_per_sample
+    sampleType = clip.format.sample_type
+
+    if auto_scale_thr:
+        if sampleType == vs.INTEGER:
+            thr *= ((1 << bits) - 1) / 255
+        else: # sampleType == vs.FLOAT
+            thr /= (2 ** bit) - 1
+
+    clip = numpy_process(clip, functools.partial(SSFDeband_core, thr=thr, smooth_taps=smooth_taps, 
+        edge_taps=edge_taps, strides=strides), per_plane=True, copy=True)
+
+    return clip
+
+
+def SSFDeband_core(img_2D, thr=1, smooth_taps=2, edge_taps=3, strides=3, copy=False):
+    """Selective sparse debanding in NumPy
+
+    For detailed documentation, please refer to the documentation of "SSFDeband" funcion in current library.
+
+    """
+
+    img_2D_dtype = img_2D.dtype
+
+    if copy or img_2D_dtype not in [np.float16, np.float32, np.float64]:
+        img_2D = img_2D.astype('float32')
+
+    isclose = lambda x, y, thr: np.abs(x - y) < thr
+
+    h, w = img_2D.shape
+    max_taps = max(smooth_taps, edge_taps)
+    buff = strides * max_taps
+    smooth_buff = strides * max(0, edge_taps - smooth_taps)
+    edge_buff = strides * max(0, smooth_taps - edge_taps)
+
+    cropped = img_2D[buff:-buff, :]
+    # v_mask = np.isclose((img_2D[:-18, :], cropped) & isclose(img_2D[3:-15, :], cropped) & isclose(img_2D[6:-12, :], cropped) & isclose(img_2D[12:-6, :], cropped) & isclose(img_2D[15:-3, :], cropped) & isclose(img_2D[18:, :], cropped), atol=thr, rtol=0)
+    upper_view = as_strided(img_2D[edge_buff:, :], shape=[h-2*buff, w, edge_taps], strides=(*img_2D.strides, strides*img_2D.strides[0]))
+    upper_mask = np.logical_and.reduce(isclose(upper_view, cropped[..., np.newaxis], thr=thr), axis=2)
+    lower_view = as_strided(img_2D[buff+strides:, :], shape=[h-2*buff, w, edge_taps], strides=(*img_2D.strides, strides*img_2D.strides[0]))
+    lower_mask = np.logical_and.reduce(isclose(lower_view, cropped[..., np.newaxis], thr=thr), axis=2)
+    v_mask = upper_mask & lower_mask
+    # v_smooth = (img_2D[3:-15, :] + img_2D[6:-12, :] + img_2D[9:-9, :] + img_2D[12:-6, :] + img_2D[15:-3, :]) / 5
+    v_smooth = as_strided(img_2D[smooth_buff:, :], shape=[h-2*buff, w, 2*smooth_taps+1], strides=(*img_2D.strides, strides*img_2D.strides[0])).mean(axis=2)
+    cropped[:] = np.where(v_mask, v_smooth, cropped)
+
+    cropped = img_2D[:, buff:-buff]
+    # h_mask = np.isclose((img_2D[:, :-18], cropped) & isclose(img_2D[:, 3:-15], cropped) & isclose(img_2D[:, 6:-12], cropped) & isclose(img_2D[:, 12:-6], cropped) & isclose(img_2D[:, 15:-3], cropped) & isclose(img_2D[:, 18:], cropped, atol=thr, rtol=0)
+    left_view = as_strided(img_2D[:, edge_buff:], shape=[h, w-2*buff, edge_taps], strides=(*img_2D.strides, strides*img_2D.strides[1]))
+    left_mask = np.logical_and.reduce(isclose(left_view, cropped[..., np.newaxis], thr=thr), axis=2)
+    right_view = as_strided(img_2D[:, buff+strides:], shape=[h, w-2*buff, edge_taps], strides=(*img_2D.strides, strides*img_2D.strides[1]))
+    right_mask = np.logical_and.reduce(isclose(right_view, cropped[..., np.newaxis], thr=thr), axis=2)
+    h_mask = left_mask & right_mask
+    # h_smooth = (img_2D[:, 3:-15] + img_2D[:, 6:-12] + img_2D[:, 9:-9] + img_2D[:, 12:-6] + img_2D[:, 15:-3]) / 5
+    h_smooth = as_strided(img_2D[:, smooth_buff:], shape=[h, w-2*buff, 2*smooth_taps+1], strides=(*img_2D.strides, strides*img_2D.strides[1])).mean(axis=2)
+    cropped[:] = np.where(h_mask, h_smooth, cropped)
+
+    return img_2D.astype(img_2D_dtype, copy=False)
