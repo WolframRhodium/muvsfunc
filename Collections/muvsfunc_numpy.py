@@ -869,7 +869,7 @@ def DNCNN(clip, symbol_path, params_path, patch_size=[640, 640], device_id=0, **
     return clip
 
 
-def get_blockwise_view(input_2D, block_size=8, stride=1, writeable=False):
+def get_blockwise_view(input_2D, block_size=8, strides=1, writeable=False):
     """Get block-wise view of an 2-D array.
 
     Args:
@@ -879,7 +879,7 @@ def get_blockwise_view(input_2D, block_size=8, stride=1, writeable=False):
             or a list of two integers specifying the height and width of the block respectively.
             Default is 8.
 
-        stride: (int or [int, int]) The stride between the blocks. The format is similar to "patch_size".
+        strides: (int or [int, int]) The stride between the blocks. The format is similar to "patch_size".
             Default is 1.
         
         writeable: (bool) If set to False, the returned array will always be readonly.
@@ -896,15 +896,15 @@ def get_blockwise_view(input_2D, block_size=8, stride=1, writeable=False):
     block_size_h = block_size[0]
     block_size_v = block_size[-1]
 
-    if isinstance(stride, int):
-        stride = [stride]
+    if isinstance(strides, int):
+        strides = [strides]
 
-    stride_h = stride[0]
-    stride_v = stride[-1]
+    strides_h = strides[0]
+    strides_v = strides[-1]
 
-    # assert(not any([(w-block_size_h) % stride_h, (h-block_size_v) % stride_v]))
-    return as_strided(input_2D, shape=[(w-block_size_h)//stride_h+1, (h-block_size_v)//stride_v+1, block_size_h, block_size_v], 
-                    strides=(input_2D.strides[0]*stride_h, input_2D.strides[1]*stride_v, *input_2D.strides), writeable=writeable)
+    # assert(not any([(w-block_size_h) % strides_h, (h-block_size_v) % strides_v]))
+    return as_strided(input_2D, shape=[(w-block_size_h)//strides_h+1, (h-block_size_v)//strides_v+1, block_size_h, block_size_v], 
+                    strides=(input_2D.strides[0]*strides_h, input_2D.strides[1]*strides_v, *input_2D.strides), writeable=writeable)
 
 
 def BNNMDenoise(clip, lamda=0.01, block_size=8, **depth_args):
@@ -965,7 +965,7 @@ def BNNMDenoise_core(input_2D, block_size=8, lamda=0.01, copy=False):
     else:
         output_2D = input_2D
 
-    block_view = get_blockwise_view(output_2D, block_size=block_size, stride=block_size, writeable=True) # No overlapping
+    block_view = get_blockwise_view(output_2D, block_size=block_size, strides=block_size, writeable=True) # No overlapping
 
     # Soft-thresholding
     u, s, v = np.linalg.svd(block_view, full_matrices=False, compute_uv=True)
@@ -1397,7 +1397,8 @@ def SigmaFilter_core(img_2D, radius=3, thr=0.01):
     """
 
     pad_img = np.pad(img_2D, pad_width=radius, mode='constant')
-    img_view = as_strided(pad_img, shape=(*img_2D.shape, 2*radius+1, 2*radius+1), strides=pad_img.strides*2)
+    # img_view = as_strided(pad_img, shape=(*img_2D.shape, 2*radius+1, 2*radius+1), strides=pad_img.strides*2)
+    img_view = get_blockwise_view(pad_img, block_size=2*radius+1, strides=1)
     select = np.where(np.absolute(img_view - img_2D[..., np.newaxis, np.newaxis]) < thr, img_view, 0) # Choose pixels inside the intensity range
     flt = np.sum(select, axis=(2, 3)) / (np.count_nonzero(select, axis=(2, 3)) + 1e-7) # Compute the average
 
