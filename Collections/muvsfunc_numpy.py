@@ -10,6 +10,7 @@ VapourSynth functions:
     FGS
     FDD
     SSFDeband
+    SigmaFilter
 
 NumPy functions:
     L0Smooth_core
@@ -21,6 +22,7 @@ NumPy functions:
     FGS_2D_core
     FDD_2D_core
     SSFDeband_core
+    SigmaFilter_core
 """
 
 import functools
@@ -989,11 +991,11 @@ def FGS(clip, sigma=0.03, lamda=100, solver_iteration=3, solver_attenuation=4, *
 
         sigma: (float or function) The standard deviation of the gaussian kernel defined on reference image.
             It can also be a function which takes two inputs and operates on vector in NumPy. The size of the output should be identical to the input.
-            Default is 0.1.
+            Default is 0.03.
 
         lamda: (float) The balance between the fidelity term and the regularization term.
             It can be treated as the strength of smoothing on the source image.
-            Default is 900.
+            Default is 100.
 
         solver_iterations: (int) Number of iterations to perform.
             Default is 3.
@@ -1147,7 +1149,7 @@ def FDD(clip, sigma=0.03, lamda=100, beta=None, epsilon=1.2, solver_iteration=3,
 
         lamda: (float) The balance between the fidelity term and the regularization term.
             It can be treated as the strength of smoothing on the source image.
-            Default is 900.
+            Default is 100.
 
         beta: (float) Penalty parameter of augmented Lagrangian method. It will be increase during iteration by a factor of "epsilon".
             If it is None, it will be automatically set as sqrt(lamda)/2.
@@ -1259,7 +1261,7 @@ def FDD_2D_core(image_2D, joint_image_2D=None, sigma=0.03, lamda=100, beta=None,
 
 
 def SSFDeband(clip, thr=1, smooth_taps=2, edge_taps=3, strides=3, auto_scale_thr=True):
-    """Selective sparse debanding in VapourSynth
+    """Selective sparse filter debanding in VapourSynth
 
     Deband using a selective sparse filter which combines smooth region detection and banding reduction.
 
@@ -1272,9 +1274,12 @@ def SSFDeband(clip, thr=1, smooth_taps=2, edge_taps=3, strides=3, auto_scale_thr
             Default is 1.
 
         smooth_taps: (int) Taps of the sparse filter, the larger, the smoother.
-            Default is 1.
+            Default is 2.
 
         edge_taps: (int) Taps of the edge detector, the larger, smaller region will be smoothed.
+            Default is 3.
+
+        strides: (int) The stride of the sliding window.
             Default is 3.
 
         auto_scale_thr: (bool) Whether to automatically scale the "thr" according to the bit depth and sample type.
@@ -1301,7 +1306,7 @@ def SSFDeband(clip, thr=1, smooth_taps=2, edge_taps=3, strides=3, auto_scale_thr
 
 
 def SSFDeband_core(img_2D, thr=1, smooth_taps=2, edge_taps=3, strides=3, copy=False):
-    """Selective sparse debanding in NumPy
+    """Selective sparse filter debanding in NumPy
 
     For detailed documentation, please refer to the documentation of "SSFDeband" funcion in current library.
 
@@ -1321,7 +1326,7 @@ def SSFDeband_core(img_2D, thr=1, smooth_taps=2, edge_taps=3, strides=3, copy=Fa
     edge_buff = strides * max(0, smooth_taps - edge_taps)
 
     cropped = img_2D[buff:-buff, :]
-    # v_mask = np.isclose((img_2D[:-18, :], cropped) & isclose(img_2D[3:-15, :], cropped) & isclose(img_2D[6:-12, :], cropped) & isclose(img_2D[12:-6, :], cropped) & isclose(img_2D[15:-3, :], cropped) & isclose(img_2D[18:, :], cropped), atol=thr, rtol=0)
+    # v_mask = isclose((img_2D[:-18, :], cropped) & isclose(img_2D[3:-15, :], cropped) & isclose(img_2D[6:-12, :], cropped) & isclose(img_2D[12:-6, :], cropped) & isclose(img_2D[15:-3, :], cropped) & isclose(img_2D[18:, :], cropped), atol=thr, rtol=0)
     upper_view = as_strided(img_2D[edge_buff:, :], shape=[h-2*buff, w, edge_taps], strides=(*img_2D.strides, strides*img_2D.strides[0]))
     upper_mask = np.logical_and.reduce(isclose(upper_view, cropped[..., np.newaxis], thr=thr), axis=2)
     lower_view = as_strided(img_2D[buff+strides:, :], shape=[h-2*buff, w, edge_taps], strides=(*img_2D.strides, strides*img_2D.strides[0]))
@@ -1332,7 +1337,7 @@ def SSFDeband_core(img_2D, thr=1, smooth_taps=2, edge_taps=3, strides=3, copy=Fa
     cropped[:] = np.where(v_mask, v_smooth, cropped)
 
     cropped = img_2D[:, buff:-buff]
-    # h_mask = np.isclose((img_2D[:, :-18], cropped) & isclose(img_2D[:, 3:-15], cropped) & isclose(img_2D[:, 6:-12], cropped) & isclose(img_2D[:, 12:-6], cropped) & isclose(img_2D[:, 15:-3], cropped) & isclose(img_2D[:, 18:], cropped, atol=thr, rtol=0)
+    # h_mask = isclose((img_2D[:, :-18], cropped) & isclose(img_2D[:, 3:-15], cropped) & isclose(img_2D[:, 6:-12], cropped) & isclose(img_2D[:, 12:-6], cropped) & isclose(img_2D[:, 15:-3], cropped) & isclose(img_2D[:, 18:], cropped, atol=thr, rtol=0)
     left_view = as_strided(img_2D[:, edge_buff:], shape=[h, w-2*buff, edge_taps], strides=(*img_2D.strides, strides*img_2D.strides[1]))
     left_mask = np.logical_and.reduce(isclose(left_view, cropped[..., np.newaxis], thr=thr), axis=2)
     right_view = as_strided(img_2D[:, buff+strides:], shape=[h, w-2*buff, edge_taps], strides=(*img_2D.strides, strides*img_2D.strides[1]))
@@ -1343,3 +1348,57 @@ def SSFDeband_core(img_2D, thr=1, smooth_taps=2, edge_taps=3, strides=3, copy=Fa
     cropped[:] = np.where(h_mask, h_smooth, cropped)
 
     return img_2D.astype(img_2D_dtype, copy=False)
+
+
+def SigmaFilter(clip, radius=3, thr=0.01, **depth_args):
+    """Sigma filter in VapourSynth
+
+    Sigma filter is a local smoothing operator which replace the pixel to be processed 
+    by the average of only those neighboring pixels having their intensity within a 
+    fixed sigma range of the center pixel.
+
+    The special step to handle sharp spot noise described in (4) in the paper is ignored
+    for better detail preservation and lower computation.
+
+    All the internal calculations are done at 32-bit float. Each plane is processed separately
+
+    Args:
+        clip: Input clip.
+
+        radius: (int) Radius of the filtering window.
+            Default is 3.
+
+        thr: (int) Threshold of pixel selection.
+            Default is 0.01.
+
+    Ref:
+        [1] Lee, J. S. (1983). Digital image smoothing and the sigma filter. Computer vision, graphics, and image processing, 24(2), 255-269.
+
+    """
+
+    bits = clip.format.bits_per_sample
+    sampleType = clip.format.sample_type
+
+    clip = mvf.Depth(clip, depth=32, sample=vs.FLOAT, **depth_args)
+    clip = numpy_process(clip, functools.partial(SigmaFilter_core, radius=radius, thr=thr), per_plane=True)
+    clip = mvf.Depth(clip, depth=bits, sample=sampleType, **depth_args)
+
+    return clip
+
+
+def SigmaFilter_core(img_2D, radius=3, thr=0.01):
+    """Sigma filter in NumPy
+
+    The special step to handle sharp spot noise described in (4) in the paper is ignored 
+    for better detail preservation and lower computation.
+
+    For detailed documentation, please refer to the documentation of "SigmaFilter" funcion in current library.
+
+    """
+
+    pad_img = np.pad(img_2D, pad_width=radius, mode='constant')
+    img_view = as_strided(pad_img, shape=(*img_2D.shape, 2*radius+1, 2*radius+1), strides=pad_img.strides*2)
+    select = np.where(np.absolute(img_view - img_2D[..., np.newaxis, np.newaxis]) < thr, img_view, 0) # Choose pixels inside the intensity range
+    flt = np.sum(select, axis=(2, 3)) / (np.count_nonzero(select, axis=(2, 3)) + 1e-7) # Compute the average
+
+    return flt
