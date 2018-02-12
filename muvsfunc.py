@@ -3539,7 +3539,7 @@ def SSIM_downsample(clip, w, h, smooth=1, kernel='Bicubic', use_fmtc=False, epsi
     return out
 
 
-def LocalStatisticsMatching(src, ref, radius=1, **depth_args):
+def LocalStatisticsMatching(src, ref, radius=1, return_all=False, **depth_args):
     """Local statistics matcher
 
     Match the local statistics (mean, variance) of "src" with "ref".
@@ -3576,7 +3576,12 @@ def LocalStatisticsMatching(src, ref, radius=1, **depth_args):
 
     flt = core.std.Expr([src, src_mean, src_var, ref_mean, ref_var], ['x y - z sqrt {} + / b sqrt * a +'.format(epsilon)])
 
-    return mvf.Depth(flt, depth=bits, sample=sampleType, **depth_args)
+    flt = mvf.Depth(flt, depth=bits, sample=sampleType, **depth_args)
+
+    if return_all:
+        return flt, src_mean, src_var, ref_mean, ref_var
+    else:
+        return flt
 
 
 def LocalStatistics(clip, radius=1, **depth_args):
@@ -3587,7 +3592,7 @@ def LocalStatistics(clip, radius=1, **depth_args):
     All the internal calculations are done at 32-bit float.
 
     Args:
-        src, ref: Inputs.
+        clip: Inputs.
 
         radius: (int or function) If it is an integer, it specifies the radius of mean filter.
             It can also be a custom function.

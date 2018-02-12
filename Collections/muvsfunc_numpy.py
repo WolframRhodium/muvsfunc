@@ -32,11 +32,13 @@ import mvsfunc as mvf
 import numpy as np
 from numpy.lib.stride_tricks import as_strided
 
-def numpy_process(clip, numpy_function, per_plane=True, lock_source_array=True, **fun_args):
+def numpy_process(clips, numpy_function, per_plane=True, lock_source_array=True, **fun_args):
     """Helper function for filtering clip in NumPy
 
     Args:
-        clip: Input cilp.
+        clips: Input cilp.
+            It can also be a list of clips. If so, clips will be passed to "numpy_function" in order.
+            The returned clip should has the same format as the first clip in the list.
 
         numpy_function: Spatial function to process numpy data. It should not change the dimensions or data type of its input.
             The format of the data provided to the function is "HWC", 
@@ -58,37 +60,71 @@ def numpy_process(clip, numpy_function, per_plane=True, lock_source_array=True, 
 
     # The following code is modified from https://github.com/KotoriCANOE/MyTF/blob/master/utils/vshelper.py
     def FLT(n, f):
-        fout = f.copy()
-        planes = fout.format.num_planes
-        if per_plane:
-            for p in range(planes):
-                s = np.asarray(f.get_read_array(p))
-                if lock_source_array:
-                    s.flags.writeable = False # Lock the source data, making it read-only
+        if not isinstance(f, list): # single input
+            fout = f.copy()
+            planes = fout.format.num_planes
+            if per_plane:
+                for p in range(planes):
+                    s = np.asarray(f.get_read_array(p))
+                    s.flags.writeable = not lock_source_array # Lock the source data, making it read-only
+
+                    fs = numpy_function(s, **fun_args)
+
+                    d = np.asarray(fout.get_write_array(p))
+                    np.copyto(d, fs)
+                    del d
+            else:
+                s_list = []
+                for p in range(planes):
+                    arr = np.asarray(f.get_read_array(p)) # This is a 2-D array
+                    s_list.append(arr)
+                s = np.stack(s_list, axis=2) # "s" is a 3-D array
+                s.flags.writeable = not lock_source_array # Lock the source data, making it read-only
 
                 fs = numpy_function(s, **fun_args)
 
-                d = np.asarray(fout.get_write_array(p))
-                np.copyto(d, fs)
-                del d
-        else:
-            s_list = []
-            for p in range(planes):
-                arr = np.asarray(f.get_read_array(p)) # This is a 2-D array
-                s_list.append(arr)
-            s = np.stack(s_list, axis=2) # "s" is a 3-D array
-            if lock_source_array:
-                s.flags.writeable = False # Lock the source data, making it read-only
+                for p in range(planes):
+                    d = np.asarray(fout.get_write_array(p))
+                    np.copyto(d, fs[:, :, p])
+                    del d
+            return fout
+        else: # multiple input
+            fout = f[0].copy()
+            planes = fout.format.num_planes
+            if per_plane:
+                for p in range(planes):
+                    s_list = []
+                    for frame in f:
+                        s_list.append(np.asarray(frame.get_read_array(p)))
+                        s_list[-1].flags.writeable = not lock_source_array # Lock the source data, making it read-only
 
-            fs = numpy_function(s, **fun_args)
+                    fs = numpy_function(*s_list, **fun_args)
 
-            for p in range(planes):
-                d = np.asarray(fout.get_write_array(p))
-                np.copyto(d, fs[:, :, p])
-                del d
-        return fout
+                    d = np.asarray(fout.get_write_array(p))
+                    np.copyto(d, fs)
+                    del d
+            else:
+                s_list = []
+                for frame in f:
+                    plane_list = []
+                    for p in range(planes):
+                        arr = np.asarray(frame.get_read_array(p))
+                        plane_list.append(arr)
+                    s_list.append(np.stack(plane_list, axis=2))
+                    s_list[-1].flags.writeable = not lock_source_array # Lock the source data, making it read-only
 
-    flt = core.std.ModifyFrame(clip, clip, FLT)
+                fs = numpy_function(*s_list, **fun_args)
+
+                for p in range(planes):
+                    d = np.asarray(fout.get_write_array(p))
+                    np.copyto(d, fs[:, :, p])
+                    del d
+            return fout
+
+    if not isinstance(clips, list):
+        clips = [clips]
+
+    flt = core.std.ModifyFrame(clips[0], clips, FLT)
 
     return flt
 
@@ -975,7 +1011,7 @@ def BNNMDenoise_core(input_2D, block_size=8, lamda=0.01, copy=False):
     return output_2D
 
 
-def FGS(clip, sigma=0.03, lamda=100, solver_iteration=3, solver_attenuation=4, **depth_args):
+def FGS(clip, ref=None, sigma=0.03, lamda=100, solver_iteration=3, solver_attenuation=4, **depth_args):
     """Fast Global Smoothing in VapourSynth
 
     Fast global smoother is a spatially inhomogeneous edge-preserving image smoothing technique, which has a comparable
@@ -988,6 +1024,11 @@ def FGS(clip, sigma=0.03, lamda=100, solver_iteration=3, solver_attenuation=4, *
 
     Args:
         clip: Input clip.
+
+        ref: (clip) Reference clip used to compute the coefficients.
+            It must has the same clip properties as 'input'.
+            If it is None, it will be set to input.
+            Default is None.
 
         sigma: (float or function) The standard deviation of the gaussian kernel defined on reference image.
             It can also be a function which takes two inputs and operates on vector in NumPy. The size of the output should be identical to the input.
@@ -1016,6 +1057,11 @@ def FGS(clip, sigma=0.03, lamda=100, solver_iteration=3, solver_attenuation=4, *
     sampleType = clip.format.sample_type
 
     clip = mvf.Depth(clip, depth=32, sample=vs.FLOAT, **depth_args)
+
+    if ref is not None:
+        ref = mvf.Depth(ref, depth=32, sample=vs.FLOAT, **depth_args)
+        clip = [clip, ref]
+
     clip = numpy_process(clip, functools.partial(FGS_2D_core, sigma=sigma, lamda=lamda, 
         solver_iteration=solver_iteration, solver_attenuation=solver_attenuation), per_plane=True, copy=True)
     clip = mvf.Depth(clip, depth=bits, sample=sampleType, **depth_args)
@@ -1041,8 +1087,6 @@ def FGS_2D_core(image_2D, joint_image_2D=None, sigma=0.03, lamda=100, solver_ite
 
     if joint_image_2D is None:
         joint_image_2D = image_2D
-    else:
-        raise RuntimeError("This feature has not been implemented yet.")
 
     h, w = image_2D.shape
 
@@ -1128,7 +1172,7 @@ def FGS_2D_core(image_2D, joint_image_2D=None, sigma=0.03, lamda=100, solver_ite
     """
 
 
-def FDD(clip, sigma=0.03, lamda=100, beta=None, epsilon=1.2, solver_iteration=3, **depth_args):
+def FDD(clip, ref=None, sigma=0.03, lamda=100, beta=None, epsilon=1.2, solver_iteration=3, **depth_args):
     """Fast Domain Decomposition in VapourSynth
 
     Fast domain decomposition is a fast and linear time algorithm for global edge-preserving smoothing technique.
@@ -1141,6 +1185,11 @@ def FDD(clip, sigma=0.03, lamda=100, beta=None, epsilon=1.2, solver_iteration=3,
 
     Args:
         clip: Input clip.
+
+        ref: (clip) Reference clip used to compute the coefficients.
+            It must has the same clip properties as 'input'.
+            If it is None, it will be set to input.
+            Default is None.
 
         sigma: (float or function) The standard deviation of the gaussian kernel defined on reference image.
             It can also be a function which takes two inputs and operates on vector in NumPy. The size of the output should be identical to the input.
@@ -1176,6 +1225,11 @@ def FDD(clip, sigma=0.03, lamda=100, beta=None, epsilon=1.2, solver_iteration=3,
         beta = math.sqrt(lamda) / 2
 
     clip = mvf.Depth(clip, depth=32, sample=vs.FLOAT, **depth_args)
+
+    if ref is not None:
+        ref = mvf.Depth(ref, depth=32, sample=vs.FLOAT, **depth_args)
+        clip = [clip, ref]
+
     clip = numpy_process(clip, functools.partial(FDD_2D_core, sigma=sigma, lamda=lamda, beta=beta, 
         epsilon=epsilon, solver_iteration=solver_iteration), per_plane=True, copy=True)
     clip = mvf.Depth(clip, depth=bits, sample=sampleType, **depth_args)
@@ -1201,8 +1255,6 @@ def FDD_2D_core(image_2D, joint_image_2D=None, sigma=0.03, lamda=100, beta=None,
 
     if joint_image_2D is None:
         joint_image_2D = image_2D
-    else:
-        raise RuntimeError("This feature has not been implemented yet.")
 
     h, w = image_2D.shape
 
