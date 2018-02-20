@@ -2,7 +2,7 @@
 Muonium's VapourSynth functions
 
 ### Files
-`muvsfunc.py` is the main script. It contains some algorithms like `GradFun3`, `GuidedFilter`, some helper functions like `MergeChroma`, and some ideas that I develop like `LDMerge`, `AnimeMask`.
+`muvsfunc.py` is the main script. It contains some algorithms like `GradFun3`, `GuidedFilter`, `TextSub16`, some helper functions like `MergeChroma`, and some ideas that I develop like `LDMerge`, `AnimeMask`.
 
 `muvsfunc_misc.py` is a complement of the previous script, containing some out-dated algorithms like `SSR`(Single-scale Retinex), some helper functions like `gauss`, `band_merge`, and also one of my idea named `detail_enhancement`. It may or may not be merged to the main script some day.
 

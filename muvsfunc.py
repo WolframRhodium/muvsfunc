@@ -3697,6 +3697,7 @@ def TextSub16(src, file, mod=False, tv_range=True, matrix=None, dither=None, **v
         submaskC = core.resize.Bilinear(submask, sw // 2, sh // 2, format=vs.GRAY16, range_in=True, range=True, src_left=-0.5)
     else:
         raise TypeError(funcName + 'the subsampling of \"src\" must be 444/422/420!')
+
     submask = core.std.ShufflePlanes([submaskY, submaskC], [0, 0, 0], vs.YUV)
 
     last = core.resize.Bicubic(src16, format=vs.RGB24, matrix_in_s=matrix, range=tv_range, dither_type=dither)
