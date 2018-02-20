@@ -43,6 +43,7 @@ Functions:
     SSIM_downsample
     LocalStatisticsMatching
     LocalStatistics
+    TextSub16
 '''
 
 import functools
@@ -3618,3 +3619,93 @@ def LocalStatistics(clip, radius=1, **depth_args):
     var = expectation(core.std.Expr([clip, mean], ['x y - dup *']))
 
     return clip, mean, var
+
+
+def TextSub16(src, file, mod=False, tv_range=True, matrix=None, dither=None, **vsfilter_args):
+    """TextSub16 for VapourSynth
+
+    Author: mawen1250 (http://nmm.me/109)
+
+    Unofficial description:
+        Generate mask in YUV and use it to mask high-precision subtitles overlayed in RGB.
+
+    Args:
+        src: Input clip, must be of YUV color family.
+
+        file: Path to subtitle.
+
+        mod: (bool) Whether to use VSFilterMod. If not, VSFilter will be used.
+            Default is False.
+
+        tv_range: (bool) Define if input clip is of tv range(limited range).
+            Default is True.
+
+        matrix: (int|str) Color matrix of input clip.
+            Default is None, guessed according to the color family and size of input clip.
+
+        dither: (str) Dithering method of vszimg.
+            The following dithering methods are available: "none", "ordered", "random", "error_diffusion".
+            Default is "error_diffusion".
+
+        vsfilter_args: (dict) Additional arguments passed to subtitle plugin.
+            Default is {}.
+
+    Requirments:
+        1. VSFilter (https://github.com/HomeOfVapourSynthEvolution/VSFilter)
+        2. VSFilterMod (https://github.com/HomeOfVapourSynthEvolution/VSFilterMod)
+
+    """
+
+    core = vs.get_core()
+    funcName = 'TextSub16'
+
+    if not isinstance(src, vs.VideoNode) or src.format.color_family != vs.YUV:
+        raise TypeError(funcName + ': \"src\" must be a YUV clip!')
+
+    matrix = mvf.GetMatrix(src, matrix, True)
+    css = src.format.name[3:6]
+    sw = src.width
+    sh = src.height
+    
+    if dither is None:
+        dither = 'error_diffusion'
+
+    if src.format.id != vs.YUV420P8:
+        src8 = core.resize.Bicubic(src, format=vs.YUV420P8, range_in=tv_range)
+    else:
+        src8 = src
+
+    src16 = mvf.Depth(src, depth=16, sample=vs.INTEGER, fulls=tv_range, dither='none')
+
+    if mod:
+        src8sub = core.vsfm.TextSubMod(src8, file=file, **vsfilter_args)
+    else:
+        src8sub = core.vsf.TextSub(src8, file=file, **vsfilter_args)
+
+    submask = core.std.Expr([src8, src8sub], ['x y = 0 255 ?']).resize.Bilinear(format=vs.YUV444P8, range=True, range_in=True)
+    submaskY = mvf.GetPlane(submask, 0)
+    submaskU = mvf.GetPlane(submask, 1)
+    submaskV = mvf.GetPlane(submask, 2)
+    submask = mvf.Max(mvf.Max(submaskY, submaskU), submaskV).std.Inflate()
+    submask = core.std.ShufflePlanes([submask], [0, 0, 0], vs.YUV)
+    submaskY = core.resize.Bilinear(submask, format=vs.GRAY16, range_in=True, range=True)
+    if css == '444':
+        submaskC = submaskY
+    elif css == '422':
+        submaskC = core.resize.Bilinear(submask, sw // 2, sh, format=vs.GRAY16, range_in=True, range=True, src_left=-0.5)
+    elif css == '420':
+        submaskC = core.resize.Bilinear(submask, sw // 2, sh // 2, format=vs.GRAY16, range_in=True, range=True, src_left=-0.5)
+    else:
+        raise TypeError(funcName + 'the subsampling of \"src\" must be 444/422/420!')
+    submask = core.std.ShufflePlanes([submaskY, submaskC], [0, 0, 0], vs.YUV)
+
+    last = core.resize.Bicubic(src16, format=vs.RGB24, matrix_in_s=matrix, range=tv_range, dither_type=dither)
+
+    if mod:
+        last = core.vsfm.TextSubMod(last, file=file, **vsfilter_args)
+    else:
+        last = core.vsf.TextSub(last, file=file, **vsfilter_args)
+
+    sub16 = core.resize.Bicubic(last, format=src16.format.id, matrix_s=matrix, range=tv_range, dither_type=dither)
+
+    return core.std.MaskedMerge(src16, sub16, submask, planes=[0, 1, 2])
