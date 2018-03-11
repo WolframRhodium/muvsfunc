@@ -45,7 +45,7 @@ Functions:
     LocalStatistics
     TextSub16
 '''
-
+from vapoursynth import core
 import functools
 import math
 import vapoursynth as vs
@@ -84,7 +84,6 @@ def LDMerge(flt_h, flt_v, src, mrad=0, show=0, planes=None, convknl=1, conv_div=
 
     """
 
-    core = vs.get_core()
     funcName = 'LDMerge'
 
     if not isinstance(src, vs.VideoNode):
@@ -168,7 +167,6 @@ def Compare(src, flt, power=1.5, chroma=False, mode=2):
 
     """
 
-    core = vs.get_core()
     funcName = 'Compare'
 
     if not isinstance(src, vs.VideoNode):
@@ -268,7 +266,6 @@ def ExInpand(input, mrad=0, mode='rectangle', planes=None):
 
     """
 
-    core = vs.get_core()
     funcName = 'ExInpand'
 
     if not isinstance(input, vs.VideoNode):
@@ -350,7 +347,6 @@ def InDeflate(input, msmooth=0, planes=None):
 
     """
 
-    core = vs.get_core()
     funcName = 'InDeFlate'
 
     if not isinstance(input, vs.VideoNode):
@@ -398,7 +394,6 @@ def MultiRemoveGrain(input, mode=0, loop=1):
 
     """
 
-    core = vs.get_core()
     funcName = 'MultiRemoveGrain'
 
     if not isinstance(input, vs.VideoNode):
@@ -445,7 +440,6 @@ def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=
 
     """
 
-    core = vs.get_core()
     funcName = 'GradFun3'
 
     if not isinstance(src, vs.VideoNode):
@@ -622,7 +616,6 @@ def GF3_smoothgrad_multistage(src, ref, radius, thr, elast, planes):
 
 
 def GF3_smoothgrad_multistage_3(src, radius, thr, elast, planes):
-    core = vs.get_core()
 
     ref = SmoothGrad(src, radius=radius // 3, thr=thr * 0.8, elast=elast)
     last = BoxFilter(src, radius=radius, planes=planes)
@@ -632,7 +625,6 @@ def GF3_smoothgrad_multistage_3(src, radius, thr, elast, planes):
 
 
 def GF3_dfttest(src, ref, radius, thr, elast, planes):
-    core = vs.get_core()
 
     hrad = max(radius * 3 // 4, 1)
     last = core.dfttest.DFTTest(src, sigma=hrad * thr * thr * 32, sbsize=hrad * 4,
@@ -643,7 +635,6 @@ def GF3_dfttest(src, ref, radius, thr, elast, planes):
 
 
 def GF3_bilateral_multistage(src, ref, radius, thr, elast, planes):
-    core = vs.get_core()
 
     last = core.bilateral.Bilateral(src, ref=ref, sigmaS=radius / 2, sigmaR=thr / 255, planes=planes, algorithm=0) # The use of "thr" may be wrong
 
@@ -653,7 +644,6 @@ def GF3_bilateral_multistage(src, ref, radius, thr, elast, planes):
 
 
 def Build_gf3_range_mask(src, radius=1):
-    core = vs.get_core()
 
     last = src
 
@@ -694,7 +684,6 @@ def AnimeMask(input, shift=0, expr=None, mode=1, resample_args=None):
 
     """
 
-    core = vs.get_core()
     funcName = 'AnimeMask'
 
     if not isinstance(input, vs.VideoNode):
@@ -750,7 +739,6 @@ def AnimeMask2(input, r=1.2, expr=None, mode=1):
 
     """
 
-    core = vs.get_core()
     funcName = 'AnimeMask2'
 
     if not isinstance(input, vs.VideoNode):
@@ -809,7 +797,6 @@ def PolygonExInpand(input, shift=0, shape=0, mixmode=0, noncentral=False, step=1
 
     """
 
-    core = vs.get_core()
     funcName = 'PolygonExInpand'
 
     if not isinstance(input, vs.VideoNode):
@@ -916,7 +903,6 @@ def Luma(input, plane=0, power=4):
 
     """
 
-    core = vs.get_core()
     funcName = 'Luma'
 
     if not isinstance(input, vs.VideoNode):
@@ -945,7 +931,6 @@ def ediaa(a):
 
     """
 
-    core = vs.get_core()
     funcName = 'ediaa'
 
     if not isinstance(a, vs.VideoNode):
@@ -970,7 +955,6 @@ def nnedi3aa(a):
 
     """
 
-    core = vs.get_core()
     funcName = 'nnedi3aa'
 
     if not isinstance(a, vs.VideoNode):
@@ -995,7 +979,6 @@ def maa(input):
 
     """
 
-    core = vs.get_core()
     funcName = 'maa'
 
     if not isinstance(input, vs.VideoNode):
@@ -1068,7 +1051,6 @@ def SharpAAMcmod(orig, dark=0.2, thin=10, sharp=150, smooth=-1, stabilize=False,
 
     """
 
-    core = vs.get_core()
     funcName = 'SharpAAMcmod'
 
     if not isinstance(orig, vs.VideoNode):
@@ -1175,7 +1157,6 @@ def TEdge(input, min=0, max=65535, planes=None, rshift=0):
 
     """
 
-    core = vs.get_core()
     funcName = 'TEdge'
 
     if not isinstance(input, vs.VideoNode):
@@ -1215,7 +1196,6 @@ def Sort(input, order=1, planes=None, mode='max'):
 
     """
 
-    core = vs.get_core()
     funcName = 'Sort'
 
     if not isinstance(input, vs.VideoNode):
@@ -1284,7 +1264,6 @@ def Soothe_mod(input, source, keep=24, radius=1, scenechange=32, use_misc=True):
 
     """
 
-    core = vs.get_core()
     funcName = 'Soothe_mod'
 
     if not isinstance(input, vs.VideoNode):
@@ -1350,7 +1329,6 @@ def TemporalSoften(input, radius=4, scenechange=15):
 
     """
 
-    core = vs.get_core()
     funcName = 'TemporalSoften'
 
     if not isinstance(input, vs.VideoNode):
@@ -1405,7 +1383,6 @@ def FixTelecinedFades(input, mode=0, threshold=[0.0], color=[0.0], full=None, pl
 
     """
 
-    core = vs.get_core()
     funcName = 'FixTelecinedFades'
 
     # set parameters
@@ -1570,7 +1547,6 @@ def TCannyHelper(input, t_h=8.0, t_l=1.0, plane=0, returnAll=False, **canny_args
 
     """
 
-    core = vs.get_core()
     funcName = 'TCannyHelper'
 
     if not isinstance(input, vs.VideoNode):
@@ -1612,7 +1588,6 @@ def MergeChroma(clip1, clip2, weight=1.0):
 
     """
 
-    core = vs.get_core()
     funcName = 'MergeChroma'
 
     if not isinstance(clip1, vs.VideoNode):
@@ -1644,7 +1619,7 @@ def MergeChroma(clip1, clip2, weight=1.0):
         return output
 
 
-def firniture(clip, width, height, kernel='binomial7', taps=None, gamma=False, **resample_args):
+def firniture(clip, width, height, kernel='binomial7', taps=None, gamma=False, transfer='709', **resample_args):
     '''5 new interpolation kernels (via fmtconv)
 
     Proposed by *.mp4 guy (https://forum.doom9.org/showthread.php?t=166080)
@@ -1673,9 +1648,8 @@ def firniture(clip, width, height, kernel='binomial7', taps=None, gamma=False, *
 
     '''
 
-    import nnedi3_resample as nnrs
+    #import nnedi3_resample as nnrs
 
-    core = vs.get_core()
     funcName = 'firniture'
 
     if not isinstance(clip, vs.VideoNode):
@@ -1693,16 +1667,18 @@ def firniture(clip, width, height, kernel='binomial7', taps=None, gamma=False, *
     if taps is None:
         taps = int(kernel[-1])
 
-    if clip.format.bits_per_sample != 16:
-        clip = mvf.Depth(clip, 16)
+    #if clip.format.bits_per_sample != 16:
+        #clip = mvf.Depth(clip, 16)
 
     if gamma:
-        clip = nnrs.GammaToLinear(clip)
+        #clip = nnrs.GammaToLinear(clip)
+        clip = core.resize.Bicubic(clip, transfer_s="linear")
 
     clip = core.fmtc.resample(clip, width, height, kernel='impulse', impulse=impulseCoefficents[kernel], kovrspl=2, taps=taps, **resample_args)
 
     if gamma:
-        clip = nnrs.LinearToGamma(clip)
+        #clip = nnrs.LinearToGamma(clip)
+        clip = core.resize.Bicubic(clip, transfer_s=transfer)
 
     return clip
 
@@ -1745,7 +1721,6 @@ def BoxFilter(input, radius=16, radius_v=None, planes=None, fmtc_conv=0, radius_
 
     '''
 
-    core = vs.get_core()
     funcName = 'BoxFilter'
 
     if not isinstance(input, vs.VideoNode):
@@ -1847,7 +1822,6 @@ def SmoothGrad(input, radius=9, thr=0.25, ref=None, elast=3.0, planes=None, **li
 
     '''
 
-    core = vs.get_core()
     funcName = 'SmoothGrad'
 
     if not isinstance(input, vs.VideoNode):
@@ -1881,7 +1855,6 @@ def DeFilter(input, fun, iter=10, planes=None, **fun_args):
 
     '''
 
-    core = vs.get_core()
     funcName = 'DeFilter'
 
     if not isinstance(input, vs.VideoNode):
@@ -1936,7 +1909,6 @@ def ColorBarsHD(clip=None, width=1288, height=720):
 
     '''
 
-    core = vs.get_core()
     funcName = 'ColorBarsHD'
     from mt_lutspa import lutspa
 
@@ -2061,7 +2033,6 @@ def SeeSaw(clp, denoised=None, NRlimit=2, NRlimit2=None, Sstr=1.5, Slimit=None, 
 
     """
 
-    core = vs.get_core()
     funcName = 'SeeSaw'
 
     if not isinstance(clp, vs.VideoNode) or clp.format.color_family not in [vs.GRAY, vs.YUV, vs.YCOCG]:
@@ -2160,7 +2131,6 @@ def SeeSaw_sharpen2(clp, strength, power, zp, lodmp, hidmp, rgmode):
 
     """
 
-    core = vs.get_core()
     funcName = 'SeeSaw_sharpen2'
 
     if not isinstance(clp, vs.VideoNode) or clp.format.color_family not in [vs.GRAY, vs.YUV, vs.YCOCG]:
@@ -2199,7 +2169,6 @@ def SeeSaw_SootheSS(sharp, orig, sootheT=25, sootheS=0):
 
     """
 
-    core = vs.get_core()
     funcName = 'SeeSaw_SootheSS'
 
     if not isinstance(sharp, vs.VideoNode) or sharp.format.color_family not in [vs.GRAY, vs.YUV, vs.YCOCG]:
@@ -2259,7 +2228,6 @@ def abcxyz(clp, rad=3.0, ss=1.5):
 
     """
 
-    core = vs.get_core()
     funcName = 'abcxyz'
 
     if not isinstance(clp, vs.VideoNode) or clp.format.color_family not in [vs.GRAY, vs.YUV, vs.YCOCG]:
@@ -2313,7 +2281,6 @@ def Sharpen(clip, amountH=1.0, amountV=None, planes=None):
 
     """
 
-    core = vs.get_core()
     funcName = 'Sharpen'
 
     if not isinstance(clip, vs.VideoNode):
@@ -2370,7 +2337,6 @@ def Blur(clip, amountH=1.0, amountV=None, planes=None):
 
     """
 
-    core = vs.get_core()
     funcName = 'Blur'
 
     if not isinstance(clip, vs.VideoNode):
@@ -2443,7 +2409,6 @@ def BlindDeHalo3(clp, rx=3.0, ry=3.0, strength=125, lodamp=0, hidamp=0, sharpnes
 
     """
 
-    core = vs.get_core()
     funcName = 'BlindDeHalo3'
 
     if not isinstance(clp, vs.VideoNode):
@@ -2545,7 +2510,6 @@ def dfttestMC(input, pp=None, mc=2, mdg=False, planes=None, sigma=None, sbsize=N
 
     """
 
-    core = vs.get_core()
     funcName = 'dfttestMC'
 
     if not isinstance(input, vs.VideoNode) or input.format.color_family not in [vs.GRAY, vs.YUV, vs.YCOCG]:
@@ -2637,14 +2601,12 @@ def dfttestMC(input, pp=None, mc=2, mdg=False, planes=None, sigma=None, sbsize=N
 
 def TurnLeft(clip):
     """Avisynth's internel function TurnLeft()"""
-    core = vs.get_core()
 
     return core.std.Transpose(clip).std.FlipVertical()
 
 
 def TurnRight(clip):
     """Avisynth's internel function TurnRight()"""
-    core = vs.get_core()
 
     return core.std.FlipVertical(clip).std.Transpose()
 
@@ -2695,8 +2657,7 @@ def BalanceBorders(c, cTop=0, cBottom=0, cLeft=0, cRight=0, thresh=128, blur=999
         last = muf.BalanceBorders(last, 3, 3, 2, 2, thresh=8, blur=4)  # Slightly changes the "main problem area"
 
     """
-
-    core = vs.get_core()
+    
     funcName = 'BalanceBorders'
 
     if not isinstance(c, vs.VideoNode):
@@ -2738,7 +2699,6 @@ def BalanceBorders(c, cTop=0, cBottom=0, cLeft=0, cRight=0, thresh=128, blur=999
 
 def BalanceTopBorder(c, cTop, thresh, blur):
     """BalanceBorders()'s helper function"""
-    core = vs.get_core()
 
     cWidth = c.width
     cHeight = c.height
@@ -2798,7 +2758,6 @@ def DisplayHistogram(clip, factor=None):
 
     """
 
-    core = vs.get_core()
     funcName = 'DisplayHistogram'
 
     if not isinstance(clip, vs.VideoNode):
@@ -2888,7 +2847,7 @@ def GuidedFilter(input, guidance=None, radius=4, regulation=0.01, regulation_mod
             This method subsamples the filtering input image and the guidance image,
             computes the local linear coefficients, and upsamples these coefficients.
             The upsampled coefficients are adopted on the original guidance image to produce the output.
-            This method reduces the time complexity from O(N) to O(N^2) for a subsampling ratio s.
+            This method reduces the time complexity from O(N) to O(N/s^2) for a subsampling ratio s.
             Default is True if the version number of VapourSynth is less than 39, otherwise is False.
 
         subsampling_ratio: (float) Only works when fast=True.
@@ -2916,7 +2875,6 @@ def GuidedFilter(input, guidance=None, radius=4, regulation=0.01, regulation_mod
 
     """
 
-    core = vs.get_core()
     funcName = 'GuidedFilter'
 
     if not isinstance(input, vs.VideoNode):
@@ -3075,7 +3033,6 @@ def GuidedFilterColor(input, guidance, radius=4, regulation=0.01, use_gauss=Fals
 
     """
 
-    core = vs.get_core()
     funcName = 'GuidedFilterColor'
 
     if not isinstance(input, vs.VideoNode) or input.format.num_planes > 1:
@@ -3250,7 +3207,6 @@ def GMSD(clip1, clip2, plane=None, downsample=True, c=0.0026, show_map=False, **
 
     """
 
-    core = vs.get_core()
     funcName = 'GMSD'
 
     if not isinstance(clip1, vs.VideoNode):
@@ -3365,7 +3321,6 @@ def SSIM(clip1, clip2, plane=None, downsample=True, k1=0.01, k2=0.03, fun=None, 
 
     """
 
-    core = vs.get_core()
     funcName = 'SSIM'
 
     if not isinstance(clip1, vs.VideoNode):
@@ -3447,8 +3402,6 @@ def IQA_downsample(clip):
     The “clip” is first filtered by a 2x2 average filter, and then down-sampled by a factor of 2.
     """
 
-    core = vs.get_core()
-
     return core.std.Convolution(clip, [1, 1, 0, 1, 1, 0, 0, 0, 0]).resize.Point(clip.width // 2, clip.height // 2, src_left=-1, src_top=-1)
 
 
@@ -3496,8 +3449,6 @@ def SSIM_downsample(clip, w, h, smooth=1, kernel='Bicubic', use_fmtc=False, epsi
     """
 
     funcName = 'SSIM_downsample'
-
-    core = vs.get_core()
 
     if not isinstance(clip, vs.VideoNode):
         raise TypeError(funcName + ': \"clip\" must be a clip!')
@@ -3561,8 +3512,6 @@ def LocalStatisticsMatching(src, ref, radius=1, return_all=False, **depth_args):
 
     funcName = 'LocalStatisticsMatching'
 
-    core = vs.get_core()
-
     if not isinstance(src, vs.VideoNode):
         raise TypeError(funcName + ': \"src\" must be a clip!')
     if not isinstance(ref, vs.VideoNode):
@@ -3605,8 +3554,6 @@ def LocalStatistics(clip, radius=1, **depth_args):
     """
 
     funcName = 'LocalStatistics'
-
-    core = vs.get_core()
 
     if not isinstance(clip, vs.VideoNode):
         raise TypeError(funcName + ': \"clip\" must be a clip!')
@@ -3656,7 +3603,6 @@ def TextSub16(src, file, mod=False, tv_range=True, matrix=None, dither=None, **v
 
     """
 
-    core = vs.get_core()
     funcName = 'TextSub16'
 
     if not isinstance(src, vs.VideoNode) or src.format.color_family != vs.YUV:
