@@ -44,6 +44,8 @@ Functions:
     LocalStatisticsMatching
     LocalStatistics
     TextSub16
+    TMinBlur
+    mdering
 '''
 from vapoursynth import core
 import functools
@@ -3633,7 +3635,6 @@ def TextSub16(src, file, mod=False, tv_range=True, matrix=None, dither=None, **v
     submaskU = mvf.GetPlane(submask, 1)
     submaskV = mvf.GetPlane(submask, 2)
     submask = mvf.Max(mvf.Max(submaskY, submaskU), submaskV).std.Inflate()
-    submask = core.std.ShufflePlanes([submask], [0, 0, 0], vs.YUV)
     submaskY = core.resize.Bilinear(submask, format=vs.GRAY16, range_in=True, range=True)
     if css == '444':
         submaskC = submaskY
@@ -3656,3 +3657,75 @@ def TextSub16(src, file, mod=False, tv_range=True, matrix=None, dither=None, **v
     sub16 = core.resize.Bicubic(last, format=src16.format.id, matrix_s=matrix, range=tv_range, dither_type=dither)
 
     return core.std.MaskedMerge(src16, sub16, submask, planes=[0, 1, 2])
+
+
+def TMinBlur(clip, r=1, thr=2):
+    """Thresholded MinBlur
+
+    Use another MinBlur with larger radius to guide the smoothing effect of current MinBlur.
+
+    For detailed motivation and description (in Chinese), see:
+    https://gist.github.com/WolframRhodium/1e3ae9276d70aa1ddc93ea833cdce9c6#file-05-minblurmod-md
+
+    Args:
+        clip: Input clip.
+
+        r: (int) Radius of MinBlur() filter.
+            Default is 1.
+
+        thr: (float) Threshold in 8 bits scale.
+            If it is larger than 255, the output will be identical to original MinBlur().
+            Default is 2.
+
+    """
+
+    funcName = 'TMinBlur'
+
+    if not isinstance(clip, vs.VideoNode) or clip.format.sample_type != vs.INTEGER:
+        raise TypeError(funcName + ': \"clip\" must be an integer clip!')
+
+    thr = scale(thr, clip.format.bits_per_sample)
+
+    pre1 = haf.MinBlur(clip, r=r)
+    pre2 = haf.MinBlur(clip, r=r+1)
+
+    return core.std.Expr([clip, pre1, pre2], ['y z - abs {thr} <= y x ?'.format(thr=thr)])
+
+
+def mdering(clip, thr=2):
+    """A simple light and bright DCT ringing remover
+
+    It is a special instance of TMinBlur (r=1 and only filter the bright part) for higher performance.
+    Post-processing is needed to reduce degradation of flat and texture areas.
+
+    Args:
+        clip: Input clip.
+
+        thr: (float) Threshold in 8 bits scale.
+            Default is 2.
+
+    """
+
+    funcName = 'mdering'
+
+    if not isinstance(clip, vs.VideoNode) or clip.format.sample_type != vs.INTEGER:
+        raise TypeError(funcName + ': \"clip\" must be an integer clip!')
+
+    bits = clip.format.bits_per_sample
+    thr = scale(thr, bits)
+
+    rg11_1 = core.rgvs.RemoveGrain(clip, 11)
+    rg11_2 = core.std.Convolution(rg11_1, [1]*9)
+    rg4_1 = core.std.Median(clip)
+
+    if bits <= 12:
+        rg4_2 = core.ctmf.CTMF(clip, radius=2)
+    else:
+        rg4_2 = core.fmtc.bitdepth(clip, bits=12, dmode=1).ctmf.CTMF(radius=2).fmtc.bitdepth(bits=bits)
+        rg4_2 = mvf.LimitFilter(clip, rg4_2, thr=0.0625, elast=2)
+
+    minblur_1 = core.std.Expr([clip, rg11_1, rg4_1], ['x y - x z - xor x x y - abs x z - abs < y z ? ?'])
+    minblur_2 = core.std.Expr([clip, rg11_2, rg4_2], ['x y - x z - xor x x y - abs x z - abs < y z ? ?'])
+    dering = core.std.Expr([clip, minblur_1, minblur_2], ['y z - abs {thr} <= y x <= and y x ?'.format(thr=thr)])
+
+    return dering
