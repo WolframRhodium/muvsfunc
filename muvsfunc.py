@@ -569,7 +569,7 @@ def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=
         dmask = core.std.Expr([dmask], [mexpr])
         dmask = core.rgvs.RemoveGrain([dmask], [22])
         if mask > 1:
-            dmask = core.std.Convolution(dmask, matrix=[1,2,1,2,4,2,1,2,1])
+            dmask = core.std.Convolution(dmask, matrix=[1, 2, 1, 2, 4, 2, 1, 2, 1])
             if mask > 2:
                 dmask = core.std.Convolution(dmask, matrix=[1]*9)
         dmask = core.fmtc.bitdepth(dmask, bits=16, fulls=True, fulld=True)
@@ -3719,7 +3719,7 @@ def mdering(clip, thr=2):
     bits = clip.format.bits_per_sample
     thr = scale(thr, bits)
 
-    rg11_1 = core.std.Convolution(clip, matrix=[1,2,1,2,4,2,1,2,1])
+    rg11_1 = core.std.Convolution(clip, matrix=[1, 2, 1, 2, 4, 2, 1, 2, 1])
     rg11_2 = core.std.Convolution(rg11_1, [1]*9)
     rg4_1 = core.std.Median(clip)
 
