@@ -184,7 +184,7 @@ def Compare(src, flt, power=1.5, chroma=False, mode=2):
     if mode not in [1, 2]:
         raise TypeError(funcName + ': \"mode\" must be in [1, 2]!')
 
-    isGray = (src.format.color_family == vs.GRAY)
+    isGray = src.format.color_family == vs.GRAY
     bits = src.format.bits_per_sample
     sample = src.format.sample_type
 
@@ -569,7 +569,7 @@ def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=
         dmask = core.std.Expr([dmask], [mexpr])
         dmask = core.rgvs.RemoveGrain([dmask], [22])
         if mask > 1:
-            dmask = core.std.Convolution(dmask, matrix=[1, 2, 1, 2, 4, 2, 1, 2, 1])
+            dmask = core.rgvs.RemoveGrain([dmask], [11])
             if mask > 2:
                 dmask = core.std.Convolution(dmask, matrix=[1]*9)
         dmask = core.fmtc.bitdepth(dmask, bits=16, fulls=True, fulld=True)
@@ -1650,7 +1650,6 @@ def firniture(clip, width, height, kernel='binomial7', taps=None, gamma=False, t
 
     '''
 
-
     funcName = 'firniture'
 
     if not isinstance(clip, vs.VideoNode):
@@ -1667,6 +1666,7 @@ def firniture(clip, width, height, kernel='binomial7', taps=None, gamma=False, t
 
     if taps is None:
         taps = int(kernel[-1])
+
 
     if gamma:
         clip = core.resize.Bicubic(clip, transfer_s="linear")
@@ -2034,7 +2034,7 @@ def SeeSaw(clp, denoised=None, NRlimit=2, NRlimit2=None, Sstr=1.5, Slimit=None, 
     if not isinstance(clp, vs.VideoNode) or clp.format.color_family not in [vs.GRAY, vs.YUV, vs.YCOCG]:
         raise TypeError(funcName + ': \"clp\" must be a Gray or YUV clip!')
 
-    isGray = (clp.format.color_family == vs.GRAY)
+    isGray = clp.format.color_family == vs.GRAY
     bits = clp.format.bits_per_sample
 
     if NRlimit2 is None:
@@ -2132,22 +2132,11 @@ def SeeSaw_sharpen2(clp, strength, power, zp, lodmp, hidmp, rgmode):
     if not isinstance(clp, vs.VideoNode) or clp.format.color_family not in [vs.GRAY, vs.YUV, vs.YCOCG]:
         raise TypeError(funcName + ': \"clp\" must be a Gray or YUV clip!')
 
-    isGray = (clp.format.color_family == vs.GRAY)
+    isGray = clp.format.color_family == vs.GRAY
     bits = clp.format.bits_per_sample
     multiple = scale(1, bits)
     neutral = scale(128, bits)
     peak = scale(255, bits)
-    
-    if rgmode == 4:
-        Filter = functools.partial(core.std.Median, planes=[0])
-    if rgmode in [11, 12]:
-        Filter = functools.partial(core.std.Convolution, matrix=[1, 2, 1, 2, 4, 2, 1, 2, 1], planes=[0])
-    elif rgmode == 19:
-        Filter = functools.partial(core.std.Convolution, matrix=[1, 1, 1, 1, 0, 1, 1, 1, 1], planes=[0])
-    elif rgmode == 20:
-        Filter = functools.partial(core.std.Convolution, matrix=[1, 1, 1, 1, 1, 1, 1, 1, 1], planes=[0])
-    else:
-        Filter = functools.partial(core.rgvs.RemoveGrain, mode=[rgmode] if isGray else [rgmode, 0]) 
 
     power = int(power)
     if power <= 0:
@@ -2164,7 +2153,7 @@ def SeeSaw_sharpen2(clp, strength, power, zp, lodmp, hidmp, rgmode):
             tmp3 = zp ** 2
             return min(max(math.floor(neutral + (tmp1 / zp) ** power * zp * (strength * multiple) * (1 if x > neutral else -1) * (tmp2 * (tmp3 + lodmp) / ((tmp2 + lodmp) * tmp3)) * ((1 + (0 if hidmp == 0 else (zp / hidmp) ** 4)) / (1 + (0 if hidmp == 0 else (tmp1 / hidmp) ** 4))) + 0.5), 0), peak)
 
-    method = Filter(clp)
+    method = clp.rgvs.RemoveGrain([rgmode] if isGray else [rgmode, 0])
     sharpdiff = core.std.MakeDiff(clp, method, [0]).std.Lut(function=get_lut1, planes=[0])
     return core.std.MergeDiff(clp, sharpdiff, [0])
 
@@ -2195,7 +2184,7 @@ def SeeSaw_SootheSS(sharp, orig, sootheT=25, sootheS=0):
     last = core.std.MakeDiff(orig, sharp, [0])
 
     neutral = 1 << (sharp.format.bits_per_sample - 1)
-    isGray = (sharp.format.color_family == vs.GRAY)
+    isGray = sharp.format.color_family == vs.GRAY
 
     if not isGray:
         sharp_src = sharp
@@ -2243,7 +2232,7 @@ def abcxyz(clp, rad=3.0, ss=1.5):
     ox = clp.width
     oy = clp.height
 
-    isGray = (clp.format.color_family == vs.GRAY)
+    isGray = clp.format.color_family == vs.GRAY
     bits = clp.format.bits_per_sample
 
     if not isGray:
@@ -2425,7 +2414,7 @@ def BlindDeHalo3(clp, rx=3.0, ry=3.0, strength=125, lodamp=0, hidamp=0, sharpnes
         PPlimit = 4 if abs(PPmode) == 3 else 0
 
     bits = clp.format.bits_per_sample
-    isGray = (clp.format.color_family == vs.GRAY)
+    isGray = clp.format.color_family == vs.GRAY
     neutral = 1 << (bits - 1)
 
     if not isGray:
@@ -2463,12 +2452,12 @@ def BlindDeHalo3(clp, rx=3.0, ry=3.0, strength=125, lodamp=0, hidamp=0, sharpnes
         small = core.resize.Bicubic(base, haf.m4(oxi / math.sqrt(rx * 1.5)), haf.m4(oyi / math.sqrt(ry * 1.5)))
         ex1 = Blur(small.std.Maximum(), 0.5)
         in1 = Blur(small.std.Minimum(), 0.5)
-        hull = core.std.Expr([ex1.std.Maximum().std.Convolution(matrix=[1, 2, 1, 2, 4, 2, 1, 2, 1]), ex1, in1, in1.std.Minimum().std.Convolution(matrix=[1, 2, 1, 2, 4, 2, 1, 2, 1])], ['x y - {i} - 5 * z a - {i} - 5 * max'.format(i=scale(1, bits))]).resize.Bicubic(oxi, oyi, filter_param_a=1, filter_param_b=0)
+        hull = core.std.Expr([ex1.std.Maximum().rgvs.RemoveGrain(11), ex1, in1, in1.std.Minimum().rgvs.RemoveGrain(11)], ['x y - {i} - 5 * z a - {i} - 5 * max'.format(i=scale(1, bits))]).resize.Bicubic(oxi, oyi, filter_param_a=1, filter_param_b=0)
 
         if abs(PPmode) == 1:
             postclean = core.std.MaskedMerge(base, small.resize.Bicubic(oxi, oyi, filter_param_a=1, filter_param_b=0), hull)
         elif abs(PPmode) == 2:
-            postclean = core.std.MaskedMerge(base, base.std.Convolution(matrix=[1, 1, 1, 1, 0, 1, 1, 1, 1]), hull)
+            postclean = core.std.MaskedMerge(base, base.rgvs.RemoveGrain(19), hull)
         elif abs(PPmode) == 3:
             postclean = core.std.MaskedMerge(base, base.std.Median(), hull)
         else:
@@ -3719,7 +3708,7 @@ def mdering(clip, thr=2):
     bits = clip.format.bits_per_sample
     thr = scale(thr, bits)
 
-    rg11_1 = core.std.Convolution(clip, matrix=[1, 2, 1, 2, 4, 2, 1, 2, 1])
+    rg11_1 = core.rgvs.RemoveGrain(clip, 11)
     rg11_2 = core.std.Convolution(rg11_1, [1]*9)
     rg4_1 = core.std.Median(clip)
 
