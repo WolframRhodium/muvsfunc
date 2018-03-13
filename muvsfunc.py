@@ -1650,8 +1650,6 @@ def firniture(clip, width, height, kernel='binomial7', taps=None, gamma=False, t
 
     '''
 
-    #import nnedi3_resample as nnrs
-
     funcName = 'firniture'
 
     if not isinstance(clip, vs.VideoNode):
@@ -1669,17 +1667,13 @@ def firniture(clip, width, height, kernel='binomial7', taps=None, gamma=False, t
     if taps is None:
         taps = int(kernel[-1])
 
-    #if clip.format.bits_per_sample != 16:
-        #clip = mvf.Depth(clip, 16)
 
     if gamma:
-        #clip = nnrs.GammaToLinear(clip)
         clip = core.resize.Bicubic(clip, transfer_s="linear")
 
     clip = core.fmtc.resample(clip, width, height, kernel='impulse', impulse=impulseCoefficents[kernel], kovrspl=2, taps=taps, **resample_args)
 
     if gamma:
-        #clip = nnrs.LinearToGamma(clip)
         clip = core.resize.Bicubic(clip, transfer_s=transfer)
 
     return clip
