@@ -46,11 +46,13 @@ Functions:
     TextSub16
     TMinBlur
     mdering
+    BMAFilter
 '''
-from vapoursynth import core
+
 import functools
 import math
 import vapoursynth as vs
+from vapoursynth import core
 import havsfunc as haf
 import mvsfunc as mvf
 
@@ -1669,17 +1671,12 @@ def firniture(clip, width, height, kernel='binomial7', taps=None, gamma=False, t
     if taps is None:
         taps = int(kernel[-1])
 
-    #if clip.format.bits_per_sample != 16:
-        #clip = mvf.Depth(clip, 16)
-
     if gamma:
-        #clip = nnrs.GammaToLinear(clip)
         clip = core.resize.Bicubic(clip, transfer_s="linear")
 
     clip = core.fmtc.resample(clip, width, height, kernel='impulse', impulse=impulseCoefficents[kernel], kovrspl=2, taps=taps, **resample_args)
 
     if gamma:
-        #clip = nnrs.LinearToGamma(clip)
         clip = core.resize.Bicubic(clip, transfer_s=transfer)
 
     return clip
@@ -2837,7 +2834,7 @@ def GuidedFilter(input, guidance=None, radius=4, regulation=0.01, regulation_mod
             2: Gradient Domain Guided Image Filter [4]
             Default is 0.
 
-        use_gauss: Whether to use gaussian guided filter [1]. This replaces mean filter with gaussian filter.
+        use_gauss: (bool) Whether to use gaussian guided filter [1]. This replaces mean filter with gaussian filter.
             Guided filter is rotationally asymmetric and slightly biases to the x/y-axis because a box window is used in the filter design.
             The problem can be solved by using a gaussian weighted window instead. The resulting kernels are rotationally symmetric.
             The authors of [1] suggest that in practice the original guided filter is always good enough.
@@ -3550,6 +3547,9 @@ def LocalStatistics(clip, radius=1, **depth_args):
             It can also be a custom function.
             Default is 1.
 
+        depth_args: (dict) Additional arguments passed to mvf.Depth().
+            Default is {}.
+
     Returns:
         A list containing three clips (source, mean, variance) in 32bit float.
 
@@ -3729,3 +3729,122 @@ def mdering(clip, thr=2):
     dering = core.std.Expr([clip, minblur_1, minblur_2], ['y z - abs {thr} <= y x <= and y x ?'.format(thr=thr)])
 
     return dering
+
+
+def BMAFilter(clip, guidance=None, radius=1, lamda=1e-2, epsilon=1e-5, mode=3, **depth_args):
+    """Edge-Aware BMA Filter
+
+    Edge-aware BMA filter is a family of edge-aware filters proposed based on optimal parameter estimation and Bayesian model averaging (BMA).
+    The problem of filtering a pixel in a local pixel patch is formulated as an optimal estimation problem,
+    and multiple estimates of the same pixel are combined using BMA.
+    Filters in this family differs from different settings of cost functions and log-likelihood and log-prior functions.
+
+    However, only four of six BMA filters are implemented.
+    The implementation is modified to allow the filtering to be guided by another source, like GuidedFilter().
+
+    Most of the internal calculations are done at 32-bit float, except median filtering with radius larger than 1 is done at integer.
+
+    Args:
+        clip: Input clip.
+
+        guidance: (clip) Guidance clip used to compute the coefficient of the translation on 'clip'.
+            It must has the same clip properties as 'clip'.
+            If it is None, it will be set to 'clip', with duplicate calculations being omitted.
+            Default is None.
+
+        radius: (int) The radius of box filter and median filter.
+            Default is 1.
+
+        lamda: (float) A criterion for judging whether a patch has high variance and should be preserved, or is flat and should be smoothed.
+            It only takes effects when `mode` is 3 or 4.
+            The limit of filter of `mode` 3 [resp. 4] as `lamda` approaches infinity is filter of `mode` 1 [resp. 2].
+            Default is 0.01.
+
+        epsilon: (float) Small number to avoid divide by 0.
+            Default is 0.00001.
+
+        mode: (1~4): Number of different BMA filters.
+            1: l2-norm based cost function, constant prior and gaussian likelihood.
+            2: l1-norm based cost function, constant prior and laplacian likelihood.
+            3: 'hit-or-miss' cost function, gausssian prior and laplacian likelihood.
+            4: 'hit-or-miss' cost function, gausssian prior and gaussian likelihood.
+            Default is 3.
+
+        depth_args: (dict) Additional arguments passed to mvf.Depth().
+            Default is {}.
+
+    Ref:
+        [1] Deng, G. (2016). Edge-aware BMA filters. IEEE Transactions on Image Processing, 25(1), 439-454.
+        [2] https://www.researchgate.net/publication/284391731_Edge-aware_BMA_filters
+
+    """
+
+    funcName = 'BMAFilter'
+
+    if guidance is None:
+        guidance = clip
+    else:
+        if not isinstance(guidance, vs.VideoNode):
+            raise TypeError(funcName + ': \"guidance\" must be a clip!')
+        if clip.format.id != guidance.format.id:
+            raise TypeError(funcName + ': \"guidance\" must be of the same format as \"clip\"!')
+        if clip.width != guidance.width or clip.height != guidance.height:
+            raise TypeError(funcName + ': \"guidance\" must be of the same size as \"clip\"!')
+
+    bits = clip.format.bits_per_sample
+    sampleType = clip.format.sample_type
+    clip_src = clip
+    clip = mvf.Depth(clip, depth=32, **depth_args)
+    guidance = mvf.Depth(guidance, depth=32, **depth_args) if guidance != clip_src else clip
+
+    if mode in (1, 3):
+        Filter = functools.partial(BoxFilter, radius=radius+1)
+    elif mode in (2, 4):
+        def Filter(clip):
+            bits = clip.format.bits_per_sample
+            if radius == 1:
+                clip = core.std.Median(clip)
+            else:
+                clip = mvf.Depth(clip, depth=min(bits, 12), **depth_args)
+                clip = core.ctmf.CTMF(clip, radius=radius)
+            return mvf.Depth(clip, 32, **depth_args)
+
+    Expectation = functools.partial(BoxFilter, radius=radius+1)
+
+    if mode in (1, 2):
+        mean_guidance = Expectation(guidance)
+        corr_guidance = Expectation(core.std.Expr([guidance], ['x dup *']))
+        unscaled_alpha = core.std.Expr([corr_guidance, mean_guidance], ['1 x y dup * - {epsilon} + /'.format(epsilon=epsilon)]) # Eqn. 10
+        alpha_scale = Expectation(unscaled_alpha)
+
+        if mode == 1:
+            mean_clip = Expectation(clip) if clip != guidance else mean_guidance
+            res = Expectation(core.std.Expr([unscaled_alpha, mean_clip], ['x y *'])) # Eqn. 11
+        else: # mode == 2
+            median_clip = Filter(clip_src)
+            res = Expectation(core.std.Expr([unscaled_alpha, median_clip], ['x y *'])) # Eqn. 12
+
+        res = core.std.Expr([res, alpha_scale], ['x y /'])
+    elif mode in (3, 4):
+        mean_guidance = Expectation(guidance)
+
+        guidance_square = core.std.Expr([guidance], ['x dup *'])
+        var_guidance = core.std.Expr([Expectation(guidance_square), mean_guidance], ['x y dup * -'])
+        unscaled_alpha = core.std.Expr([var_guidance], ['1 x {epsilon} + /'.format(epsilon=epsilon)]) # Eqn. 10
+        alpha_scale = Expectation(unscaled_alpha)
+        beta = core.std.Expr([var_guidance], ['1 x {epsilon} + {lamda} * 1 + /'.format(epsilon=epsilon, lamda=1/lamda)]) # Eqn. 18
+        tmp1 = core.std.Expr([unscaled_alpha, beta], ['x y *'])
+
+        if mode == 3:
+            mean_clip = Expectation(clip) if clip != guidance else mean_guidance
+            tmp2 = Expectation(core.std.Expr([tmp1, mean_clip], ['x y *'])) # Eqn. 19, left
+        else: # mode == 4
+            median_clip = Filter(clip_src)
+            tmp2 = Expectation(core.std.Expr([tmp1, median_clip], ['x y *'])) # Eqn. 25, left
+
+        tmp3 = Expectation(tmp1) # Eqn. 19 / 25, right
+        res = core.std.Expr([tmp2, alpha_scale, tmp3, clip], ['x y / 1 z y / - a * +']) # Eqn.19 / 25
+    else:
+        raise ValueError(funcName + '\"mode\" must be in [1, 2, 3, 4]!')
+
+    return mvf.Depth(res, depth=bits, sample=sampleType, **depth_args)
