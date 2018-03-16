@@ -3766,8 +3766,8 @@ def BMAFilter(clip, guidance=None, radius=1, lamda=1e-2, epsilon=1e-5, mode=3, *
         mode: (1~4): Number of different BMA filters.
             1: l2-norm based cost function, constant prior and gaussian likelihood.
             2: l1-norm based cost function, constant prior and laplacian likelihood.
-            3: 'hit-or-miss' cost function, gausssian prior and gaussian likelihood.
-            4: 'hit-or-miss' cost function, gausssian prior and laplacian likelihood.
+            3: 'hit-or-miss' cost function, gaussian prior and gaussian likelihood.
+            4: 'hit-or-miss' cost function, gaussian prior and laplacian likelihood.
             Default is 3.
 
         depth_args: (dict) Additional arguments passed to mvf.Depth().
