@@ -28,6 +28,7 @@ NumPy functions:
 import functools
 import math
 import vapoursynth as vs
+from vapoursynth import core
 import mvsfunc as mvf
 import numpy as np
 from numpy.lib.stride_tricks import as_strided
@@ -54,8 +55,6 @@ def numpy_process(clips, numpy_function, per_plane=True, lock_source_array=True,
             Default is {}.
 
     """
-
-    core = vs.get_core()
 
 
     # The following code is modified from https://github.com/KotoriCANOE/MyTF/blob/master/utils/vshelper.py
@@ -152,8 +151,6 @@ def numpy_process_val(clip, numpy_function, props_name, per_plane=True, lock_sou
 
     """
 
-    core = vs.get_core()
-
 
     # The following code is modified from https://github.com/KotoriCANOE/MyTF/blob/master/utils/vshelper.py
     def FLT(n, f):
@@ -234,8 +231,6 @@ def L0Smooth(clip, lamda=2e-2, kappa=2, color=True, **depth_args):
     """
 
     funcName = 'L0Smooth'
-
-    core = vs.get_core()
 
     if not isinstance(clip, vs.VideoNode) or any((clip.format.subsampling_w, clip.format.subsampling_h)):
         raise TypeError(funcName + ': \"clip\" must be a clip with no chroma subsampling!')
@@ -493,8 +488,6 @@ def L0GradientProjection(clip, alpha=0.08, precision=255, epsilon=0.0002, maxite
     """
 
     funcName = 'L0GradientProjection'
-
-    core = vs.get_core()
 
     if not isinstance(clip, vs.VideoNode) or any((clip.format.subsampling_w, clip.format.subsampling_h)):
         raise TypeError(funcName + ': \"clip\" must be a clip with no chroma subsampling!')
@@ -846,8 +839,6 @@ def DNCNN(clip, symbol_path, params_path, patch_size=[640, 640], device_id=0, **
 
     """
 
-    core = vs.get_core()
-
     import mxnet as mx
     from collections import namedtuple
     
@@ -1124,6 +1115,7 @@ def FGS_2D_core(image_2D, joint_image_2D=None, sigma=0.03, lamda=100, solver_ite
         tmp = image_2D.ravel(order='F')
         image_2D[:] = solve_banded((1, 1), ab, tmp, overwrite_ab=True, overwrite_b=True, check_finite=False).reshape((h, w), order='F')
 
+        # variation of lamda
         lamda_in /= solver_attenuation
 
     return image_2D
@@ -1349,7 +1341,7 @@ def SSFDeband(clip, thr=1, smooth_taps=2, edge_taps=3, strides=3, auto_scale_thr
         if sampleType == vs.INTEGER:
             thr *= ((1 << bits) - 1) / 255
         else: # sampleType == vs.FLOAT
-            thr /= (2 ** bit) - 1
+            thr /= (2 ** bits) - 1
 
     clip = numpy_process(clip, functools.partial(SSFDeband_core, thr=thr, smooth_taps=smooth_taps, 
         edge_taps=edge_taps, strides=strides), per_plane=True, copy=True)

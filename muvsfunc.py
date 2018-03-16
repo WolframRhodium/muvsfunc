@@ -3766,8 +3766,8 @@ def BMAFilter(clip, guidance=None, radius=1, lamda=1e-2, epsilon=1e-5, mode=3, *
         mode: (1~4): Number of different BMA filters.
             1: l2-norm based cost function, constant prior and gaussian likelihood.
             2: l1-norm based cost function, constant prior and laplacian likelihood.
-            3: 'hit-or-miss' cost function, gausssian prior and laplacian likelihood.
-            4: 'hit-or-miss' cost function, gausssian prior and gaussian likelihood.
+            3: 'hit-or-miss' cost function, gausssian prior and gaussian likelihood.
+            4: 'hit-or-miss' cost function, gausssian prior and laplacian likelihood.
             Default is 3.
 
         depth_args: (dict) Additional arguments passed to mvf.Depth().
@@ -3818,7 +3818,7 @@ def BMAFilter(clip, guidance=None, radius=1, lamda=1e-2, epsilon=1e-5, mode=3, *
         alpha_scale = Expectation(unscaled_alpha)
 
         if mode == 1:
-            mean_clip = Expectation(clip) if clip != guidance else mean_guidance
+            mean_clip = Filter(clip) if clip != guidance else mean_guidance
             res = Expectation(core.std.Expr([unscaled_alpha, mean_clip], ['x y *'])) # Eqn. 11
         else: # mode == 2
             median_clip = Filter(clip_src)
@@ -3836,7 +3836,7 @@ def BMAFilter(clip, guidance=None, radius=1, lamda=1e-2, epsilon=1e-5, mode=3, *
         tmp1 = core.std.Expr([unscaled_alpha, beta], ['x y *'])
 
         if mode == 3:
-            mean_clip = Expectation(clip) if clip != guidance else mean_guidance
+            mean_clip = Filter(clip) if clip != guidance else mean_guidance
             tmp2 = Expectation(core.std.Expr([tmp1, mean_clip], ['x y *'])) # Eqn. 19, left
         else: # mode == 4
             median_clip = Filter(clip_src)

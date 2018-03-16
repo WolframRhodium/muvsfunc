@@ -13,6 +13,7 @@ Miscellaneous functions:
 
 import functools
 import vapoursynth as vs
+from vapoursynth import core
 import muvsfunc as muf
 import mvsfunc as mvf
 
@@ -23,8 +24,6 @@ def GPS(clip, gamma=None):
         gamma: It enables viewing small valued responses in the spectral display.
 
     """
-
-    core = vs.get_core()
 
     w = clip.width
     h = clip.height
@@ -47,8 +46,6 @@ def gauss(clip, sigma=None, algo=0):
 
     """
 
-    core = vs.get_core()
-
     if (algo == 0 and sigma is not None and sigma >= 10) or algo == 2:
         return core.bilateral.Gaussian(clip, sigma=sigma)
     else: # algo == 1 or (algo == 0 and (sigma is None or sigma < 10))
@@ -64,8 +61,6 @@ def freq_merge(src, flt, fun=None, **fun_args):
 
         fun: (function) A low-pass filter. Default is gaussian.
     """
-
-    core = vs.get_core()
 
     if fun is None or not callable(fun):
         fun = gauss
@@ -86,8 +81,6 @@ def band_merge(src, flt, fun=None, fun_args1=None, fun_args2=None, cascade=True)
         cascade: (bool) Whether to cascade functions. Default is True.
 
     """
-
-    core = vs.get_core()
 
     if fun is None or not callable(fun):
         fun = gauss
@@ -131,8 +124,6 @@ def SSR(clip, sigma=50, full=None, **args):
         [1] Jobson, D. J., Rahman, Z. U., & Woodell, G. A. (1997). Properties and performance of a center/surround retinex. IEEE transactions on image processing, 6(3), 451-462.
 
     """
-
-    core = vs.get_core()
 
     bits = clip.format.bits_per_sample
     sampleType = clip.format.sample_type
@@ -197,7 +188,6 @@ def Wiener2(input, radius_v=3, radius_h=None, noise=None, **depth_args):
 
     """
 
-    core = vs.get_core()
     funcName = 'Wiener2'
 
     if not isinstance(input, vs.VideoNode) or input.format.num_planes > 1:
@@ -253,8 +243,6 @@ def tv(I, iter=5, dt=None, ep=1, lam=0, I0=None, C=0):
 
     """
 
-    core = vs.get_core()
-
     if dt is None:
         dt = ep / 5
 
@@ -304,8 +292,6 @@ def BernsteinFilter(clip, iter=30, **depth_args):
         [1] Gong, Y. (2016, March). Bernstein filter: A new solver for mean curvature regularized models. In Acoustics, Speech and Signal Processing (ICASSP), 2016 IEEE International Conference on (pp. 1701-1705). IEEE.
 
     """
-
-    core = vs.get_core()
 
     bits = clip.format.bits_per_sample
     sample = clip.format.sample_type
