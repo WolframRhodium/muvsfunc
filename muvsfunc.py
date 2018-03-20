@@ -1347,7 +1347,7 @@ def TemporalSoften(input, radius=4, scenechange=15):
         else:
             raise AttributeError('module \"havsfunc\" has no attribute \"SCDetect\"!')
 
-    return core.misc.AverageFrames(input, [1 for i in range(2 * radius + 1)], scenechange=scenechange)
+    return core.misc.AverageFrames(input, [1] * (2 * radius + 1), scenechange=scenechange)
 
 
 def FixTelecinedFades(input, mode=0, threshold=[0.0], color=[0.0], full=None, planes=None):
@@ -3856,7 +3856,7 @@ def LLSURE(clip, guidance=None, radius=2, sigma=0, epsilon=1e-5, **depth_args):
 
     LLSURE is based on a local linear model and using the principle of Stein’s unbiased risk estimate (SURE) 
     as an estimator for the mean squared error from the noisy image.
-    Multiple estimates are aggregated using Variancebased Weighted Average (WAV).
+    Multiple estimates are aggregated using Variance-based Weighted Average (WAV).
 
     Most of the internal calculations are done at 32-bit float, except median filtering with radius larger than 1 is done at integer.
 
@@ -3922,13 +3922,13 @@ def LLSURE(clip, guidance=None, radius=2, sigma=0, epsilon=1e-5, **depth_args):
             if radius == 1:
                 sigma_tmp = core.std.Median(absolute_deviation)
             else:
-                absolute_deviation = core.fmtc.bitdepth(absolute_deviation, bits=12, dmode=1)
+                absolute_deviation = core.fmtc.bitdepth(absolute_deviation, bits=12, dmode=1, fulls=True, fulld=True)
                 sigma_tmp = core.ctmf.CTMF(absolute_deviation, radius=radius)
                 sigma_tmp = mvf.Depth(sigma_tmp, depth=32, sample=vs.FLOAT, fulls=True, fulld=True)
 
             sigma = sigma_tmp if sigma == 0 else core.std.Expr([sigma_tmp], ['x {sigma} *'.format(sigma=-sigma)])
         else:
-            sigma = core.std.BlankClip(clip, color=sigma**2)
+            sigma = core.std.BlankClip(clip, color=[sigma**2] * clip.format.num_planes)
 
     if guidance == clip:
         a_star = core.std.Expr([var_guidance, sigma, inv_var], ['x y - 0 max z *']) # Eqn. 10 (a)
