@@ -47,6 +47,7 @@ Functions:
     TMinBlur
     mdering
     BMAFilter
+    LLSURE
 '''
 
 import functools
@@ -1469,8 +1470,8 @@ def FixTelecinedFades(input, mode=0, threshold=[0.0], color=[0.0], full=None, pl
         topField = core.std.SelectEvery(separated, 2, [0])
         bottomField = core.std.SelectEvery(separated, 2, [1])
 
-        topAvg = f[0].props.PlaneStatsAverage
-        bottomAvg = f[1].props.PlaneStatsAverage
+        topAvg = f[0].props['PlaneStatsAverage']
+        bottomAvg = f[1].props['PlaneStatsAverage']
 
         if color != 0:
             if isFloat:
@@ -2933,15 +2934,15 @@ def GuidedFilter(input, guidance=None, radius=4, regulation=0.01, regulation_mod
 
     # Edge-Aware Weighting, equation (5) in [3], or equation (9) in [4].
     def FLT(n, f, clip, core, eps0):
-        frameMean = f.props.PlaneStatsAverage
+        frameMean = f.props['PlaneStatsAverage']
 
         return core.std.Expr(clip, ['x {eps0} + {avg} *'.format(avg=frameMean, eps0=eps0)])
 
 
     # Compute the optimal value of a of Gradient Domain Guided Image Filter, equation (12) in [4]
     def FLT2(n, f, cov_Ip, weight_in, weight, var_I, core, eps):
-        frameMean = f.props.PlaneStatsAverage
-        frameMin = f.props.PlaneStatsMin
+        frameMean = f.props['PlaneStatsAverage']
+        frameMin = f.props['PlaneStatsMin']
 
         alpha = frameMean
         kk = -4 / (frameMin - alpha - 1e-6) # Add a small num to prevent divided by 0
@@ -3251,7 +3252,7 @@ def GMSD(clip1, clip2, plane=None, downsample=True, c=0.0026, show_map=False, **
         map_mean = core.std.PlaneAverage(quality_map, plane=[0], prop='PlaneStatsAverage')
 
     def _PlaneSDFrame(n, f, clip):
-        mean = f.props.PlaneStatsAverage
+        mean = f.props['PlaneStatsAverage']
         expr = "x {mean} - dup *".format(mean=mean)
         return core.std.Expr(clip, expr)
     SDclip = core.std.FrameEval(quality_map, functools.partial(_PlaneSDFrame, clip=quality_map), map_mean)
@@ -3263,7 +3264,7 @@ def GMSD(clip1, clip2, plane=None, downsample=True, c=0.0026, show_map=False, **
 
     def _PlaneGMSDTransfer(n, f):
         fout = f[0].copy()
-        fout.props.PlaneGMSD = math.sqrt(f[1].props.PlaneStatsAverage)
+        fout.props['PlaneGMSD'] = math.sqrt(f[1].props['PlaneStatsAverage'])
         return fout
     output_clip = quality_map if show_map else clip1_src
     output_clip = core.std.ModifyFrame(output_clip, [output_clip, SDclip], selector=_PlaneGMSDTransfer)
@@ -3387,7 +3388,7 @@ def SSIM(clip1, clip2, plane=None, downsample=True, k1=0.01, k2=0.03, fun=None, 
 
     def _PlaneSSIMTransfer(n, f):
         fout = f[0].copy()
-        fout.props.PlaneSSIM = f[1].props.PlaneStatsAverage
+        fout.props['PlaneSSIM'] = f[1].props['PlaneStatsAverage']
         return fout
     output_clip = ssim_map if show_map else clip1_src
     output_clip = core.std.ModifyFrame(output_clip, [output_clip, map_mean], selector=_PlaneSSIMTransfer)
@@ -3560,12 +3561,12 @@ def LocalStatistics(clip, radius=1, **depth_args):
     if not isinstance(clip, vs.VideoNode):
         raise TypeError(funcName + ': \"clip\" must be a clip!')
 
-    expectation = radius if callable(radius) else functools.partial(BoxFilter, radius=radius+1)
+    Expectation = radius if callable(radius) else functools.partial(BoxFilter, radius=radius+1)
 
     clip = mvf.Depth(clip, depth=32, sample=vs.FLOAT, **depth_args)
 
-    mean = expectation(clip)
-    var = expectation(core.std.Expr([clip, mean], ['x y - dup *']))
+    mean = Expectation(clip)
+    var = Expectation(core.std.Expr([clip, mean], ['x y - dup *']))
 
     return clip, mean, var
 
@@ -3747,7 +3748,7 @@ def BMAFilter(clip, guidance=None, radius=1, lamda=1e-2, epsilon=1e-5, mode=3, *
     Args:
         clip: Input clip.
 
-        guidance: (clip) Guidance clip used to compute the coefficient of the translation on 'clip'.
+        guidance: (clip) Guidance clip used to compute the coefficient of the translation on "clip".
             It must has the same clip properties as 'clip'.
             If it is None, it will be set to 'clip', with duplicate calculations being omitted.
             Default is None.
@@ -3846,5 +3847,101 @@ def BMAFilter(clip, guidance=None, radius=1, lamda=1e-2, epsilon=1e-5, mode=3, *
         res = core.std.Expr([tmp2, alpha_scale, tmp3, clip], ['x y / 1 z y / - a * +']) # Eqn.19 / 25
     else:
         raise ValueError(funcName + '\"mode\" must be in [1, 2, 3, 4]!')
+
+    return mvf.Depth(res, depth=bits, sample=sampleType, **depth_args)
+
+
+def LLSURE(clip, guidance=None, radius=2, sigma=0, epsilon=1e-5, **depth_args):
+    """Local Linear SURE-Based Edge-Preserving Image Filtering
+
+    LLSURE is based on a local linear model and using the principle of Stein’s unbiased risk estimate (SURE) 
+    as an estimator for the mean squared error from the noisy image.
+    Multiple estimates are aggregated using Variancebased Weighted Average (WAV).
+
+    Most of the internal calculations are done at 32-bit float, except median filtering with radius larger than 1 is done at integer.
+
+    Args:
+        clip: Input clip.
+
+        guidance: (clip) Guidance clip used to compute the coefficient of the translation on "clip".
+            It must has the same clip properties as 'clip'.
+            If it is None, it will be set to 'clip', with duplicate calculations being omitted.
+            It is not recommended to use such feature since there might be severe numerical precision problem in this implementation.
+            Default is None.
+
+        radius: (int) The radius of box filter and median filter.
+            Default is 2.
+
+        sigma: (float or clip) Estimation of noise variance.
+            If it is 0, it is automatically calculated using MAD (median absolute deviation).
+            If it is smaller than 0, the result is MAD multiplied by the absolute value of "sigma".
+            Default is 0.
+
+        epsilon: (float) Small number to avoid divide by 0.
+            Default is 0.00001.
+
+        depth_args: (dict) Additional arguments passed to mvf.Depth().
+            Default is {}.
+
+    Ref:
+        [1] Qiu, T., Wang, A., Yu, N., & Song, A. (2013). LLSURE: local linear SURE-based edge-preserving image filtering. IEEE Transactions on Image Processing, 22(1), 80-90.
+
+    """
+
+    funcName = 'LLSURE'
+
+    if guidance is None:
+        guidance = clip
+    else:
+        if not isinstance(guidance, vs.VideoNode):
+            raise TypeError(funcName + ': \"guidance\" must be a clip!')
+        if clip.format.id != guidance.format.id:
+            raise TypeError(funcName + ': \"guidance\" must be of the same format as \"clip\"!')
+        if clip.width != guidance.width or clip.height != guidance.height:
+            raise TypeError(funcName + ': \"guidance\" must be of the same size as \"clip\"!')
+
+    bits = clip.format.bits_per_sample
+    sampleType = clip.format.sample_type
+
+    Expectation = functools.partial(BoxFilter, radius=radius+1)
+
+    clip_src = clip
+    clip = mvf.Depth(clip, depth=32, sample=vs.FLOAT, **depth_args)
+    guidance = mvf.Depth(guidance, depth=32, **depth_args) if guidance != clip_src else clip
+
+    mean_guidance = Expectation(guidance)
+    guidance_square = core.std.Expr([guidance], ['x dup *'])
+    var_guidance = core.std.Expr([Expectation(guidance_square), mean_guidance], ['x y dup * -'])
+    inv_var = core.std.Expr([var_guidance], ['1 x {epsilon} + /'.format(epsilon=epsilon)])
+    normalized_w = Expectation(inv_var)
+    
+    if not isinstance(sigma, vs.VideoNode):
+        if sigma <= 0:
+            absolute_deviation = core.std.Expr([guidance, mean_guidance], ['x y - abs'])
+
+            if radius == 1:
+                sigma_tmp = core.std.Median(absolute_deviation)
+            else:
+                absolute_deviation = core.fmtc.bitdepth(absolute_deviation, bits=12, dmode=1)
+                sigma_tmp = core.ctmf.CTMF(absolute_deviation, radius=radius)
+                sigma_tmp = mvf.Depth(sigma_tmp, depth=32, sample=vs.FLOAT, fulls=True, fulld=True)
+
+            sigma = sigma_tmp if sigma == 0 else core.std.Expr([sigma_tmp], ['x {sigma} *'.format(sigma=-sigma)])
+        else:
+            sigma = core.std.BlankClip(clip, color=sigma**2)
+
+    if guidance == clip:
+        a_star = core.std.Expr([var_guidance, sigma, inv_var], ['x y - 0 max z *']) # Eqn. 10 (a)
+        b_star = core.std.Expr([a_star, mean_guidance], ['1 x - y *']) # Eqn. 10 (b)
+    else: # Joint LLSURE
+        mean_clip = Expectation(clip)
+        corr_clip_guidance = Expectation(core.std.Expr([clip, guidance], ['x y *']))
+        cov_clip_guidance = core.std.Expr([corr_clip_guidance, mean_clip, mean_guidance], ['x y z * -'])
+        a_star = core.std.Expr([cov_clip_guidance, sigma, inv_var], ['x 0 > 1 -1 ? x abs y - 0 max * z *']) # Eqn. 20 (a)
+        b_star = core.std.Expr([mean_clip, cov_clip_guidance, sigma, inv_var, mean_guidance], ['x y z - a * b * -']) # Eqn. 20 (b)
+
+    bar_a = Expectation(core.std.Expr([a_star, inv_var], ['x y *']))
+    bar_b = Expectation(core.std.Expr([b_star, inv_var], ['x y *']))
+    res = core.std.Expr([bar_a, guidance, bar_b, normalized_w], ['x y * z + a {epsilon} + /'.format(epsilon=epsilon)]) # Eqn. 17 / 21
 
     return mvf.Depth(res, depth=bits, sample=sampleType, **depth_args)
