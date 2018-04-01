@@ -9,9 +9,11 @@ Miscellaneous functions:
     Wiener2
     tv
     BernsteinFilter
+    GPA
 """
 
 import functools
+import math
 import vapoursynth as vs
 from vapoursynth import core
 import muvsfunc as muf
@@ -145,8 +147,8 @@ def SSR(clip, sigma=50, full=None, **args):
 
     # Dynamic range stretching
     def Stretch(n, f, clip, core):
-        alpha = f.props.PlaneStatsMax - f.props.PlaneStatsMin
-        beta = f.props.PlaneStatsMin
+        alpha = f.props['PlaneStatsMax'] - f.props['PlaneStatsMin']
+        beta = f.props['PlaneStatsMin']
 
         expr = 'x {beta} - {alpha} /'.format(beta=beta, alpha=alpha)
         return core.std.Expr([clip], [expr])
@@ -209,7 +211,7 @@ def Wiener2(input, radius_v=3, radius_h=None, noise=None, **depth_args):
         localVarStats = core.std.PlaneStats(localVar, plane=[0])
 
         def FLT(n, f, clip, core, localMean, localVar):
-            noise = f.props.PlaneStatsAverage
+            noise = f.props['PlaneStatsAverage']
 
             return core.std.Expr([clip, localMean, localVar], ['y z {noise} - 0 max z {noise} max / x y - * +'.format(noise=noise)])
 
@@ -304,3 +306,105 @@ def BernsteinFilter(clip, iter=30, **depth_args):
         clip = core.std.Expr([clip, d1, d2], ['y abs z abs < x y + x z + ?'])
 
     return mvf.Depth(clip, depth=bits, sample=sample, **depth_args)
+
+
+def GPA(clip, sigmaS=3, sigmaR=0.15, mode=0, iteration=0, eps=1e-3, **depth_args):
+    """Fast and Accurate Bilateral Filtering using Gaussian-Polynomial Approximation
+
+    This filter approximates the bilateral filter when the range kernel is Gaussian.
+    The exponential function of the weight function of bilateral filter is approximated,
+    and the bilateral is therefore decomposed into a series of spatial convolutions.
+
+    The number of iteration depends on the value of "sigmaR", which increases as "sigmaR" decreases.
+    A small value of "sigmaR" may lead to presicion problem.
+
+    All the internal calculations are done at 32-bit float.
+    
+    Part of desscription of bilateral filter is copied from
+    https://github.com/HomeOfVapourSynthEvolution/VapourSynth-Bilateral
+
+    Args:
+        clip: Input clip.
+
+        sigmaS: (float) Sigma of Gaussian function to calculate spatial weight.
+            The scale of this parameter is equivalent to pixel distance.
+            Larger sigmaS results in larger filtering radius as well as stronger smoothing.
+            Default is 3.
+
+        sigmaR: (float) Sigma of Gaussian function to calculate range weight.
+            The scale of this parameter is the same as pixel value ranging in [0,1].
+            Smaller sigmaR preserves edges better, may also leads to weaker smoothing.
+            It should be pointed out that a small "sigmaR" results in more iteration and higher error.
+            Default is 0.15.
+
+        mode: (0 or 1) 0: Guassian bilateral filter, 1: Box bilateral filter
+            Default is 0.
+
+        iteration: (int) Number of iteration or the order of approximation.
+            If it is 0, it is calculated automatically according to "sigmaR" and "eps".
+            Default is 0.
+
+        eps: (float) Filtering Accuracy.
+            Default is 1e-3.
+
+        depth_args: (dict) Additional arguments passed to mvf.Depth().
+            Default is {}.
+
+    Ref:
+        [1] Chaudhury, K. N., & Dabhade, S. D. (2016). Fast and provably accurate bilateral filtering. IEEE Transactions on Image Processing, 25(6), 2519-2528.
+        [2] http://www.mathworks.com/matlabcentral/fileexchange/56158
+
+    """
+
+    def estimate_iteration(sigmaR, T, eps):
+        if sigmaR > 70:
+            return 10
+        elif sigmaR < 5:
+            return 800
+        else:
+            lam = (T / sigmaR) ** 2
+            p = 1 + math.log(lam)
+            q = -lam - math.log(eps)
+            t = q / math.e / lam
+            W = t - t ** 2 + 1.5 * t ** 3 - (8 / 3) * t ** 4
+            N = min(max(q / W, 10), 300)
+
+            if sigmaR < 30:
+                for i in range(5):
+                    N -= (N * math.log(N) - p * N - q) / (math.log(N) + 1 - p)
+
+            return math.ceil(N)
+    
+    T = 0.5
+    bits = clip.format.bits_per_sample
+    sampleType = clip.format.sample_type
+
+    if mode == 0: # Gaussian bilateral filter
+        Filter = functools.partial(core.tcanny.TCanny, sigma=sigmaS, mode=-1)
+    else: # Box bilateral filter
+        Filter = functools.partial(muf.BoxFilter, radius=sigmaS + 1)
+
+    if iteration == 0:
+        iteration = estimate_iteration(sigmaR * 255, T, eps)
+
+    clip = mvf.Depth(clip, depth=32, sample=vs.FLOAT, **depth_args)
+
+    H = core.std.Expr(clip, f'x {T} - {sigmaR} /')
+    F = core.std.Expr(H, '-0.5 x dup * * exp')
+    G = core.std.BlankClip(clip, color=[1])
+    P = core.std.BlankClip(clip, color=[0])
+    Q = core.std.BlankClip(clip, color=[0])
+    Fbar = Filter(F)
+
+    for i in range(1, iteration+1):
+        sqrt_i = math.sqrt(i)
+        inv_sqrt_i = 1 / sqrt_i 
+        Q = core.std.Expr([Q, G, Fbar], 'x y z * +')
+        F = core.std.Expr([H, F], f'x y * {inv_sqrt_i} *')
+        Fbar = Filter(F)
+        P = core.std.Expr([P, G, Fbar], f'x y z * {sqrt_i} * +')
+        G = core.std.Expr([H, G], f'x y * {inv_sqrt_i} *')
+
+    res = core.std.Expr([P, Q], f'x {sigmaR} * y 1e-5 + / {T} +')
+
+    return mvf.Depth(res, depth=bits, sample=sampleType, **depth_args)
