@@ -391,9 +391,9 @@ def GPA(clip, sigmaS=3, sigmaR=0.15, mode=0, iteration=0, eps=1e-3, **depth_args
 
     H = core.std.Expr(clip, f'x {T} - {sigmaR} /')
     F = core.std.Expr(H, '-0.5 x dup * * exp')
-    G = core.std.BlankClip(clip, color=[1])
-    P = core.std.BlankClip(clip, color=[0])
-    Q = core.std.BlankClip(clip, color=[0])
+    G = core.std.BlankClip(clip, color=[1] * clip.format.num_planes)
+    P = core.std.BlankClip(clip, color=[0] * clip.format.num_planes)
+    Q = core.std.BlankClip(clip, color=[0] * clip.format.num_planes)
     Fbar = Filter(F)
 
     for i in range(1, iteration+1):

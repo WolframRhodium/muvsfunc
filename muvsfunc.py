@@ -1144,7 +1144,7 @@ def SharpAAMcmod(orig, dark=0.2, thin=10, sharp=150, smooth=-1, stabilize=False,
 
 
 def TEdge(input, min=0, max=65535, planes=None, rshift=0):
-    """Detect edge using the kernel like TEdgeMask(type=2).
+    """Detect edge using TEdgeMask(type=2).
 
     Ported from https://github.com/chikuzen/GenericFilters/blob/2044dc6c25a1b402aae443754d7a46217a2fddbf/src/convolution/tedge.c
 
@@ -1839,7 +1839,7 @@ def SmoothGrad(input, radius=9, thr=0.25, ref=None, elast=3.0, planes=None, **li
 
 
 def DeFilter(input, fun, iter=10, planes=None, **fun_args):
-    '''Zero-order reverse filter (arXiv:1704.04037)
+    '''Zero-order reverse filter
 
     Args:
         input: Input clip to be reversed.
@@ -1852,6 +1852,9 @@ def DeFilter(input, fun, iter=10, planes=None, **fun_args):
             The unprocessed planes will be copied from the source clip, "input".
 
         fun_args: (dict) Additional arguments passed to "fun" in the form of keyword arguments. Alternative to functools.partial.
+
+    Ref:
+        [1] Tao, X., Zhou, C., Shen, X., Wang, J., & Jia, J. (2017, October). Zero-Order Reverse Filtering. In Computer Vision (ICCV), 2017 IEEE International Conference on (pp. 222-230). IEEE.
 
     '''
 
