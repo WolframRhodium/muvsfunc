@@ -48,6 +48,7 @@ Functions:
     mdering
     BMAFilter
     LLSURE
+    YAHRmod
 '''
 
 import functools
@@ -3948,3 +3949,58 @@ def LLSURE(clip, guidance=None, radius=2, sigma=0, epsilon=1e-5, **depth_args):
     res = core.std.Expr([bar_a, guidance, bar_b, normalized_w], ['x y * z + a {epsilon} + /'.format(epsilon=epsilon)]) # Eqn. 17 / 21
 
     return mvf.Depth(res, depth=bits, sample=sampleType, **depth_args)
+
+
+def YAHRmod(clp, blur=2, depth=32, **limit_filter_args):
+    """Modification of YAHR with better texture preserving property
+
+    The YAHR is known as a simple and powerful script to reduce halos from over enhanced edges.
+    It simply creates two versions of ringing-free result and uses the difference of the source-deringing
+    pairs to restore the texture.
+    However, it still suffers from texture degradation due to the unconstrained use of MinBlur() in texture area.
+    Inspired by the observation that the Repair(13) used in YAHR has the characteristics of preserving the
+    source signal if it is closed to the reference signal in the same location, i.e. the source signal will be outputed
+    if the two filtered results are closed, we simply add an LimitFilter() before the repair procedure.
+
+    Experiment can denmonstrate its better texture preserving performance over the original version.
+
+    The source code is modified from havsfunc(https://github.com/HomeOfVapourSynthEvolution/havsfunc/blob/2048fcb320ef8121c842d087191708d61f39416b/havsfunc.py#L644-L671).
+
+    Args:
+        clp: Input clip.
+
+        blur: (int) "blur" parameter of AWarpSharp2.
+            Default is 2.
+
+        depth: (int) "depth" parameter of AWarpSharp2.
+            Default is 32.
+
+        limit_filter_args: (dict) Additional arguments passed to mvf.LimitFilter in the form of keyword arguments.
+
+    """
+
+    funcName = 'YAHRmod'
+
+    if not isinstance(clp, vs.VideoNode):
+        raise TypeError(funcName + ': \"src\" must be a clip!')
+
+    if clp.format.color_family != vs.GRAY:
+        clp_orig = clp
+        clp = mvf.GetPlane(clp, 0)
+    else:
+        clp_orig = None
+
+    b1 = core.std.Convolution(haf.MinBlur(clp, 2), matrix=[1, 2, 1, 2, 4, 2, 1, 2, 1])
+    b1D = core.std.MakeDiff(clp, b1)
+    w1 = haf.Padding(clp, 6, 6, 6, 6).warp.AWarpSharp2(blur=blur, depth=depth).std.Crop(6, 6, 6, 6)
+    w1b1 = core.std.Convolution(haf.MinBlur(w1, 2), matrix=[1, 2, 1, 2, 4, 2, 1, 2, 1])
+    w1b1D = core.std.MakeDiff(w1, w1b1)
+    w1b1D = mvf.LimitFilter(b1D, w1b1D, **limit_filter_args) # The only modification
+    DD = core.rgvs.Repair(b1D, w1b1D, 13)
+    DD2 = core.std.MakeDiff(b1D, DD)
+    last = core.std.MakeDiff(clp, DD2)
+
+    if clp_orig is not None:
+        return core.std.ShufflePlanes([last, clp_orig], planes=[0, 1, 2], colorfamily=clp_orig.format.color_family)
+    else:
+        return last
