@@ -10,6 +10,7 @@ Miscellaneous functions:
     tv
     BernsteinFilter
     GPA
+    XDoG
 """
 
 import functools
@@ -320,7 +321,7 @@ def GPA(clip, sigmaS=3, sigmaR=0.15, mode=0, iteration=0, eps=1e-3, **depth_args
 
     All the internal calculations are done at 32-bit float.
     
-    Part of desscription of bilateral filter is copied from
+    Part of description of bilateral filter is copied from
     https://github.com/HomeOfVapourSynthEvolution/VapourSynth-Bilateral
 
     Args:
@@ -408,3 +409,39 @@ def GPA(clip, sigmaS=3, sigmaR=0.15, mode=0, iteration=0, eps=1e-3, **depth_args
     res = core.std.Expr([P, Q], f'x {sigmaR} * y 1e-5 + / {T} +')
 
     return mvf.Depth(res, depth=bits, sample=sampleType, **depth_args)
+
+
+def XDoG(clip, sigma=1.0, k=1.6, p=20, epsilon=0.7, lamda=0.01):
+    """XDoG - An eXtended difference-of-Gaussian filter
+
+    Args:
+        clip: Input clip.
+
+        sigma: (float) Strength of gaussian filter.
+            Default is 1.
+
+        k: (float) Amplifier of "sigma" for second gaussian filtering.
+            Default is 1.6.
+
+        p: (float) Amplifier of difference of gaussian.
+            Default is 20.
+
+        epsilon: (float, 0~1) Threshold of DoG response. Scaled automatically.
+            Default is 0.7.
+
+        lamda: (float) Multiplier in the thresholding function.
+            Default is 0.01.
+
+    Ref:
+        [1] Winnemöller, H., Kyprianidis, J. E., & Olsen, S. C. (2012). XDoG: an extended difference-of-Gaussians compendium including advanced image stylization. Computers & Graphics, 36(6), 740-753.
+
+    """
+
+    bits = clip.format.bits_per_sample
+    peak =  (1 << bits) - 1
+    epsilon = muf.scale(epsilon, bits)
+
+    f1 = core.tcanny.TCanny(clip, sigma=sigma, mode=-1)
+    f2 = core.tcanny.TCanny(clip, sigma=sigma * k, mode=-1)
+
+    return core.std.Expr([f1, f2], f'x y - {p} * x + {epsilon} >= 1 2 2 2 x y - {p} * x + {epsilon} - {lamda} * * exp 1 + / - ? {peak} *')
