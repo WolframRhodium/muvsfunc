@@ -54,7 +54,6 @@ Functions:
 
 import functools
 import math
-import random
 import vapoursynth as vs
 from vapoursynth import core
 import havsfunc as haf
@@ -4031,35 +4030,48 @@ def YAHRmod(clp, blur=2, depth=32, **limit_filter_args):
         return last
 
 
-def RandomInterleave(clips, seed=None):
-    """Returns a clip with the frames from two clips randomly interleaved
+def RandomInterleave(clips, seed=None, rand_list=None):
+    """Returns a clip with the frames from all clips randomly interleaved
 
     Useful for blinded-experiment.
 
     Args:
-        clips: Two input clips with same formats.
+        clips: Input clips with same formats.
 
         seed: (int) Random number generator initializer.
+            Default is None.
+
+        rand_list: (list) A list containning frame mappings of the interleaved clip.
+            For example, [0, 0, 1] stats that the first two frames of the output clip
+                are obtained from the first clip in "clips", while the third frame is
+                obtained from the second clip in "clips".
             Default is None.
 
     """
 
     funcName = 'RandomInterleave'
 
-    if not isinstance(clips, list) or len(clips) != 2:
-        raise TypeError(funcName + ': \"clips\" must be a list of two clips!')
+    if not isinstance(clips, list):
+        raise TypeError(funcName + ': \"clips\" must be a list of clips!')
 
-    random.seed(seed)
+    length = len(clips)
 
-    rand_list = [(random.randrange(0, 2) + 2 * i) for i in range(clips[0].num_frames)]
+    if rand_list is None:
+        import random
+        random.seed(seed)
 
-    clip1 = core.std.Interleave([clips[0], clips[0]])
-    clip2 = core.std.Interleave([clips[1], clips[1]])
+        tmp = list(range(length))
+
+        rand_list = []
+
+        for i in range(clips[0].num_frames):
+            random.shuffle(tmp)
+            rand_list += tmp
+
+    for i in range(length):
+        clips[i] = core.std.Interleave([clips[i]] * length)
 
     def selector(n, f):
-        if n in rand_list:
-            return f[0]
-        else:
-            return f[1]
+        return f[rand_list[n]]
      
-    return core.std.ModifyFrame(clip1, clips=[clip1, clip2], selector=selector)
+    return core.std.ModifyFrame(clips[0], clips=clips, selector=selector)
