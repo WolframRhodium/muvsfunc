@@ -49,10 +49,12 @@ Functions:
     BMAFilter
     LLSURE
     YAHRmod
+    RandomInterleave
 '''
 
 import functools
 import math
+import random
 import vapoursynth as vs
 from vapoursynth import core
 import havsfunc as haf
@@ -4027,3 +4029,37 @@ def YAHRmod(clp, blur=2, depth=32, **limit_filter_args):
         return core.std.ShufflePlanes([last, clp_orig], planes=[0, 1, 2], colorfamily=clp_orig.format.color_family)
     else:
         return last
+
+
+def RandomInterleave(clips, seed=None):
+    """Returns a clip with the frames from two clips randomly interleaved
+
+    Useful for blinded-experiment.
+
+    Args:
+        clips: Two input clips with same formats.
+
+        seed: (int) Random number generator initializer.
+            Default is None.
+
+    """
+
+    funcName = 'RandomInterleave'
+
+    if not isinstance(clips, list) or len(clips) != 2:
+        raise TypeError(funcName + ': \"clips\" must be a list of two clips!')
+
+    random.seed(seed)
+
+    rand_list = [(random.randrange(0, 2) + 2 * i) for i in range(clips[0].num_frames)]
+
+    clip1 = core.std.Interleave([clips[0], clips[0]])
+    clip2 = core.std.Interleave([clips[1], clips[1]])
+
+    def selector(n, f):
+        if n in rand_list:
+            return f[0]
+        else:
+            return f[1]
+     
+    return core.std.ModifyFrame(clip1, clips=[clip1, clip2], selector=selector)
