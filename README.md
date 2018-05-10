@@ -9,5 +9,3 @@ Muonium's VapourSynth functions
 `muvsfunc_numpy.py` contains algorithms that are processed in `numpy.ndarray` rather than C/C++. Due to the low performance, they are mainly for research. Here is my current interest.
 
 `LUM.py` and `SuperRes.py`(it's not the SuperRes in madVR or MPDN) are the dross of history. You won't need to use them.
-
-*Most functions are documented. But since I'm not a native English speaker, there might be some grammar errors. I'm happy to hear others point out mistakes to me.*

@@ -25,7 +25,7 @@ Functions:
     BoxFilter
     SmoothGrad
     DeFilter
-    scale (using the old expression in havsfunc)
+    scale
     ColorBarsHD
     SeeSaw
     abcxyz
@@ -59,12 +59,12 @@ import havsfunc as haf
 import mvsfunc as mvf
 
 def LDMerge(flt_h, flt_v, src, mrad=0, show=0, planes=None, convknl=1, conv_div=None, calc_mode=0, power=1.0):
-    """A filter to merge two filtered clip based on gradient direction map from source clip.
+    """Merges two filtered clips based on the gradient direction map from a source clip.
 
     Args:
-        flt_h, flt_v: Two filtered clip.
+        flt_h, flt_v: Two filtered clips.
 
-        src: Source clip. Must matc the filtered clip.
+        src: Source clip. Must be the same format as the filtered clips.
 
         mrad: (int) Expanding of gradient direction map. Default is 0.
 
@@ -73,16 +73,19 @@ def LDMerge(flt_h, flt_v, src, mrad=0, show=0, planes=None, convknl=1, conv_div=
         planes: (int []) Whether to process the corresponding plane. By default, every plane will be processed.
             The unprocessed planes will be copied from the first clip, "flt_h".
 
-        convknl: (0 or 1) Which convolution kernel is used to generate gradient direction map. Default is 1.
+        convknl: (0 or 1) Convolution kernel used to generate gradient direction map. 
+            0: Seconde order center difference in one direction and average in perpendicular direction
+            1: First order center difference in one direction and weighted average in perpendicular direction.
+            Default is 1.
 
         conv_div: (int) Divisor in convolution filter. Default is the max value in convolution kernel.
 
-        calc_mode: (0 or 1) Which method is used to calculate line direction map. Default is 0.
+        calc_mode: (0 or 1) Method used to calculate the gradient direction map. Default is 0.
 
         power: (float) Power coefficient in "calc_mode=0".
 
     Example:
-        # Fast Anti-aliasing
+        # Fast anti-aliasing
         horizontal = core.std.Convolution(clip, matrix=[1, 4, 0, 4, 1], planes=[0], mode='h')
         vertical = core.std.Convolution(clip, matrix=[1, 4, 0, 4, 1], planes=[0], mode='v')
         blur_src = core.tcanny.TCanny(clip, mode=-1, planes=[0]) # Eliminate noise
@@ -144,7 +147,7 @@ def LDMerge(flt_h, flt_v, src, mrad=0, show=0, planes=None, convknl=1, conv_div=
         hmap = haf.mt_inpand_multi(hmap, sw=0, sh=-mrad, planes=planes)
         vmap = haf.mt_inpand_multi(vmap, sw=-mrad, sh=0, planes=planes)
 
-    ldexpr = '{peak} 1 x 0.0001 + y 0.0001 + / {power} pow + /'.format(peak=(1 << bits) - 1, power=power) if calc_mode == 0 else 'y 0.0001 + x 0.0001 + dup * y 0.0001 + dup * + 2 * sqrt / {peak} *'.format(peak=(1 << bits) - 1)
+    ldexpr = '{peak} 1 x 0.0001 + y 0.0001 + / {power} pow + /'.format(peak=(1 << bits) - 1, power=power) if calc_mode == 0 else 'y 0.0001 + x 0.0001 + dup * y 0.0001 + dup * + sqrt / {peak} *'.format(peak=(1 << bits) - 1)
     ldmap = core.std.Expr([hmap, vmap], [(ldexpr if i in planes else '') for i in range(src.format.num_planes)])
 
     if show == 0:
@@ -158,18 +161,18 @@ def LDMerge(flt_h, flt_v, src, mrad=0, show=0, planes=None, convknl=1, conv_div=
 
 
 def Compare(src, flt, power=1.5, chroma=False, mode=2):
-    """A filter to check the difference of source clip and filtered clip.
+    """Visualizes the difference between the source clip and filtered clip.
 
     Args:
         src: Source clip.
 
         flt: Filtered clip.
 
-        power: (float) The variable in the processing kernel which controls the "strength" to increase difference. Default is 1.5.
+        power: (float) The variable in the processing function which controls the "strength" to increase difference. Default is 1.5.
 
         chroma: (bint) Whether to process chroma. Default is False.
 
-        mode: (1 or 2) Different processing kernel. 1: non-linear; 2: linear.
+        mode: (1 or 2) Different processing function. 1: non-linear; 2: linear.
 
     """
 
@@ -210,13 +213,14 @@ def Compare(src, flt, power=1.5, chroma=False, mode=2):
 
 
 def Compare2(clip1, clip2, props_list=None):
-    """Simple function to compare the format between two clips.
+    """Compares the formats of two clips.
 
-    TypeError will be raised when the two formats are not identical.
+    TypeError will be raised when one of the format of two clips are not identical.
     Otherwise, None is returned.
 
     Args:
         clip1, clip2: Input.
+
         props_list: (list) A list containing the format to be compared. If it is none, all the formats will be compared.
             Default is None.
 
@@ -249,7 +253,7 @@ def Compare2(clip1, clip2, props_list=None):
 
 
 def ExInpand(input, mrad=0, mode='rectangle', planes=None):
-    """A filter to use std.Maximum()/std.Minimum() and their mix conveniently.
+    """A filter to simplify the calls of std.Maximum()/std.Minimum() and their concatenation.
 
     Args:
         input: Source clip.
@@ -257,7 +261,7 @@ def ExInpand(input, mrad=0, mode='rectangle', planes=None):
         mrad: (int []) How many times to use std.Maximum()/std.Minimum(). Default is 0.
             Positive value indicates to use std.Maximum().
             Negative value indicates to use std.Minimum().
-            Values can be formed into a list, or a list of lists.
+            Values can be put into a list, or a list of lists.
 
             Example:
                 mrad=[2, -1] is equvalant to clip.std.Maximum().std.Maximum().std.Minimum()
@@ -340,7 +344,7 @@ def ExInpand(input, mrad=0, mode='rectangle', planes=None):
 
 
 def InDeflate(input, msmooth=0, planes=None):
-    """A filter to use std.Inflate()/std.Deflate() and their mix conveniently.
+    """A filter to simplify the calls of std.Inflate()/std.Deflate() and their concatenation.
 
     Args:
         input: Source clip.
@@ -387,14 +391,16 @@ def InDeflate(input, msmooth=0, planes=None):
 
 
 def MultiRemoveGrain(input, mode=0, loop=1):
-    """A filter to use rgvs.RemoveGrain() and their mix conveniently.
+    """A filter to simplify the calls of rgvs.RemoveGrain().
 
     Args:
         input: Source clip.
-        mode: (int []) "mode" in rgvs.RemoveGrain(). Default is 0.
+
+        mode: (int []) "mode" in rgvs.RemoveGrain().
             Can be a list, the logic is similar to "mode" in ExInpand().
 
             Example: mode=[4, 11, 11] is equivalant to clip.rgvs.RemoveGrain(4).rgvs.RemoveGrain(11).rgvs.RemoveGrain(11)
+            Default is 0.
 
         loop: (int) How many times the "mode" loops.
 
@@ -428,20 +434,20 @@ def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=
              debug=None, thrc=None, radiusc=None, elastc=None, planes=None, ref=None):
     """GradFun3 by Firesledge v0.1.1
 
-    Ported by Muonium  2016/6/18
-    Ported from Dither_tools v1.27.2 (http://avisynth.nl/index.php/Dither_tools)
-    Internal calculation precision is always 16 bits.
+    Port by Muonium  2016/6/18
+    Port from Dither_tools v1.27.2 (http://avisynth.nl/index.php/Dither_tools)
+    Internal precision is always 16 bits.
 
     Read the document of Avisynth version for more details.
 
     Notes:
         1. In this function I try to keep the original look of GradFun3 in Avisynth.
-            It should be better to use Frechdachs's GradFun3 in his fvsfunc.py (https://github.com/Irrational-Encoding-Wizardry/fvsfunc) which is more novel and powerful.
-
-        2. current smode=1 or 2 only support small "radius" (<=9).
+            It should be better to use Frechdachs's GradFun3 in his fvsfunc.py 
+            (https://github.com/Irrational-Encoding-Wizardry/fvsfunc) which is more novel and powerful.
 
     Removed parameters list:
         "dthr", "wmin", "thr_edg", "subspl", "lsb_in"
+
     Parameters "y", "u", "v" are changed into "planes"
 
     """
@@ -672,18 +678,18 @@ def Build_gf3_range_mask(src, radius=1):
 
 
 def AnimeMask(input, shift=0, expr=None, mode=1, resample_args=None):
-    """A filter to generate edge/ringing mask for anime based on gradient operator.
+    """Generates edge/ringing mask for anime based on gradient operator.
 
-    For Anime's ringing mask, it's recommended to set "shift" between 0.5 to 1.0.
+    For Anime's ringing mask, it's recommended to set "shift" between 0.5 and 1.0.
 
     Args:
         input: Source clip. Only the First plane will be processed.
 
-        shift: (float, -1.5 ~ 1.5) Location of mask. Default is 0.
+        shift: (float, -1.5 ~ 1.5) The distance of translation. Default is 0.
 
         expr: (string) Subsequent processing in std.Expr(). Default is "".
 
-        mode: (-1 or 1) Different kernel. Typically, -1 is for edge, 1 is for ringing. Default is 1.
+        mode: (-1 or 1) Type of the kernel, which simply inverts the pixel values and "shift". Typically, -1 is for edge, 1 is for ringing. Default is 1.
 
         resample_args: (dict) Additional parameters passed to core.fmtc.resample in the form of dict.
             Default is dict(kernel='bicubic').
@@ -732,7 +738,7 @@ def AnimeMask(input, shift=0, expr=None, mode=1, resample_args=None):
 def AnimeMask2(input, r=1.2, expr=None, mode=1):
     """Yet another filter to generate edge/ringing mask for anime.
 
-    More specifically, it's an approximate Difference of Gaussians filter based on resampling kernel.
+    More specifically, it's an approximatation of the difference of gaussians filter based on resampling.
 
     Args:
         input: Source clip. Only the First plane will be processed.
@@ -741,7 +747,7 @@ def AnimeMask2(input, r=1.2, expr=None, mode=1):
 
         expr: (string) Subsequent processing in std.Expr(). Default is "".
 
-        mode: (-1 or 1) Different kernel. Typically, -1 is for edge, 1 is for ringing. Default is 1.
+        mode: (-1 or 1) Type of the kernel. Typically, -1 is for edge, 1 is for ringing. Default is 1.
 
     """
 
@@ -777,21 +783,21 @@ def AnimeMask2(input, r=1.2, expr=None, mode=1):
 
 
 def PolygonExInpand(input, shift=0, shape=0, mixmode=0, noncentral=False, step=1, amp=1, fmtc_args=None, resample_args=None):
-    """A filter to process mask based on resampling kernel.
+    """Processes mask based on resampling.
 
     Args:
         input: Source clip. Only the First plane will be processed.
 
-        shift: (float) How far to expand/inpand. Default is 0.
+        shift: (float) Distance of expanding/inpanding. Default is 0.
 
         shape: (int, 0:losange, 1:square, 2:octagon) The shape of expand/inpand kernel. Default is 0.
 
         mixmode: (int, 0:max, 1:arithmetic mean, 2:quadratic mean)
             Method used to calculate the mix of different mask. Default is 0.
 
-        noncentral: (bint) Whether to calculate center pixel in mix process.
+        noncentral: (bint) Whether to calculate the center pixel in mix process.
 
-        step: (float) How far each step of expand/inpand. Default is 1.
+        step: (float) Step of expanding/inpanding. Default is 1.
 
         amp: (float) Linear multiple to strengthen the final mask. Default is 1.
 
@@ -901,7 +907,7 @@ def Luma(input, plane=0, power=4):
     """std.Lut() implementation of Luma() in Histogram() filter.
 
     Args:
-        input: Source clip. Only the First plane will be processed.
+        input: Source clip. Only one plane will be processed.
 
         plane: (int) Which plane to be processed. Default is 0.
 
@@ -1145,9 +1151,9 @@ def SharpAAMcmod(orig, dark=0.2, thin=10, sharp=150, smooth=-1, stabilize=False,
 
 
 def TEdge(input, min=0, max=65535, planes=None, rshift=0):
-    """Detect edge using TEdgeMask(type=2).
+    """Detects edge using TEdgeMask(type=2).
 
-    Ported from https://github.com/chikuzen/GenericFilters/blob/2044dc6c25a1b402aae443754d7a46217a2fddbf/src/convolution/tedge.c
+    Port from https://github.com/chikuzen/GenericFilters/blob/2044dc6c25a1b402aae443754d7a46217a2fddbf/src/convolution/tedge.c
 
     Args:
         input: Source clip.
@@ -1188,7 +1194,7 @@ def TEdge(input, min=0, max=65535, planes=None, rshift=0):
 
 
 def Sort(input, order=1, planes=None, mode='max'):
-    """Simple filter to get nth large value in 3x3.
+    """Simple filter to get nth largeest value in 3x3 neighbourhood.
 
     Args:
         input: Source clip.
@@ -1581,7 +1587,7 @@ def TCannyHelper(input, t_h=8.0, t_l=1.0, plane=0, returnAll=False, **canny_args
 
 
 def MergeChroma(clip1, clip2, weight=1.0):
-    """A function that merges the chroma from one videoclip into another. Ported from Avisynth's equivalent.
+    """Merges the chroma from one videoclip into another. Port from Avisynth's equivalent.
 
     There is an optional weighting, so a percentage between the two clips can be specified.
 
@@ -1687,7 +1693,9 @@ def firniture(clip, width, height, kernel='binomial7', taps=None, gamma=False, t
 def BoxFilter(input, radius=16, radius_v=None, planes=None, fmtc_conv=0, radius_thr=None, resample_args=None, keep_bits=True, depth_args=None):
     '''Box filter
 
-    Performs a box filtering on the input clip. Box filtering consists in averaging all the pixels in a square area whose center is the output pixel. You can approximate a large gaussian filtering by cascading a few box filters.
+    Performs a box filtering on the input clip.
+    Box filtering consists in averaging all the pixels in a square area whose center is the output pixel.
+    You can approximate a large gaussian filtering by cascading a few box filters.
 
     Args:
         input: Input clip to be filtered.
@@ -1856,6 +1864,7 @@ def DeFilter(input, fun, iter=10, planes=None, **fun_args):
 
     Ref:
         [1] Tao, X., Zhou, C., Shen, X., Wang, J., & Jia, J. (2017, October). Zero-Order Reverse Filtering. In Computer Vision (ICCV), 2017 IEEE International Conference on (pp. 222-230). IEEE.
+        [2] Milanfar, P. (2018). Rendition: Reclaiming what a black box takes away. arXiv preprint arXiv:1804.08651.
 
     '''
 
@@ -1909,7 +1918,6 @@ def ColorBarsHD(clip=None, width=1288, height=720):
             1288 x  720 <- default
             1456 x 1080  hd anamorphic
             1904 x 1080
-
 
     '''
 
@@ -2501,12 +2509,17 @@ def dfttestMC(input, pp=None, mc=2, mdg=False, planes=None, sigma=None, sbsize=N
     Args:
 
         input: Input clip.
+
         pp: (clip) Clip to calculate vectors from. Default is \"input\".
+
         mc: (int) Number of frames in each direction to compensate. Range: 0 ~ 5. Default is 2.
+
         mdg: (bool) Run MDeGrain before dfttest. Default is False.
+
         mdgSAD: (int) thSAD for MDeGrain. Default is undefined.
 
-        dfttest's sigma, sbsize, sosize and tbsize re supported. Extra dfttest parameters may be passed via "dfttest_params".
+        dfttest's sigma, sbsize, sosize and tbsize are supported. Extra dfttest parameters may be passed via "dfttest_params".
+
         pel, thSCD, thSAD, blksize, overlap, dct, search, and searchparam are also supported.
 
         sigma is the main control of dfttest strength.
@@ -2630,17 +2643,24 @@ def BalanceBorders(c, cTop=0, cBottom=0, cLeft=0, cRight=0, thresh=128, blur=999
     Args:
         c: Input clip. The image area "in the middle" does not change during processing.
             The clip can be any format, which differs from Avisynth's equivalent.
-        cTop, cBotteom, cLeft, cRight: (int) The number of variable pixels on each side.
+
+        cTop, cBottom, cLeft, cRight: (int) The number of variable pixels on each side.
             There will not be anything very terrible if you specify values that are greater than the minimum required in your case,
             but to achieve a good result, "it is better not to" ...
-            Range: 2~inf for RGB input. For YUV or YCbCr input, the minimum accepted value varies depending on chroma subsampling.
-                For YV24, the it's also 2~inf. For YV12, the it's 4~inf. Default is 0.
+            Range: 0 will skip the processing. For RGB input, the range is 2~inf.
+                For YUV or YCbCr input, the minimum accepted value depends on chroma subsampling.
+                Specifically, for YV24, the range is also 2~inf. For YV12, the range is 4~inf.
+            Default is 0.
+
         thresh: (int) Threshold of acceptable changes for local color matching in 8 bit scale.
-            Range: 0~128. Recommend: [0~16 or 128]. Default is 128.
+            Range: 0~128. Recommend: [0~16 or 128].
+            Default is 128.
+
         blur: (int) Degree of blur for local color matching.
             Smaller values give a more accurate color match,
             larger values give a more accurate picture transfer.
-            Range: 1~inf. Recommend: [1~20 or 999]. Default is 999.
+            Range: 1~inf. Recommend: [1~20 or 999].
+            Default is 999.
 
     Notes:
         1) At default values ​​of thresh = 128 blur = 999,
@@ -2755,6 +2775,7 @@ def DisplayHistogram(clip, factor=None):
     Args:
         clip: Input clip. Must be constant format 8..16 bit integer YUV input.
             If the input's bitdepth is not 8, input will be converted to 8 bit before passing to hist.Levels().
+
         factor: (float) hist.Levels()'s argument.
             It specifies how the histograms are displayed, exaggerating the vertical scale.
             It is specified as percentage of the total population (that is number of luma or chroma pixels in a frame).
@@ -3026,6 +3047,7 @@ def GuidedFilterColor(input, guidance, radius=4, regulation=0.01, use_gauss=Fals
 
     Args:
         input: Input clip. It should be a gray-scale/single channel image.
+
         guidance: Guidance clip used to compute the coefficient of the linear translation on 'input'.
             It must has no subsampling for the second and third plane in horizontal/vertical direction, e.g. RGB or YUV444.
 
