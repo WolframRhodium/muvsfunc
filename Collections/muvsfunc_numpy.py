@@ -67,10 +67,10 @@ def numpy_process(clips, numpy_function, per_plane=True, lock_source_array=True,
                     s = np.asarray(f.get_read_array(p))
                     s.flags.writeable = not lock_source_array # Lock the source data, making it read-only
 
-                    fs = numpy_function(s, **fun_args)
-
                     d = np.asarray(fout.get_write_array(p))
-                    np.copyto(d, fs)
+
+                    d[:] = numpy_function(s, **fun_args)
+
                     del d
             else:
                 s_list = []
@@ -97,10 +97,10 @@ def numpy_process(clips, numpy_function, per_plane=True, lock_source_array=True,
                         s_list.append(np.asarray(frame.get_read_array(p)))
                         s_list[-1].flags.writeable = not lock_source_array # Lock the source data, making it read-only
 
-                    fs = numpy_function(*s_list, **fun_args)
-
                     d = np.asarray(fout.get_write_array(p))
-                    np.copyto(d, fs)
+
+                    d[:] = numpy_function(*s_list, **fun_args)
+
                     del d
             else:
                 s_list = []
