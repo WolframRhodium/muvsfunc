@@ -62,6 +62,7 @@ def numpy_process(clips, numpy_function, per_plane=True, lock_source_array=True,
         if not isinstance(f, list): # single input
             fout = f.copy()
             planes = fout.format.num_planes
+
             if per_plane:
                 for p in range(planes):
                     s = np.asarray(f.get_read_array(p))
@@ -85,11 +86,14 @@ def numpy_process(clips, numpy_function, per_plane=True, lock_source_array=True,
                 for p in range(planes):
                     d = np.asarray(fout.get_write_array(p))
                     np.copyto(d, fs[:, :, p])
+
                     del d
             return fout
+
         else: # multiple input
             fout = f[0].copy()
             planes = fout.format.num_planes
+
             if per_plane:
                 for p in range(planes):
                     s_list = []
@@ -122,6 +126,9 @@ def numpy_process(clips, numpy_function, per_plane=True, lock_source_array=True,
 
     if not isinstance(clips, list):
         clips = [clips]
+
+    if clips[0].format.num_planes == 1:
+        per_plane = True
 
     flt = core.std.ModifyFrame(clips[0], clips, FLT)
 
