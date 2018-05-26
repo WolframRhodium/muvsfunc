@@ -31,106 +31,135 @@ import vapoursynth as vs
 from vapoursynth import core
 import mvsfunc as mvf
 import numpy as np
-from numpy.lib.stride_tricks import as_strided
 
-def numpy_process(clips, numpy_function, per_plane=True, lock_source_array=True, **fun_args):
+def numpy_process(clips, numpy_function, input_per_plane=True, output_per_plane=True, lock_source_array=True, omit_first_clip=False, **fun_args):
     """Helper function for filtering clip in NumPy
 
     Args:
-        clips: Input cilp.
-            It can also be a list of clips. If so, clips will be passed to "numpy_function" in order.
+        clips: Input cilps.
+            It can also be a list of clips. If so, these clips will be passed to "numpy_function" in order.
             The returned clip should has the same format as the first clip in the list.
 
-        numpy_function: Spatial function to process numpy data. It should not change the dimensions or data type of its input.
-            The format of the data provided to the function is "HWC", 
-            i.e. number of pixels in vertical(height), horizontal(width) dimension and channels respectively.
+        numpy_function: Spatial function to process numpy data.
+            The format of the data provided to the function is "HWC" 
+                (i.e. number of pixels in vertical(height), horizontal(width) dimension and channels respectively.),
+                if the length of the input data in the third dimension is greater than 1, or otherwise "HW".
+            It should be noted that the format of the data provided to the function not only depends on the data itself,
+                but also depends on the parameter "input_per_plane".
 
-        per_plane: (bool) Whether to process data by plane. If not, data would be processed by frame.
+        input_per_plane: (bool or list of bools) Whether to input the data to the "numpy_function" plane-wisely.
+            If not, all of the data in the current frame will be inputted simultaneously.
+            If the value for one clip is not specified, it will be set according to the value of previous clip.
             Default is True.
 
-        lock_source_array: (bool) Whether to lock the source array to avoid unintentionally overwrite the data.
+        output_per_plane: (bool) Whether to output the data of the "numpy_function" plane-wisely.
+            If not, all of the data in the current result will be outputted simultaneously.
             Default is True.
+
+        lock_source_array: (bool) Whether to lock the source array to avoid unintentionally overwriting the data.
+            Default is True.
+
+        omit_first_clip: (bool) Whether the first clip in "clips" and "input_per_plane".
+            Useful for stuffs which alter the format of the input, for example, resize.
+            Default is False.
 
         fun_args: (dict) Additional arguments passed to “numpy_function” in the form of keyword arguments.
             Default is {}.
 
     """
 
+    funcName = 'numpy_process'
+
 
     # The following code is modified from https://github.com/KotoriCANOE/MyTF/blob/master/utils/vshelper.py
-    def FLT(n, f):
-        if not isinstance(f, list): # single input
-            fout = f.copy()
-            planes = fout.format.num_planes
+    def executor(n, f):
+        if not isinstance(f, list): # Cast "f" to list to simplify the code
+            f = [f]
 
-            if per_plane:
-                for p in range(planes):
-                    s = np.asarray(f.get_read_array(p))
-                    s.flags.writeable = not lock_source_array # Lock the source data, making it read-only
+        fout = f[0].copy() # Requirment from std.ModifyFrame
 
-                    d = np.asarray(fout.get_write_array(p))
+        if omit_first_clip:
+            f = f[1:]
 
-                    d[:] = numpy_function(s, **fun_args)
+        if output_per_plane: # The data will be outputted plane-wisely
+            # pre-allocation
+            pre_stacked_clips = {}
+            for index, frame in enumerate(f):
+                if not input_per_plane[index]: # All planes of this clip will be passed through the function simultaneously
+                    if frame.format.num_planes == 1: # It's a gray scale clip
+                        pre_stacked_clips[index] = np.asarray(frame.get_read_array(0))
+                    else: # It's a clip with multiple planes
+                        planes_data = []
+                        for p in range(frame.format.num_planes):
+                            arr = np.asarray(frame.get_read_array(p))
+                            planes_data.append(arr)
+                        pre_stacked_clips[index] = np.stack(planes_data, axis=2) # HWC format
 
-                    del d
-            else:
-                s_list = []
-                for p in range(planes):
-                    arr = np.asarray(f.get_read_array(p)) # This is a 2-D array
-                    s_list.append(arr)
-                s = np.stack(s_list, axis=2) # "s" is a 3-D array
-                s.flags.writeable = not lock_source_array # Lock the source data, making it read-only
+            # plane-wise processing
+            for p in range(fout.format.num_planes):
+                inputs_data = []
+                for index, frame in enumerate(f):
+                    if input_per_plane[index]: # Input the corresponding plane
+                        current_input = np.asarray(frame.get_read_array(p))
+                    else: # Use the pre-stacked frames
+                        current_input = pre_stacked_clips[index]
 
-                fs = numpy_function(s, **fun_args)
+                    current_input.flags.writeable = not lock_source_array # Lock the source data, making it read-only
 
-                for p in range(planes):
-                    d = np.asarray(fout.get_write_array(p))
-                    np.copyto(d, fs[:, :, p])
+                    inputs_data.append(current_input) # Collect the inputs
 
-                    del d
-            return fout
+                output_array = np.asarray(fout.get_write_array(p))
 
-        else: # multiple input
-            fout = f[0].copy()
-            planes = fout.format.num_planes
+                output_array[:] = numpy_function(*inputs_data, **fun_args)
 
-            if per_plane:
-                for p in range(planes):
-                    s_list = []
-                    for frame in f:
-                        s_list.append(np.asarray(frame.get_read_array(p)))
-                        s_list[-1].flags.writeable = not lock_source_array # Lock the source data, making it read-only
+        else: # Process all planes of the output simultaneously
+            inputs_data = []
 
-                    d = np.asarray(fout.get_write_array(p))
-
-                    d[:] = numpy_function(*s_list, **fun_args)
-
-                    del d
-            else:
-                s_list = []
-                for frame in f:
+            for frame in f:
+                if frame.format.num_planes == 1: # It's a gray scale clip
+                    current_input = np.asarray(frame.get_read_array(0))
+                else: # It's's a clip with multiple planes
                     plane_list = []
-                    for p in range(planes):
+                    for p in range(frame.format.num_planes):
                         arr = np.asarray(frame.get_read_array(p))
                         plane_list.append(arr)
-                    s_list.append(np.stack(plane_list, axis=2))
-                    s_list[-1].flags.writeable = not lock_source_array # Lock the source data, making it read-only
+                    current_input = np.stack(plane_list, axis=2) # HWC format
 
-                fs = numpy_function(*s_list, **fun_args)
+                current_input.flags.writeable = not lock_source_array
 
-                for p in range(planes):
-                    d = np.asarray(fout.get_write_array(p))
-                    np.copyto(d, fs[:, :, p])
-                    del d
-            return fout
+                inputs_data.append(current_input) # Collect the inputs
 
+            output = numpy_function(*inputs_data, **fun_args)
+
+            # Plane-wise copying
+            for p in range(fout.format.num_planes):
+                output_array = np.asarray(fout.get_write_array(p))
+                np.copyto(output_array, output[:, :, p])
+
+        return fout
+
+
+    # initialization
     if not isinstance(clips, list):
         clips = [clips]
 
-    if clips[0].format.num_planes == 1:
-        per_plane = True
+    if not isinstance(input_per_plane, list):
+        input_per_plane = [input_per_plane]
 
-    flt = core.std.ModifyFrame(clips[0], clips, FLT)
+    for i in range(len(clips) - len(input_per_plane)):
+        input_per_plane.append(input_per_plane[-1])
+
+    if clips[0].format.num_planes == 1:
+        output_per_plane = True
+
+    if len(clips) == 1 and omit_first_clip:
+        raise ValueError(': \"input\" must be False when only one clip is inputted')
+
+    if omit_first_clip:
+        input_per_plane = input_per_plane[1:]
+
+    # process
+    flt = core.std.ModifyFrame(clips[0], clips, executor)
 
     return flt
 
@@ -187,6 +216,7 @@ def numpy_process_val(clip, numpy_function, props_name, per_plane=True, lock_sou
             fout.props[props_name[i]] = j
 
         return fout
+
 
     flt = core.std.ModifyFrame(clip, clip, FLT)
 
@@ -245,7 +275,7 @@ def L0Smooth(clip, lamda=2e-2, kappa=2, color=True, **depth_args):
     # Internal parameters
     bits = clip.format.bits_per_sample
     sampleType = clip.format.sample_type
-    per_plane = not color or clip.format.num_planes == 1
+    input_per_plane = output_per_plane = not color or clip.format.num_planes == 1
 
     # Convert to floating point
     clip = mvf.Depth(clip, depth=32, sample=vs.FLOAT, **depth_args)
@@ -262,7 +292,8 @@ def L0Smooth(clip, lamda=2e-2, kappa=2, color=True, **depth_args):
     Denormin2 = L0Smooth_generate_denormin2(size2D)
 
     # Process
-    clip = numpy_process(clip, functools.partial(L0Smooth_core, lamda=lamda, kappa=kappa, Denormin2=Denormin2), per_plane=per_plane, copy=True)
+    clip = numpy_process(clip, functools.partial(L0Smooth_core, lamda=lamda, kappa=kappa, Denormin2=Denormin2),
+        input_per_plane=input_per_plane, output_per_plane=output_per_plane, copy=True)
 
     # Crop the padding
     if pad:
@@ -502,7 +533,7 @@ def L0GradientProjection(clip, alpha=0.08, precision=255, epsilon=0.0002, maxite
     # Internal parameters
     bits = clip.format.bits_per_sample
     sampleType = clip.format.sample_type
-    per_plane = not color or clip.format.num_planes == 1
+    input_per_plane = output_per_plane = not color or clip.format.num_planes == 1
 
     # Convert to floating point
     clip = mvf.Depth(clip, depth=32, sample=vs.FLOAT, **depth_args)
@@ -520,7 +551,7 @@ def L0GradientProjection(clip, alpha=0.08, precision=255, epsilon=0.0002, maxite
 
     # Process
     clip = numpy_process(clip, functools.partial(L0GradProj_core, alpha=alpha, precision=precision, epsilon=epsilon, maxiter=maxiter,
-        gamma=gamma, eta=eta, Lap=Lap), per_plane=per_plane, copy=True)
+        gamma=gamma, eta=eta, Lap=Lap), input_per_plane=input_per_plane, output_per_plane=output_per_plane, copy=True)
 
     # Crop the padding
     if pad:
@@ -882,8 +913,10 @@ def DNCNN(clip, symbol_path, params_path, patch_size=[640, 640], device_id=0, **
 
         for i in range(math.ceil(data.shape[2]/patch_size[0])):
             for j in range(math.ceil(data.shape[3]/patch_size[1])):
-                model.forward(data_batch=Batch([data[:, :, i*patch_size[0]:min((i+1)*patch_size[0], img.shape[0]), j*patch_size[1]:min((j+1)*patch_size[1], img.shape[1])].copy()]), is_train=False)
-                pred[:, :, i*patch_size[0]:min((i+1)*patch_size[0], img.shape[0]), j*patch_size[1]:min((j+1)*patch_size[1], img.shape[1])] = model.get_outputs()[0]
+                model.forward(data_batch=Batch([data[:, :, i*patch_size[0]:min((i+1)*patch_size[0], img.shape[0]), 
+                    j*patch_size[1]:min((j+1)*patch_size[1], img.shape[1])].copy()]), is_train=False)
+                pred[:, :, i*patch_size[0]:min((i+1)*patch_size[0], img.shape[0]), 
+                    j*patch_size[1]:min((j+1)*patch_size[1], img.shape[1])] = model.get_outputs()[0]
 
         pred = mx.nd.transpose(pred, axes=(0, 2, 3, 1)).reshape(img.shape).asnumpy()
 
@@ -897,7 +930,7 @@ def DNCNN(clip, symbol_path, params_path, patch_size=[640, 640], device_id=0, **
     sampleType = clip.format.sample_type
 
     clip = mvf.Depth(clip, depth=32, sample=vs.FLOAT, **depth_args)
-    clip = numpy_process(clip, DNCNN_core, per_plane=False, model=model) # Forward
+    clip = numpy_process(clip, DNCNN_core, input_per_plane=False, output_per_plane=False, model=model) # Forward
     clip = mvf.Depth(clip, depth=bits, sample=sampleType, **depth_args)
 
     return clip
@@ -921,6 +954,8 @@ def get_blockwise_view(input_2D, block_size=8, strides=1, writeable=False):
             Default is False.
 
     """
+
+    from numpy.lib.stride_tricks import as_strided
 
     w, h = input_2D.shape
 
@@ -978,7 +1013,7 @@ def BNNMDenoise(clip, lamda=0.01, block_size=8, **depth_args):
     sampleType = clip.format.sample_type
 
     clip = mvf.Depth(clip, depth=32, sample=vs.FLOAT, **depth_args)
-    clip = numpy_process(clip, functools.partial(BNNMDenoise_core, block_size=block_size, lamda=lamda), per_plane=True, copy=True)
+    clip = numpy_process(clip, functools.partial(BNNMDenoise_core, block_size=block_size, lamda=lamda), input_per_plane=True, output_per_plane=True, copy=True)
     clip = mvf.Depth(clip, depth=bits, sample=sampleType, **depth_args)
 
     return clip
@@ -1061,7 +1096,7 @@ def FGS(clip, ref=None, sigma=0.03, lamda=100, solver_iteration=3, solver_attenu
         clip = [clip, ref]
 
     clip = numpy_process(clip, functools.partial(FGS_2D_core, sigma=sigma, lamda=lamda, 
-        solver_iteration=solver_iteration, solver_attenuation=solver_attenuation), per_plane=True, copy=True)
+        solver_iteration=solver_iteration, solver_attenuation=solver_attenuation), input_per_plane=True, output_per_plane=True, copy=True)
     clip = mvf.Depth(clip, depth=bits, sample=sampleType, **depth_args)
 
     return clip
@@ -1230,7 +1265,7 @@ def FDD(clip, ref=None, sigma=0.03, lamda=100, beta=None, epsilon=1.2, solver_it
         clip = [clip, ref]
 
     clip = numpy_process(clip, functools.partial(FDD_2D_core, sigma=sigma, lamda=lamda, beta=beta, 
-        epsilon=epsilon, solver_iteration=solver_iteration), per_plane=True, copy=True)
+        epsilon=epsilon, solver_iteration=solver_iteration), input_per_plane=True, output_per_plane=True, copy=True)
     clip = mvf.Depth(clip, depth=bits, sample=sampleType, **depth_args)
 
     return clip
@@ -1351,7 +1386,7 @@ def SSFDeband(clip, thr=1, smooth_taps=2, edge_taps=3, strides=3, auto_scale_thr
             thr /= (2 ** bits) - 1
 
     clip = numpy_process(clip, functools.partial(SSFDeband_core, thr=thr, smooth_taps=smooth_taps, 
-        edge_taps=edge_taps, strides=strides), per_plane=True, copy=True)
+        edge_taps=edge_taps, strides=strides), input_per_plane=True, output_per_plane=True, copy=True)
 
     return clip
 
@@ -1362,6 +1397,8 @@ def SSFDeband_core(img_2D, thr=1, smooth_taps=2, edge_taps=3, strides=3, copy=Fa
     For detailed documentation, please refer to the documentation of "SSFDeband" funcion in current library.
 
     """
+
+    from numpy.lib.stride_tricks import as_strided
 
     img_2D_dtype = img_2D.dtype
 
@@ -1431,7 +1468,7 @@ def SigmaFilter(clip, radius=3, thr=0.01, **depth_args):
     sampleType = clip.format.sample_type
 
     clip = mvf.Depth(clip, depth=32, sample=vs.FLOAT, **depth_args)
-    clip = numpy_process(clip, functools.partial(SigmaFilter_core, radius=radius, thr=thr), per_plane=True)
+    clip = numpy_process(clip, functools.partial(SigmaFilter_core, radius=radius, thr=thr), input_per_plane=True, output_per_plane=True)
     clip = mvf.Depth(clip, depth=bits, sample=sampleType, **depth_args)
 
     return clip
