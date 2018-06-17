@@ -56,7 +56,7 @@ def convert_2020_to_709(pixel_rgb, matrix_2020, matrix_709, D65_XYZ, beta=0.2):
 
     c_709 = D65_uv + f(np.linalg.norm(pixel_uv - D65_uv) / w_p709, alpha, beta) * (intersection_709 - D65_uv) # the formula in the report is wrong
 
-
+    """
     plt.subplot(131)
     plt.scatter(vertex_709[:, 0], vertex_709[:, 1], color='b')
     plt.scatter(vertex_2020[:, 0], vertex_2020[:, 1], color='g')
@@ -81,7 +81,7 @@ def convert_2020_to_709(pixel_rgb, matrix_2020, matrix_709, D65_XYZ, beta=0.2):
     plt.scatter(c_709[0], c_709[1], color='k')
 
     plt.show()
-
+    """
 
     x, z = _yuv2xz(pixel_y, c_709[0], c_709[1])
 
@@ -161,10 +161,10 @@ def _yuv2xz(y, u, v):
     # Convert CIE 1976 𝑢’𝑣’ to CIE 1931 XZ
     return 9 * u * y / (4 * v), (12 - 3 * u - 20 * v) * y / (4 * v)
 
-
+"""
 rgb = np.array([0.3, 0.4, 0.5])
 print(convert_2020_to_709(rgb, RGB2XYZ_2020, RGB2XYZ_709, D65_XYZ))
-
+"""
 
 """
 rgb = np.array([0.263/0.263, 0, 0])
