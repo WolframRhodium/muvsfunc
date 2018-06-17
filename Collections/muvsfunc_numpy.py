@@ -289,7 +289,7 @@ def L0Smooth(clip, lamda=2e-2, kappa=2, color=True, **depth_args):
 
     # Pre-calculate constant 2-D matrix
     size2D = (clip.height, clip.width)
-    Denormin2 = L0Smooth_generate_denormin2(size2D)
+    Denormin2 = _L0Smooth_generate_denormin2(size2D)
 
     # Process
     clip = numpy_process(clip, functools.partial(L0Smooth_core, lamda=lamda, kappa=kappa, Denormin2=Denormin2),
@@ -305,7 +305,7 @@ def L0Smooth(clip, lamda=2e-2, kappa=2, color=True, **depth_args):
     return clip
 
 
-def L0Smooth_generate_denormin2(size2D):
+def _L0Smooth_generate_denormin2(size2D):
     """Helper function to generate constant "Denormin2"
     """
     fx = np.array([[1, -1]])
@@ -364,7 +364,7 @@ def L0Smooth_core(src, lamda=2e-2, kappa=2, Denormin2=None, copy=False):
 
     # Generate constant "Denormin2"
     if Denormin2 is None:
-        Denormin2 = L0Smooth_generate_denormin2(size2D)
+        Denormin2 = _L0Smooth_generate_denormin2(size2D)
 
     if Denormin2.shape[:2] == size2D:
         Denormin2 = Denormin2[:, :size2D[1]//2+1]
@@ -547,7 +547,7 @@ def L0GradientProjection(clip, alpha=0.08, precision=255, epsilon=0.0002, maxite
 
     # Pre-calculate constant 2-D matrix
     size2D = (clip.height, clip.width)
-    Lap = L0GradProj_generate_lap(size2D)
+    Lap = _L0GradProj_generate_lap(size2D)
 
     # Process
     clip = numpy_process(clip, functools.partial(L0GradProj_core, alpha=alpha, precision=precision, epsilon=epsilon, maxiter=maxiter,
@@ -621,7 +621,7 @@ def L0GradProj_core(src, alpha=0.08, precision=255, epsilon=0.0002, maxiter=5000
 
     # for fftbased diagonilization
     if Lap is None:
-        Lap = L0GradProj_generate_lap(src_shape[:2])
+        Lap = _L0GradProj_generate_lap(src_shape[:2])
 
     if Lap.shape == src_shape[:2]:
         Lap = Lap[:, :src_shape[1]//2+1, np.newaxis, np.newaxis]
@@ -632,7 +632,7 @@ def L0GradProj_core(src, alpha=0.08, precision=255, epsilon=0.0002, maxiter=5000
     # calculating L0 gradient value
     # z: 3-D array
     #L0gradcalc = lambda z: L0GradValue(D((z[:, :, :, np.newaxis] * 255).astype(np.uint8).astype(np.float32)))
-    L0gradcalc = lambda z: L0GradProj_L0GradValue(D(np.round(z[:, :, :, np.newaxis] * precision)))
+    L0gradcalc = lambda z: _L0GradProj_L0GradValue(D(np.round(z[:, :, :, np.newaxis] * precision)))
 
     # variables
     u = np.empty_like(src)
@@ -643,7 +643,7 @@ def L0GradProj_core(src, alpha=0.08, precision=255, epsilon=0.0002, maxiter=5000
         rhs = src + Dt(v - w) / gamma
 
         u[:] = np.fft.irfft2(np.fft.rfft2(rhs, axes=(0, 1)) / (Lap / gamma + 1), axes=(0, 1))
-        v[:] = L0GradProj_ProjL1ball(D(u) + w, alpha)
+        v[:] = _L0GradProj_ProjL1ball(D(u) + w, alpha)
         w += D(u) - v
 
         gamma *= eta
@@ -657,7 +657,7 @@ def L0GradProj_core(src, alpha=0.08, precision=255, epsilon=0.0002, maxiter=5000
     return u
 
 
-def L0GradProj_ProjL1ball(Du, epsilon):
+def _L0GradProj_ProjL1ball(Du, epsilon):
     """Internal function for L0GradProj_core()
 
     Projection onto mixed L1,0 pseudo-norm ball with binary mask
@@ -693,7 +693,7 @@ def L0GradProj_ProjL1ball(Du, epsilon):
     return Du
 
 
-def L0GradProj_L0GradValue(Du):
+def _L0GradProj_L0GradValue(Du):
     """Internal function for L0GradProj_core()
 
     Calculate L0 gradient
@@ -709,7 +709,7 @@ def L0GradProj_L0GradValue(Du):
     return np.count_nonzero(np.abs(Du).sum(axis=(2, 3)).round())
 
 
-def L0GradProj_generate_lap(size2D):
+def _L0GradProj_generate_lap(size2D):
     """Helper function to generate constant "Denormin2"
     """
     Lap = np.zeros(size2D)

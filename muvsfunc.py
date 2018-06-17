@@ -560,11 +560,11 @@ def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=
     if not planes2:
         raise ValueError(funcName + ': no plane is processed!')
 
-    flt_y = GF3_smooth(src_16, ref_16, smode, radius, thr, elast, planes2)
+    flt_y = _GF3_smooth(src_16, ref_16, smode, radius, thr, elast, planes2)
     if chroma_flag:
         if 0 in planes2:
             planes2.remove(0)
-        flt_c = GF3_smooth(src_16, ref_16, smode, radiusc, thrc, elastc, planes2)
+        flt_c = _GF3_smooth(src_16, ref_16, smode, radiusc, thrc, elastc, planes2)
         flt = core.std.ShufflePlanes([flt_y, flt_c], list(range(src.format.num_planes)), src.format.color_family)
     else:
         flt = flt_y
@@ -576,7 +576,7 @@ def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=
 
     if mask > 0:
         dmask = mvf.GetPlane(src_8, 0)
-        dmask = Build_gf3_range_mask(dmask)
+        dmask = _Build_gf3_range_mask(dmask)
         dmask = core.std.Expr([dmask], [mexpr])
         dmask = core.rgvs.RemoveGrain([dmask], [22])
         if mask > 1:
@@ -602,20 +602,20 @@ def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=
     return last
 
 
-def GF3_smooth(src_16, ref_16, smode, radius, thr, elast, planes):
+def _GF3_smooth(src_16, ref_16, smode, radius, thr, elast, planes):
     if smode == 0:
-        return GF3_smoothgrad_multistage(src_16, ref_16, radius, thr, elast, planes)
+        return _GF3_smoothgrad_multistage(src_16, ref_16, radius, thr, elast, planes)
     elif smode == 1:
-        return GF3_dfttest(src_16, ref_16, radius, thr, elast, planes)
+        return _GF3_dfttest(src_16, ref_16, radius, thr, elast, planes)
     elif smode == 2:
-        return GF3_bilateral_multistage(src_16, ref_16, radius, thr, elast, planes)
+        return _GF3_bilateral_multistage(src_16, ref_16, radius, thr, elast, planes)
     elif smode == 3:
-        return GF3_smoothgrad_multistage_3(src_16, radius, thr, elast, planes)
+        return _GF3_smoothgrad_multistage_3(src_16, radius, thr, elast, planes)
     else:
         raise ValueError(funcName + ': wrong smode value!')
 
 
-def GF3_smoothgrad_multistage(src, ref, radius, thr, elast, planes):
+def _GF3_smoothgrad_multistage(src, ref, radius, thr, elast, planes):
     ela_2 = max(elast * 0.83, 1.0)
     ela_3 = max(elast * 0.67, 1.0)
     r2 = radius * 2 // 3
@@ -628,7 +628,7 @@ def GF3_smoothgrad_multistage(src, ref, radius, thr, elast, planes):
     return last
 
 
-def GF3_smoothgrad_multistage_3(src, radius, thr, elast, planes):
+def _GF3_smoothgrad_multistage_3(src, radius, thr, elast, planes):
 
     ref = SmoothGrad(src, radius=radius // 3, thr=thr * 0.8, elast=elast)
     last = BoxFilter(src, radius=radius, planes=planes)
@@ -637,7 +637,7 @@ def GF3_smoothgrad_multistage_3(src, radius, thr, elast, planes):
     return last
 
 
-def GF3_dfttest(src, ref, radius, thr, elast, planes):
+def _GF3_dfttest(src, ref, radius, thr, elast, planes):
 
     hrad = max(radius * 3 // 4, 1)
     last = core.dfttest.DFTTest(src, sigma=hrad * thr * thr * 32, sbsize=hrad * 4,
@@ -647,7 +647,7 @@ def GF3_dfttest(src, ref, radius, thr, elast, planes):
     return last
 
 
-def GF3_bilateral_multistage(src, ref, radius, thr, elast, planes):
+def _GF3_bilateral_multistage(src, ref, radius, thr, elast, planes):
 
     last = core.bilateral.Bilateral(src, ref=ref, sigmaS=radius / 2, sigmaR=thr / 255, planes=planes, algorithm=0) # The use of "thr" may be wrong
 
@@ -656,7 +656,7 @@ def GF3_bilateral_multistage(src, ref, radius, thr, elast, planes):
     return last
 
 
-def Build_gf3_range_mask(src, radius=1):
+def _Build_gf3_range_mask(src, radius=1):
 
     last = src
 
@@ -2111,14 +2111,14 @@ def SeeSaw(clp, denoised=None, NRlimit=2, NRlimit2=None, Sstr=1.5, Slimit=None, 
     tameexpr = 'x {NRLL} + y < x {NRL2} + x {NRLL} - y > x {NRL2} - x {BIAS1} * y {BIAS2} * + 100 / ? ?'.format(NRLL=NRLL, NRL2=NRL2, BIAS1=bias, BIAS2=100-bias)
     tame = core.std.Expr([clp, denoised], [tameexpr])
 
-    head = SeeSaw_sharpen2(tame, Sstr, Spower, Szp, SdampLo, SdampHi, 4)
+    head = _SeeSaw_sharpen2(tame, Sstr, Spower, Szp, SdampLo, SdampHi, 4)
 
     if ssx == 1 and ssy == 1:
-        last = core.rgvs.Repair(SeeSaw_sharpen2(tame, Sstr, Spower, Szp, SdampLo, SdampHi, Smode), head, [1])
+        last = core.rgvs.Repair(_SeeSaw_sharpen2(tame, Sstr, Spower, Szp, SdampLo, SdampHi, Smode), head, [1])
     else:
-        last = core.rgvs.Repair(SeeSaw_sharpen2(tame.fmtc.resample(xss, yss, kernel='lanczos').fmtc.bitdepth(bits=bits), Sstr, Spower, Szp, SdampLo, SdampHi, Smode), head.fmtc.resample(xss, yss, kernel='bicubic', a1=-0.2, a2=0.6).fmtc.bitdepth(bits=bits), [1]).fmtc.resample(ox, oy, kernel='lanczos').fmtc.bitdepth(bits=bits)
+        last = core.rgvs.Repair(_SeeSaw_sharpen2(tame.fmtc.resample(xss, yss, kernel='lanczos').fmtc.bitdepth(bits=bits), Sstr, Spower, Szp, SdampLo, SdampHi, Smode), head.fmtc.resample(xss, yss, kernel='bicubic', a1=-0.2, a2=0.6).fmtc.bitdepth(bits=bits), [1]).fmtc.resample(ox, oy, kernel='lanczos').fmtc.bitdepth(bits=bits)
 
-    last = SeeSaw_SootheSS(last, tame, sootheT, sootheS)
+    last = _SeeSaw_SootheSS(last, tame, sootheT, sootheS)
     sharpdiff = core.std.MakeDiff(tame, last)
 
     if NRlimit == 0 or clp == denoised:
@@ -2137,14 +2137,14 @@ def SeeSaw(clp, denoised=None, NRlimit=2, NRlimit2=None, Sstr=1.5, Slimit=None, 
     return last if isGray else core.std.ShufflePlanes([last, clp_src], list(range(clp_src.format.num_planes)), clp_src.format.color_family)
 
 
-def SeeSaw_sharpen2(clp, strength, power, zp, lodmp, hidmp, rgmode):
+def __SeeSaw_sharpen2(clp, strength, power, zp, lodmp, hidmp, rgmode):
     """Modified sharpening function from SeeSaw()
 
     Only the first plane (luma) will be processed.
 
     """
 
-    funcName = 'SeeSaw_sharpen2'
+    funcName = '_SeeSaw_sharpen2'
 
     if not isinstance(clp, vs.VideoNode) or clp.format.color_family not in [vs.GRAY, vs.YUV, vs.YCOCG]:
         raise TypeError(funcName + ': \"clp\" must be a Gray or YUV clip!')
@@ -2175,14 +2175,14 @@ def SeeSaw_sharpen2(clp, strength, power, zp, lodmp, hidmp, rgmode):
     return core.std.MergeDiff(clp, sharpdiff, [0])
 
 
-def SeeSaw_SootheSS(sharp, orig, sootheT=25, sootheS=0):
+def _SeeSaw_SootheSS(sharp, orig, sootheT=25, sootheS=0):
     """Soothe() function to stabilze sharpening from SeeSaw()
 
     Only the first plane (luma) will be processed.
 
     """
 
-    funcName = 'SeeSaw_SootheSS'
+    funcName = '_SeeSaw_SootheSS'
 
     if not isinstance(sharp, vs.VideoNode) or sharp.format.color_family not in [vs.GRAY, vs.YUV, vs.YCOCG]:
         raise TypeError(funcName + ': \"sharp\" must be a Gray or YUV clip!')
@@ -2700,29 +2700,29 @@ def BalanceBorders(c, cTop=0, cBottom=0, cLeft=0, cRight=0, thresh=128, blur=999
     last = c
 
     if cTop > 0:
-        last = BalanceTopBorder(last, cTop, thresh, blur)
+        last = _BalanceTopBorder(last, cTop, thresh, blur)
 
     last = TurnRight(last)
 
     if cLeft > 0:
-        last = BalanceTopBorder(last, cLeft, thresh, blur)
+        last = _BalanceTopBorder(last, cLeft, thresh, blur)
 
     last = TurnRight(last)
 
     if cBottom > 0:
-        last = BalanceTopBorder(last, cBottom, thresh, blur)
+        last = _BalanceTopBorder(last, cBottom, thresh, blur)
 
     last = TurnRight(last)
 
     if cRight > 0:
-        last = BalanceTopBorder(last, cRight, thresh, blur)
+        last = _BalanceTopBorder(last, cRight, thresh, blur)
 
     last = TurnRight(last)
 
     return last
 
 
-def BalanceTopBorder(c, cTop, thresh, blur):
+def _BalanceTopBorder(c, cTop, thresh, blur):
     """BalanceBorders()'s helper function"""
 
     cWidth = c.width
@@ -3257,8 +3257,8 @@ def GMSD(clip1, clip2, plane=None, downsample=True, c=0.0026, show_map=False, **
 
     # Filtered by a 2x2 average filter and then down-sampled by a factor of 2, as in the implementation of SSIM
     if downsample:
-        clip1 = IQA_downsample(clip1)
-        clip2 = IQA_downsample(clip2)
+        clip1 = _IQA_downsample(clip1)
+        clip2 = _IQA_downsample(clip2)
 
     # Calculate gradients based on Prewitt filter
     clip1_dx = core.std.Convolution(clip1, [1, 0, -1, 1, 0, -1, 1, 0, -1], divisor=1, saturate=False)
@@ -3381,8 +3381,8 @@ def SSIM(clip1, clip2, plane=None, downsample=True, k1=0.01, k2=0.03, fun=None, 
 
     # Filtered by a 2x2 average filter and then down-sampled by a factor of 2
     if downsample:
-        clip1 = IQA_downsample(clip1)
-        clip2 = IQA_downsample(clip2)
+        clip1 = _IQA_downsample(clip1)
+        clip2 = _IQA_downsample(clip2)
 
     # Core algorithm
     mu1 = fun(clip1)
@@ -3423,7 +3423,7 @@ def SSIM(clip1, clip2, plane=None, downsample=True, k1=0.01, k2=0.03, fun=None, 
     return output_clip
 
 
-def IQA_downsample(clip):
+def _IQA_downsample(clip):
     """Downsampler for image quality assessment model.
 
     The “clip” is first filtered by a 2x2 average filter, and then down-sampled by a factor of 2.
@@ -4041,7 +4041,7 @@ def RandomInterleave(clips, seed=None, rand_list=None):
         seed: (int) Random number generator initializer.
             Default is None.
 
-        rand_list: (list) A list containning frame mappings of the interleaved clip.
+        rand_list: (list) A list containing frame mappings of the interleaved clip.
             For example, [0, 0, 1] stats that the first two frames of the output clip
                 are obtained from the first clip in "clips", while the third frame is
                 obtained from the second clip in "clips".
