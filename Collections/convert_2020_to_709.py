@@ -5,13 +5,12 @@ import matplotlib.pyplot as plt
 # Implementation of Annex 5 of ITU-R BT.2407-0
 # main function: convert_2020_to_709
 # TODO: Vectorization
-# this function will be merged to muvsfunc_numpy.py when finished
+# this function will be used to generate 3D LUT file in the future
 
 # Constants
 RGB2XYZ_2020 = np.array([[0.637, 0.145, 0.169], [0.263, 0.678, 0.059], [0., 0.028, 1.061]])
 RGB2XYZ_709 = np.array([[0.412, 0.358, 0.181], [0.213, 0.715, 0.072], [0.019, 0.119, 0.951]])
 D65_XYZ = np.array([95.047, 100., 108.883])
-
 
 
 def convert_2020_to_709(pixel_rgb, matrix_2020, matrix_709, D65_XYZ, beta=0.2):
@@ -36,11 +35,11 @@ def convert_2020_to_709(pixel_rgb, matrix_2020, matrix_709, D65_XYZ, beta=0.2):
 
     D65_uv = np.array([4 * D65_XYZ[0], 9 * D65_XYZ[1]]) / (D65_XYZ[0] + 15 * D65_XYZ[1] + 3 * D65_XYZ[2])
 
-    vertex_2020 = _find_vertex(matrix_2020, pixel_y)
+    vertex_2020 = _find_vertex(matrix_2020, pixel_y, D65_uv)
     intersection_2020 = _find_intersection(pixel_uv, D65_uv, vertex_2020)
     w_p2020 = np.linalg.norm(intersection_2020 - D65_uv)
 
-    vertex_709 = _find_vertex(matrix_709, pixel_y)
+    vertex_709 = _find_vertex(matrix_709, pixel_y, D65_uv)
     intersection_709 = _find_intersection(pixel_uv, D65_uv, vertex_709)
     w_p709 = np.linalg.norm(intersection_709 - D65_uv)
 
@@ -56,33 +55,6 @@ def convert_2020_to_709(pixel_rgb, matrix_2020, matrix_709, D65_XYZ, beta=0.2):
 
     c_709 = D65_uv + f(np.linalg.norm(pixel_uv - D65_uv) / w_p709, alpha, beta) * (intersection_709 - D65_uv) # the formula in the report is wrong
 
-    """
-    plt.subplot(131)
-    plt.scatter(vertex_709[:, 0], vertex_709[:, 1], color='b')
-    plt.scatter(vertex_2020[:, 0], vertex_2020[:, 1], color='g')
-    plt.scatter(D65_uv[0], D65_uv[1], color='m')
-    plt.scatter(pixel_uv[0], pixel_uv[1], color='y')
-
-    plt.subplot(132)
-    plt.scatter(vertex_709[:, 0], vertex_709[:, 1], color='b')
-    plt.scatter(vertex_2020[:, 0], vertex_2020[:, 1], color='g')
-    plt.scatter(D65_uv[0], D65_uv[1], color='m')
-    plt.scatter(pixel_uv[0], pixel_uv[1], color='y')
-    plt.scatter(intersection_709[0], intersection_709[1], color='r')
-    plt.scatter(intersection_2020[0], intersection_2020[1], color='c')
-
-    plt.subplot(133)
-    plt.scatter(vertex_709[:, 0], vertex_709[:, 1], color='b')
-    plt.scatter(vertex_2020[:, 0], vertex_2020[:, 1], color='g')
-    plt.scatter(D65_uv[0], D65_uv[1], color='m')
-    plt.scatter(pixel_uv[0], pixel_uv[1], color='y')
-    plt.scatter(intersection_709[0], intersection_709[1], color='r')
-    plt.scatter(intersection_2020[0], intersection_2020[1], color='c')
-    plt.scatter(c_709[0], c_709[1], color='k')
-
-    plt.show()
-    """
-
     x, z = _yuv2xz(pixel_y, c_709[0], c_709[1])
 
     res_xyz = np.array([x, pixel_y, z])
@@ -92,7 +64,7 @@ def convert_2020_to_709(pixel_rgb, matrix_2020, matrix_709, D65_XYZ, beta=0.2):
     return res_rgb
 
 
-def _find_vertex(matrix, Y):
+def _find_vertex(matrix, Y, white_point):
     # find intersection on RGB cube
 
     # matrix: 3x3 matrix
@@ -114,12 +86,11 @@ def _find_vertex(matrix, Y):
                     point[unknown] = tmp
                     vertex = matrix[[0, 2], :] @ point
                     vertex[:] = np.array([4 * vertex[0], 9 * Y]) / (vertex[0] + 15 * Y + 3 * vertex[1] + eps)
-                    vertex.flags.writeable = False
                     vertex_list.append(vertex)
 
     # vertex sort
-    comp = lambda x: math.atan2(x[0] - vertex_list[0][0], x[1] - vertex_list[0][1])
-    vertex_list[1:] = sorted(vertex_list[1:], key=comp, reverse=True)
+    comp = lambda x: math.atan2(x[1] - white_point[1], x[0] - white_point[0])
+    vertex_list.sort(key=comp)
 
     new_vertex_list = []
     last_in_vertex = -1
