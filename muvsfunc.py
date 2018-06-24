@@ -227,6 +227,8 @@ def Compare2(clip1, clip2, props_list=None):
 
     """
 
+    funcName = 'Compare2'
+
     if not isinstance(clip1, vs.VideoNode):
         raise TypeError(funcName + ': \"clip1\" must be a clip!')
 
@@ -2074,7 +2076,7 @@ def SeeSaw(clp, denoised=None, NRlimit=2, NRlimit2=None, Sstr=1.5, Slimit=None, 
     if ssy is None:
         ssy = ssx
 
-    Szrp = Szp / pow(Sstr, 0.25) / pow((ssx + ssy) / 2, 0.5)
+    Szp = Szp / pow(Sstr, 0.25) / pow((ssx + ssy) / 2, 0.5)
     SdampLo = SdampLo / pow(Sstr, 0.25) / pow((ssx + ssy) / 2, 0.5)
 
     ox = clp.width
@@ -2087,7 +2089,6 @@ def SeeSaw(clp, denoised=None, NRlimit=2, NRlimit2=None, Sstr=1.5, Slimit=None, 
     SLIM = scale(abs(Slimit), bits)
     multiple = scale(1, bits)
     neutral = scale(128, bits)
-    peak = scale(255, bits)
 
     if denoised is None:
         dnexpr = 'x {NRL} + y < x {NRL} + x {NRL} - y > x {NRL} - y ? ?'.format(NRL=NRL)
