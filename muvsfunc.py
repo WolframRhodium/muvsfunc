@@ -2138,7 +2138,7 @@ def SeeSaw(clp, denoised=None, NRlimit=2, NRlimit2=None, Sstr=1.5, Slimit=None, 
     return last if isGray else core.std.ShufflePlanes([last, clp_src], list(range(clp_src.format.num_planes)), clp_src.format.color_family)
 
 
-def __SeeSaw_sharpen2(clp, strength, power, zp, lodmp, hidmp, rgmode):
+def _SeeSaw_sharpen2(clp, strength, power, zp, lodmp, hidmp, rgmode):
     """Modified sharpening function from SeeSaw()
 
     Only the first plane (luma) will be processed.
