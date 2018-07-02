@@ -19,7 +19,7 @@ target = cv2.dnn.DNN_TARGET_CPU
 # params of the algos
 if sr_algorithm == 0:
     # https://github.com/php-opencv/php-opencv-examples/tree/master/models/waifu2x
-    # other models can also be found at
+    # other models can be found at
     # https://github.com/HomeOfVapourSynthEvolution/VapourSynth-Waifu2x-caffe/tree/master/Waifu2x-caffe/models
     sr_args = dict(prototxt=r'scale2.0x_model.prototxt', 
         caffe_model=r'scale2.0x_model.caffemodel', up_scale=2, rgb_model=True, pad=(7,7,7,7))

@@ -1663,8 +1663,6 @@ def firniture(clip, width, height, kernel='binomial7', taps=None, gamma=False, t
 
     '''
 
-    #import nnedi3_resample as nnrs
-
     funcName = 'firniture'
 
     if not isinstance(clip, vs.VideoNode):
@@ -3630,7 +3628,7 @@ def TextSub16(src, file, mod=False, tv_range=True, matrix=None, dither=None, **v
 
     Requirments:
         1. VSFilter (https://github.com/HomeOfVapourSynthEvolution/VSFilter)
-        2. VSFilterMod (https://github.com/HomeOfVapourSynthEvolution/VSFilterMod)
+        2. VSFilterMod (https://github.com/sorayuki/VSFilterMod)
 
     """
 
