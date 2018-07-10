@@ -1443,12 +1443,13 @@ def SigmaFilter(clip, radius=3, thr=0.01, **depth_args):
 
     Sigma filter is a local smoothing operator which replace the pixel to be processed 
     by the average of only those neighboring pixels having their intensity within a 
-    fixed sigma range of the center pixel.
+    fixed sigma range of the center pixel. It is also known as the "a2d" method of the 
+    Avisynth plugin Deen, version beta 2 (https://github.com/dubhater/vapoursynth-minideen).
 
     The special step to handle sharp spot noise described in (4) in the paper is ignored
     for better detail preservation and lower computation.
 
-    All the internal calculations are done at 32-bit float. Each plane is processed separately
+    All the internal calculations are done at 32-bit float. Each plane is processed separately.
 
     Args:
         clip: Input clip.
