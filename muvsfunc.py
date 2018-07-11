@@ -3496,6 +3496,9 @@ def SSIM_downsample(clip, w, h, smooth=1, kernel='Bicubic', use_fmtc=False, epsi
     clip = mvf.Depth(clip, depth=32, sample=vs.FLOAT, **depth_args)
 
     if use_fmtc:
+        if len(resample_args) == 0: # resample_args == {}
+            resample_args = dict(kernel='bicubic', a1=1/3, a2=1/3)
+
         l = core.fmtc.resample(clip, w, h, **resample_args)
         l2 = core.fmtc.resample(core.std.Expr([clip], ['x dup *']), w, h, **resample_args)
     else:
