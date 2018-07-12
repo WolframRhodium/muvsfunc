@@ -3431,7 +3431,7 @@ def _IQA_downsample(clip):
     return core.std.Convolution(clip, [1, 1, 0, 1, 1, 0, 0, 0, 0]).resize.Point(clip.width // 2, clip.height // 2, src_left=-1, src_top=-1)
 
 
-def SSIM_downsample(clip, w, h, smooth=1, kernel='Bicubic', use_fmtc=False, epsilon=1e-6, depth_args=None, **resample_args):
+def SSIM_downsample(clip, w, h, smooth=1, kernel=None, use_fmtc=False, epsilon=1e-6, depth_args=None, **resample_args):
     """SSIM downsampler
 
     SSIM downsampler is an image downscaling technique that aims to optimize for the perceptual quality of the downscaled results.
@@ -3493,14 +3493,14 @@ def SSIM_downsample(clip, w, h, smooth=1, kernel='Bicubic', use_fmtc=False, epsi
     else:
         raise TypeError(funcName + ': \"smooth\" must be a int, float or a function!')
 
+    if kernel is None:
+        kernel = 'Bicubic'
+
     clip = mvf.Depth(clip, depth=32, sample=vs.FLOAT, **depth_args)
 
     if use_fmtc:
-        if len(resample_args) == 0: # resample_args == {}
-            resample_args = dict(kernel='bicubic', a1=1/3, a2=1/3)
-
-        l = core.fmtc.resample(clip, w, h, **resample_args)
-        l2 = core.fmtc.resample(core.std.Expr([clip], ['x dup *']), w, h, **resample_args)
+        l = core.fmtc.resample(clip, w, h, kernel=kernel, **resample_args)
+        l2 = core.fmtc.resample(core.std.Expr([clip], ['x dup *']), w, h, kernel=kernel, **resample_args)
     else:
         l = eval('core.resize.{kernel}(clip, w, h, **resample_args)'.format(kernel=kernel.capitalize()))
         l2 = eval('core.resize.{kernel}(core.std.Expr([clip], ["x dup *"]), w, h, **resample_args)'.format(kernel=kernel.capitalize()))
