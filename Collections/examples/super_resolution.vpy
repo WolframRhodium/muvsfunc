@@ -10,7 +10,7 @@ core = vs.get_core()
 
 # global params
 src = core.std.BlankClip(width=720, height=480, length=1000, format=vs.RGBS) # can be RGB/YUV/GRAY
-sr_algorithm = 0 # 0: waifu2x, 1: IDN, 2: VDSR, 3: DBPN (faster to slower)
+sr_algorithm = 0 # 0: waifu2x, 1: IDN, 2: TSCN, 3: VDSR, 4: DBPN (faster to slower)
 backend = cv2.dnn.DNN_BACKEND_DEFAULT
 target = cv2.dnn.DNN_TARGET_CPU
 # target = cv2.dnn.DNN_TARGET_OPENCL # only works on Intel GPU before OpenCV 3.4.2
@@ -31,11 +31,16 @@ elif sr_algorithm == 1:
         upscale_uv=False, merge_residual=True)
 
 elif sr_algorithm == 2:
+    # https://github.com/Zheng222/TSCN/tree/master/test
+    sr_args = dict(prototxt=r'TSCN_x2_deploy.prototxt',
+        caffe_model=r'TSCN_x2.caffemodel', up_scale=2, rgb_model=False)
+
+elif sr_algorithm == 3:
     # https://github.com/huangzehao/caffe-vdsr/tree/master/Train
     sr_args = dict(prototxt=r'VDSR_net_deploy.prototxt', 
         caffe_model=r'VDSR_Adam.caffemodel', up_scale=2, rgb_model=False, pre_upscale=True, upscale_uv=False)
 
-elif sr_algorithm == 3:
+elif sr_algorithm == 4:
     # https://github.com/alterzero/DBPN-caffe
     # https://drive.google.com/drive/folders/1ahbeoEHkjxoo4NV1wReOmpoRWbl448z-?usp=sharing
     sr_args = dict(prototxt=r'DBPN_mat_2x.prototxt',
