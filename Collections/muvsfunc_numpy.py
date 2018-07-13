@@ -5,12 +5,13 @@ VapourSynth functions:
     L0Smooth
     L0GradientProjection
     IEDD
-    DNCNN
+    DNCNN (backend: MXNet)
     BNNMDenoise
     FGS
     FDD
     SSFDeband
     SigmaFilter
+    super_resolution (backend: MXNet)
 
 NumPy functions:
     L0Smooth_core
@@ -23,6 +24,7 @@ NumPy functions:
     FDD_2D_core
     SSFDeband_core
     SigmaFilter_core
+    super_resolution_core (backend: MXNet)
 """
 
 import functools
@@ -32,7 +34,7 @@ from vapoursynth import core
 import mvsfunc as mvf
 import numpy as np
 
-def numpy_process(clips, numpy_function, input_per_plane=True, output_per_plane=True, lock_source_array=True, omit_first_clip=False, **fun_args):
+def numpy_process(clips, numpy_function, input_per_plane=True, output_per_plane=True, lock_source_array=True, omit_first_clip=False, channels_last=True, **fun_args):
     """Helper function for filtering clip in NumPy
 
     Args:
@@ -62,6 +64,10 @@ def numpy_process(clips, numpy_function, input_per_plane=True, output_per_plane=
         omit_first_clip: (bool) Whether the first clip in "clips" and "input_per_plane".
             Useful for stuffs which alter the format of the input, for example, resize.
             Default is False.
+
+        channels_last: (bool) Whether the shape of input to "numpy_function" should be "channels_last", a.k.a. "HWC".
+            If not, the shape of the input will be "channels_first", a.k.a. "CHW".
+            Default is True.
 
         fun_args: (dict) Additional arguments passed to “numpy_function” in the form of keyword arguments.
             Default is {}.
@@ -93,7 +99,8 @@ def numpy_process(clips, numpy_function, input_per_plane=True, output_per_plane=
                         for p in range(frame.format.num_planes):
                             arr = np.asarray(frame.get_read_array(p))
                             planes_data.append(arr)
-                        pre_stacked_clips[index] = np.stack(planes_data, axis=2) # HWC format
+
+                        pre_stacked_clips[index] = np.stack(planes_data, axis=2 if channels_last else 0)
 
             # plane-wise processing
             for p in range(fout.format.num_planes):
@@ -123,7 +130,7 @@ def numpy_process(clips, numpy_function, input_per_plane=True, output_per_plane=
                     for p in range(frame.format.num_planes):
                         arr = np.asarray(frame.get_read_array(p))
                         plane_list.append(arr)
-                    current_input = np.stack(plane_list, axis=2) # HWC format
+                    current_input = np.stack(plane_list, axis=2 if channels_last else 0)
 
                 current_input.flags.writeable = not lock_source_array
 
@@ -134,7 +141,7 @@ def numpy_process(clips, numpy_function, input_per_plane=True, output_per_plane=
             # Plane-wise copying
             for p in range(fout.format.num_planes):
                 output_array = np.asarray(fout.get_write_array(p))
-                np.copyto(output_array, output[:, :, p])
+                np.copyto(output_array, output[:, :, p] if channels_last else output[p, :, :])
 
         return fout
 
@@ -1457,7 +1464,7 @@ def SigmaFilter(clip, radius=3, thr=0.01, **depth_args):
         radius: (int) Radius of the filtering window.
             Default is 3.
 
-        thr: (int) Threshold of pixel selection.
+        thr: (float) Threshold of pixel selection.
             Default is 0.01.
 
     Ref:
@@ -1492,3 +1499,151 @@ def SigmaFilter_core(img_2D, radius=3, thr=0.01):
     flt = np.sum(select, axis=(2, 3)) / (np.count_nonzero(select, axis=(2, 3)) + 1e-7) # Compute the average
 
     return flt
+
+
+def super_resolution(clip, model_prefix, epoch=0, up_scale=2, block_w=128, block_h=None, rgb_model=True, pad=None, crop=None, pre_upscale=False, upscale_uv=False, merge_residual=False, device_id=0):
+    """ Super resolution in VapourSynth
+
+    Wrapper function for super resolution algorithms.
+
+    Currently only MXNet backend is supported.
+    
+    The color space and bit depth of the output depends on the super resolution algorithm.
+
+    Demo:
+        https://github.com/WolframRhodium/muvsfunc/blob/master/Collections/examples/super_resolution_mxnet.vpy
+
+    Args:
+        clip: Input clip.
+            The color space will be automatically converted by mvf.ToRGB/YUV if it is not
+            compatiable with the super resolution algorithm.
+
+        model_prefix: Path prefix of saved model files.
+            You should have "model_prefix-symbol.json", "model_prefix-xxxx.params", where xxxx is the epoch number.
+
+        epoch: (int) Epoch to load.
+            Default is 0.
+
+        up_scale: (int) Upscaling factor.
+            Should be compatiable with the model.
+            Default is 2.
+
+        block_w, block_h: (int) The horizontal/vertical block size for dividing the image during processing.
+            The optimal value may vary according to different graphics card and image size.
+            Default is 128.
+
+        rgb_model: (bool) Whether the model is RGB model.
+            If not, it is assumed to be Y model.
+            Default is True.
+
+        pad: (list of four ints) Padding before upscaling.
+            Default is None.
+
+        crop: (list of four ints) Cropping after upscaling.
+            Default is None.
+
+        pre_upscale: (bool) Whether to upscale the image before input to the network.
+            Default is False.
+
+        upscale_uv: (bool) Whether to upscale UV channels when using Y model.
+            If not, the UV channels will be discarded.
+            Default is False.
+
+        merge_residual: (bool) Whether to merge the residual (the output of some network) to the Catmull-Rom upscaled input.
+            Default is False.
+    """
+
+    import mxnet as mx
+
+    isGray = clip.format.color_family == vs.GRAY
+    isRGB = clip.format.color_family == vs.RGB
+    block_size = (block_w, block_w if block_h is None else block_h)
+
+    if rgb_model and not isRGB:
+        clip = mvf.ToRGB(clip, depth=32)
+
+    elif not rgb_model:
+        if isRGB:
+            clip = mvf.ToYUV(clip, depth=32)
+
+        if not isGray and not upscale_uv: # isYUV/RGB and only upscale Y
+            clip = mvf.GetPlane(clip)
+
+    clip = mvf.Depth(clip, depth=32)
+    
+    if pre_upscale:
+        clip = core.resize.Bicubic(clip, clip.width*up_scale, clip.height*up_scale, filter_param_a=0, filter_param_b=0.5)
+        up_scale = 1
+
+    sym, arg_params, aux_params = mx.model.load_checkpoint(model_prefix, epoch)
+    ctx = mx.gpu(device_id) if device_id >= 0 else mx.cpu()
+    net = mx.mod.Module(symbol=sym, context=ctx)
+    net.bind(for_training=False, data_shapes=[('data', (1, 3 if rgb_model else 1, block_size[0], block_size[1]))])
+    net.set_params(arg_params, aux_params, allow_missing=False)
+
+    if up_scale != 1:
+        blank = core.std.BlankClip(clip, width=clip.width*up_scale, height=clip.height*up_scale)
+        super_res = numpy_process([blank, clip], super_resolution_core, net=net, 
+            input_per_plane=(not rgb_model), output_per_plane=(not rgb_model), up_scale=up_scale, block_size=block_size, pad=pad, crop=crop, 
+            omit_first_clip=True, channels_last=False)
+    else:
+        super_res = numpy_process(clip, super_resolution_core, net=net, 
+            input_per_plane=(not rgb_model), output_per_plane=(not rgb_model), up_scale=1, block_size=block_size, pad=pad, crop=crop, channels_last=False)
+
+    if merge_residual:
+        low_res = core.resize.Bicubic(clip, super_res.width, super_res.height, filter_param_a=0, filter_param_b=0.5)
+        super_res = core.std.Expr([super_res, low_res], ['x y +'])
+
+    return super_res
+
+
+def super_resolution_core(img, net, up_scale=2, block_size=None, pad=None, crop=None):
+    """ Super resolution in Numpy
+
+    Wrapper for super resolution methods.
+
+    Args:
+        img: Image data in CHW format, a.k.a. "channel first".
+        net: MXNet models.
+    """
+
+    import mxnet as mx
+    from collections import namedtuple
+
+    Batch = namedtuple('Batch', ['data'])
+
+    h_img = mx.nd.array(img)
+    ndim = img.ndim
+
+    if ndim == 2:
+        h_img = h_img.expand_dims(axis=0)
+
+    h_img = h_img.expand_dims(axis=0) # NCHW
+
+    _, c, h, w = h_img.shape
+    pred = mx.nd.empty((c, h*up_scale, w*up_scale))
+
+    for i in range(math.ceil(h / block_size[0])):
+        for j in range(math.ceil(w / block_size[1])):
+            h_index = min(h, (i+1)*block_size[0])
+            w_index = min(w, (j+1)*block_size[1])
+            h_in = h_img[:, :, i*block_size[0]:h_index, j*block_size[1]:w_index]
+            
+            if pad is not None:
+                h_in = mx.nd.pad(h_in, mode='edge', pad_width=(0, 0, 0, 0, *pad))
+
+            net.forward(Batch([h_in]))
+
+            h_out = net.get_outputs()[0]
+            
+            if crop is not None:
+                pred[:, i*block_size[0]*up_scale:h_index*up_scale, j*block_size[1]*up_scale:w_index*up_scale] = h_out[0, :, crop[0]:-crop[1], crop[2]:-crop[3]]
+            else:
+                pred[:, i*block_size[0]*up_scale:h_index*up_scale, j*block_size[1]*up_scale:w_index*up_scale] = h_out[0, :, :, :]
+
+    super_res = pred.asnumpy()[::-1, ...]
+
+    if ndim == 2:
+        super_res = super_res[0, ...]
+
+    return super_res
