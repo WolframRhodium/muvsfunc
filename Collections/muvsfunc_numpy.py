@@ -783,7 +783,7 @@ def IEDD_core(src, blockSize=8, K=49, iteration=3):
     """IEDD in NumPy
 
     IEDD is a method of blind estimation of white Gaussian noise variance in highly textured images.
-    
+
     Args:
         src: 2-D numpy array in the form of "HW".
 
@@ -886,7 +886,7 @@ def DNCNN(clip, symbol_path, params_path, patch_size=[640, 640], device_id=0, **
 
     import mxnet as mx
     from collections import namedtuple
-    
+
     if any([clip.format.subsampling_w, clip.format.subsampling_h]):
         raise TypeError('Invalid type')
 
@@ -928,7 +928,7 @@ def DNCNN(clip, symbol_path, params_path, patch_size=[640, 640], device_id=0, **
         pred = mx.nd.transpose(pred, axes=(0, 2, 3, 1)).reshape(img.shape).asnumpy()
 
         output = img - pred
-        
+
         output[:, :, 1:] -= 0.5
 
         return output
@@ -955,7 +955,7 @@ def get_blockwise_view(input_2D, block_size=8, strides=1, writeable=False):
 
         strides: (int or [int, int]) The stride between the blocks. The format is similar to "patch_size".
             Default is 1.
-        
+
         writeable: (bool) If set to False, the returned array will always be readonly.
             Otherwise it will be writable if the original array was. It is advisable to set this to False if possible.
             Default is False.
@@ -1049,6 +1049,7 @@ def BNNMDenoise_core(input_2D, block_size=8, lamda=0.01, copy=False):
     block_view[:] = u * s[:, :, np.newaxis, :] @ v
 
     return output_2D
+
 
 
 def FGS(clip, ref=None, sigma=0.03, lamda=100, solver_iteration=3, solver_attenuation=4, **depth_args):
@@ -1501,14 +1502,16 @@ def SigmaFilter_core(img_2D, radius=3, thr=0.01):
     return flt
 
 
-def super_resolution(clip, model_prefix, epoch=0, up_scale=2, block_w=128, block_h=None, rgb_model=True, pad=None, crop=None, pre_upscale=False, upscale_uv=False, merge_residual=False, device_id=0):
+def super_resolution(clip, model_prefix, epoch=0, up_scale=2, block_w=128, block_h=None, is_rgb_model=True, pad=None, crop=None, pre_upscale=False, upscale_uv=False, merge_residual=False, is_caffe_model=False, normalize_mean=None, normalize_std=None, device_id=0):
     """ Super resolution in VapourSynth
 
     Wrapper function for super resolution algorithms.
 
     Currently only MXNet backend is supported.
-    
+
     The color space and bit depth of the output depends on the super resolution algorithm.
+
+    All the internal calculations are done at 32-bit float.
 
     Demo:
         https://github.com/WolframRhodium/muvsfunc/blob/master/Collections/examples/super_resolution_mxnet.vpy
@@ -1532,7 +1535,7 @@ def super_resolution(clip, model_prefix, epoch=0, up_scale=2, block_w=128, block
             The optimal value may vary according to different graphics card and image size.
             Default is 128.
 
-        rgb_model: (bool) Whether the model is RGB model.
+        is_rgb_model: (bool) Whether the model is RGB model.
             If not, it is assumed to be Y model.
             Default is True.
 
@@ -1551,6 +1554,14 @@ def super_resolution(clip, model_prefix, epoch=0, up_scale=2, block_w=128, block
 
         merge_residual: (bool) Whether to merge the residual (the output of some network) to the Catmull-Rom upscaled input.
             Default is False.
+
+        is_caffe_model: (bool) Whether the source model is a Caffe model, i.e. the data format of color input is BGR rather than RGB.
+            Default is False.
+
+        normalize_mean, normalize_std: (list of floats) Channel-wise noralization coefficients.
+            (https://pytorch.org/docs/stable/torchvision/transforms.html#torchvision.transforms.Normalize)
+            Default is None.
+
     """
 
     import mxnet as mx
@@ -1559,10 +1570,10 @@ def super_resolution(clip, model_prefix, epoch=0, up_scale=2, block_w=128, block
     isRGB = clip.format.color_family == vs.RGB
     block_size = (block_w, block_w if block_h is None else block_h)
 
-    if rgb_model and not isRGB:
+    if is_rgb_model and not isRGB:
         clip = mvf.ToRGB(clip, depth=32)
 
-    elif not rgb_model:
+    elif not is_rgb_model:
         if isRGB:
             clip = mvf.ToYUV(clip, depth=32)
 
@@ -1570,7 +1581,7 @@ def super_resolution(clip, model_prefix, epoch=0, up_scale=2, block_w=128, block
             clip = mvf.GetPlane(clip)
 
     clip = mvf.Depth(clip, depth=32)
-    
+
     if pre_upscale:
         clip = core.resize.Bicubic(clip, clip.width*up_scale, clip.height*up_scale, filter_param_a=0, filter_param_b=0.5)
         up_scale = 1
@@ -1578,17 +1589,18 @@ def super_resolution(clip, model_prefix, epoch=0, up_scale=2, block_w=128, block
     sym, arg_params, aux_params = mx.model.load_checkpoint(model_prefix, epoch)
     ctx = mx.gpu(device_id) if device_id >= 0 else mx.cpu()
     net = mx.mod.Module(symbol=sym, context=ctx)
-    net.bind(for_training=False, data_shapes=[('data', (1, 3 if rgb_model else 1, block_size[0], block_size[1]))])
+    net.bind(for_training=False, data_shapes=[('data', (1, 3 if is_rgb_model else 1, block_size[0], block_size[1]))])
     net.set_params(arg_params, aux_params, allow_missing=False)
 
     if up_scale != 1:
         blank = core.std.BlankClip(clip, width=clip.width*up_scale, height=clip.height*up_scale)
         super_res = numpy_process([blank, clip], super_resolution_core, net=net, 
-            input_per_plane=(not rgb_model), output_per_plane=(not rgb_model), up_scale=up_scale, block_size=block_size, pad=pad, crop=crop, 
-            omit_first_clip=True, channels_last=False)
+            input_per_plane=(not is_rgb_model), output_per_plane=(not is_rgb_model), up_scale=up_scale, block_size=block_size, pad=pad, crop=crop, 
+            omit_first_clip=True, channels_last=False, is_caffe_model=is_caffe_model, normalize_mean=normalize_mean, normalize_std=normalize_std)
     else:
         super_res = numpy_process(clip, super_resolution_core, net=net, 
-            input_per_plane=(not rgb_model), output_per_plane=(not rgb_model), up_scale=1, block_size=block_size, pad=pad, crop=crop, channels_last=False)
+            input_per_plane=(not is_rgb_model), output_per_plane=(not is_rgb_model), up_scale=1, block_size=block_size, pad=pad, crop=crop, 
+            channels_last=False, is_caffe_model=is_caffe_model, normalize_mean=normalize_mean, normalize_std=normalize_std)
 
     if merge_residual:
         low_res = core.resize.Bicubic(clip, super_res.width, super_res.height, filter_param_a=0, filter_param_b=0.5)
@@ -1597,7 +1609,7 @@ def super_resolution(clip, model_prefix, epoch=0, up_scale=2, block_w=128, block
     return super_res
 
 
-def super_resolution_core(img, net, up_scale=2, block_size=None, pad=None, crop=None):
+def super_resolution_core(img, net, up_scale=2, block_size=None, pad=None, crop=None, is_caffe_model=False, normalize_mean=None, normalize_std=None):
     """ Super resolution in Numpy
 
     Wrapper for super resolution methods.
@@ -1605,45 +1617,64 @@ def super_resolution_core(img, net, up_scale=2, block_size=None, pad=None, crop=
     Args:
         img: Image data in CHW format, a.k.a. "channel first".
         net: MXNet models.
+
+    For detailed documentation, please refer to the documentation of "super_resolution" funcion in current library.
+
     """
 
     import mxnet as mx
     from collections import namedtuple
 
     Batch = namedtuple('Batch', ['data'])
-
-    h_img = mx.nd.array(img)
+  
     ndim = img.ndim
+    h_img = mx.nd.array(img)
 
     if ndim == 2:
-        h_img = h_img.expand_dims(axis=0)
+        h_img = h_img.reshape((1, 1, *h_img.shape)) # NCHW
+    else: # ndim == 3
+        h_img = h_img.reshape((1, *h_img.shape)) # NCHW
 
-    h_img = h_img.expand_dims(axis=0) # NCHW
+    if normalize_mean is not None and normalize_std is not None:
+        normalize_mean = mx.nd.array(normalize_mean).reshape((1, -1, 1, 1))
+        normalize_std = mx.nd.array(normalize_std).reshape((1, -1, 1, 1))
+        normalize_std_inv = 1 / normalize_std
+        h_img = (h_img - normalize_mean) * normalize_std_inv
+
+    if is_caffe_model and h_img.shape[1] == 3:
+        h_img = mx.nd.reverse(h_img, axis=1)
 
     _, c, h, w = h_img.shape
-    pred = mx.nd.empty((c, h*up_scale, w*up_scale))
+    pred = mx.nd.empty((1, c, h*up_scale, w*up_scale))
 
     for i in range(math.ceil(h / block_size[0])):
         for j in range(math.ceil(w / block_size[1])):
             h_index = min(h, (i+1)*block_size[0])
             w_index = min(w, (j+1)*block_size[1])
             h_in = h_img[:, :, i*block_size[0]:h_index, j*block_size[1]:w_index]
-            
+
             if pad is not None:
                 h_in = mx.nd.pad(h_in, mode='edge', pad_width=(0, 0, 0, 0, *pad))
 
             net.forward(Batch([h_in]))
 
             h_out = net.get_outputs()[0]
-            
-            if crop is not None:
-                pred[:, i*block_size[0]*up_scale:h_index*up_scale, j*block_size[1]*up_scale:w_index*up_scale] = h_out[0, :, crop[0]:-crop[1], crop[2]:-crop[3]]
-            else:
-                pred[:, i*block_size[0]*up_scale:h_index*up_scale, j*block_size[1]*up_scale:w_index*up_scale] = h_out[0, :, :, :]
 
-    super_res = pred.asnumpy()[::-1, ...]
+            if crop is not None:
+                pred[:, :, i*block_size[0]*up_scale:h_index*up_scale, j*block_size[1]*up_scale:w_index*up_scale] = h_out[:, :, crop[0]:-crop[1], crop[2]:-crop[3]]
+            else:
+                pred[:, :, i*block_size[0]*up_scale:h_index*up_scale, j*block_size[1]*up_scale:w_index*up_scale] = h_out[:, :, :, :]
+
+    if normalize_mean is not None and normalize_std is not None:
+        unnormalize_mean = -normalize_mean * normalize_std_inv
+        unnormalize_std_inv = normalize_std
+        pred = (pred - unnormalize_mean) * unnormalize_std_inv
 
     if ndim == 2:
-        super_res = super_res[0, ...]
+        pred = pred[0, 0, :, :]
+    else:
+        pred = pred[0, :, :, :]
+
+    super_res = pred.asnumpy()
 
     return super_res

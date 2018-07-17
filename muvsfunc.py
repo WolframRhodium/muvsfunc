@@ -2681,7 +2681,7 @@ def BalanceBorders(c, cTop=0, cBottom=0, cLeft=0, cRight=0, thresh=128, blur=999
         last = muf.BalanceBorders(last, 3, 3, 2, 2, thresh=8, blur=4)  # Slightly changes the "main problem area"
 
     """
-    
+
     funcName = 'BalanceBorders'
 
     if not isinstance(c, vs.VideoNode):
@@ -3644,7 +3644,7 @@ def TextSub16(src, file, mod=False, tv_range=True, matrix=None, dither=None, **v
     css = src.format.name[3:6]
     sw = src.width
     sh = src.height
-    
+
     if dither is None:
         dither = 'error_diffusion'
 
@@ -3943,7 +3943,7 @@ def LLSURE(clip, guidance=None, radius=2, sigma=0, epsilon=1e-5, **depth_args):
     var_guidance = core.std.Expr([Expectation(guidance_square), mean_guidance], ['x y dup * -'])
     inv_var = core.std.Expr([var_guidance], ['1 x {epsilon} + /'.format(epsilon=epsilon)])
     normalized_w = Expectation(inv_var)
-    
+
     if not isinstance(sigma, vs.VideoNode):
         if sigma <= 0:
             absolute_deviation = core.std.Expr([guidance, mean_guidance], ['x y - abs'])
@@ -4075,5 +4075,5 @@ def RandomInterleave(clips, seed=None, rand_list=None):
 
     def selector(n, f):
         return f[rand_list[n]]
-     
+
     return core.std.ModifyFrame(clips[0], clips=clips, selector=selector)

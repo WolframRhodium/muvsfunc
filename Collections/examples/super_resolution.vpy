@@ -22,29 +22,29 @@ if sr_algorithm == 0:
     # other models can be found at
     # https://github.com/HomeOfVapourSynthEvolution/VapourSynth-Waifu2x-caffe/tree/master/Waifu2x-caffe/models
     sr_args = dict(prototxt=r'scale2.0x_model.prototxt', 
-        caffe_model=r'scale2.0x_model.caffemodel', up_scale=2, rgb_model=True, pad=(7,7,7,7))
+        caffe_model=r'scale2.0x_model.caffemodel', up_scale=2, is_rgb_model=True, pad=(7,7,7,7))
 
 elif sr_algorithm == 1:
     # https://github.com/Zheng222/IDN-Caffe/tree/master/test/caffemodel
     sr_args = dict(prototxt=r'IDN_x2_deploy.prototxt', 
-        caffe_model=r'IDN_x2.caffemodel', up_scale=2, rgb_model=False, pad=(1,1,1,1), crop=(1,2,1,2),
+        caffe_model=r'IDN_x2.caffemodel', up_scale=2, is_rgb_model=False, pad=(1,1,1,1), crop=(1,2,1,2),
         upscale_uv=False, merge_residual=True)
 
 elif sr_algorithm == 2:
     # https://github.com/Zheng222/TSCN/tree/master/test
     sr_args = dict(prototxt=r'TSCN_x2_deploy.prototxt',
-        caffe_model=r'TSCN_x2.caffemodel', up_scale=2, rgb_model=False)
+        caffe_model=r'TSCN_x2.caffemodel', up_scale=2, is_rgb_model=False)
 
 elif sr_algorithm == 3:
     # https://github.com/huangzehao/caffe-vdsr/tree/master/Train
     sr_args = dict(prototxt=r'VDSR_net_deploy.prototxt', 
-        caffe_model=r'VDSR_Adam.caffemodel', up_scale=2, rgb_model=False, pre_upscale=True, upscale_uv=False)
+        caffe_model=r'VDSR_Adam.caffemodel', up_scale=2, is_rgb_model=False, pre_upscale=True, upscale_uv=False)
 
 elif sr_algorithm == 4:
     # https://github.com/alterzero/DBPN-caffe
     # https://drive.google.com/drive/folders/1ahbeoEHkjxoo4NV1wReOmpoRWbl448z-?usp=sharing
     sr_args = dict(prototxt=r'DBPN_mat_2x.prototxt',
-        caffe_model=r'DBPN_2x.caffemodel', up_scale=2, rgb_model=True)
+        caffe_model=r'DBPN_2x.caffemodel', up_scale=2, is_rgb_model=True)
 
 
 # internel functions
@@ -77,7 +77,7 @@ def super_resolution_core(img, net, pad=None, crop=None):
             return channel_last(super_res[0, ::-1, :, :])
 
 
-def run_super_resolution(clip, prototxt, caffe_model, up_scale=2, rgb_model=True, pad=None, crop=None, backend=None, target=None):
+def run_super_resolution(clip, prototxt, caffe_model, up_scale=2, is_rgb_model=True, pad=None, crop=None, backend=None, target=None):
     """ Super-Resolution without color family hadling
     """
 
@@ -92,16 +92,16 @@ def run_super_resolution(clip, prototxt, caffe_model, up_scale=2, rgb_model=True
     if up_scale != 1:
         blank = core.std.BlankClip(clip, width=clip.width*up_scale, height=clip.height*up_scale)
         super_res = mufnp.numpy_process([blank, clip], super_resolution_core, net=net, 
-            input_per_plane=(not rgb_model), output_per_plane=(not rgb_model), pad=pad, crop=crop, 
+            input_per_plane=(not is_rgb_model), output_per_plane=(not is_rgb_model), pad=pad, crop=crop, 
             omit_first_clip=True)
     else:
         super_res = mufnp.numpy_process(clip, super_resolution_core, net=net, 
-            input_per_plane=(not rgb_model), output_per_plane=(not rgb_model), pad=pad, crop=crop)
+            input_per_plane=(not is_rgb_model), output_per_plane=(not is_rgb_model), pad=pad, crop=crop)
 
     return super_res
 
 
-def super_resolution(clip, prototxt, caffe_model, up_scale=2, rgb_model=True, pad=None, crop=None, backend=None, target=None, pre_upscale=False, upscale_uv=False, merge_residual=False):
+def super_resolution(clip, prototxt, caffe_model, up_scale=2, is_rgb_model=True, pad=None, crop=None, backend=None, target=None, pre_upscale=False, upscale_uv=False, merge_residual=False):
     """ Super-Resolution with color family hadling
     
     The color space of the output depends on the algorithm
@@ -110,10 +110,10 @@ def super_resolution(clip, prototxt, caffe_model, up_scale=2, rgb_model=True, pa
     isGray = clip.format.color_family == vs.GRAY
     isRGB = clip.format.color_family == vs.RGB
 
-    if rgb_model and not isRGB:
+    if is_rgb_model and not isRGB:
         clip = mvf.ToRGB(clip, depth=32)
 
-    elif not rgb_model:
+    elif not is_rgb_model:
         if isRGB:
             clip = mvf.ToYUV(clip, depth=32)
 
@@ -127,7 +127,7 @@ def super_resolution(clip, prototxt, caffe_model, up_scale=2, rgb_model=True, pa
         up_scale = 1
 
     super_res = run_super_resolution(clip, prototxt=prototxt, caffe_model=caffe_model, 
-        up_scale=up_scale, rgb_model=rgb_model, pad=pad, crop=crop, backend=backend, target=target)
+        up_scale=up_scale, is_rgb_model=is_rgb_model, pad=pad, crop=crop, backend=backend, target=target)
 
     if merge_residual:
         low_res = core.resize.Bicubic(clip, super_res.width, super_res.height, filter_param_a=0, filter_param_b=0.5)
