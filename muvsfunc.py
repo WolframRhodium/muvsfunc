@@ -3481,6 +3481,7 @@ def SSIM_downsample(clip, w, h, smooth=1, kernel=None, use_fmtc=False, epsilon=1
 
     bits = clip.format.bits_per_sample
     sampleType = clip.format.sample_type
+
     if depth_args is None:
         depth_args = {}
 
@@ -3501,7 +3502,7 @@ def SSIM_downsample(clip, w, h, smooth=1, kernel=None, use_fmtc=False, epsilon=1
     if use_fmtc:
         l = core.fmtc.resample(clip, w, h, kernel=kernel, **resample_args)
         l2 = core.fmtc.resample(core.std.Expr([clip], ['x dup *']), w, h, kernel=kernel, **resample_args)
-    else:
+    else: # use vszimg
         l = eval('core.resize.{kernel}(clip, w, h, **resample_args)'.format(kernel=kernel.capitalize()))
         l2 = eval('core.resize.{kernel}(core.std.Expr([clip], ["x dup *"]), w, h, **resample_args)'.format(kernel=kernel.capitalize()))
 

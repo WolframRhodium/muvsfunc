@@ -19,7 +19,7 @@ if sr_algorithm == 0:
     sr_args = dict(model_prefix=r'waifu2x\upconv_7_anime_style_art_rgb\scale2.0x_model', device_id=device_id, block_w=128, block_h=128, pad=(7,7,7,7), is_caffe_model=True)
 
 elif sr_algorithm == 3:
-    sr_args = dict(model_prefix=r'VDSR (unofficial)\VDSR', device_id=device_id, block_w=128, block_h=128, rgb_model=False, pre_upscale=True, is_caffe_model=True)
+    sr_args = dict(model_prefix=r'VDSR (unofficial)\VDSR', device_id=device_id, block_w=128, block_h=128, is_rgb_model=False, pre_upscale=True, is_caffe_model=True)
 
 sr = mufnp.super_resolution(src, **sr_args)
 
