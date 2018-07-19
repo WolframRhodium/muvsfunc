@@ -1502,7 +1502,7 @@ def SigmaFilter_core(img_2D, radius=3, thr=0.01):
     return flt
 
 
-def super_resolution(clip, model_prefix, epoch=0, up_scale=2, block_w=128, block_h=None, is_rgb_model=True, pad=None, crop=None, pre_upscale=False, upscale_uv=False, merge_source=False, use_fmtc=False, resample_kernel=None, resample_args=None, is_caffe_model=False, normalize_mean=None, normalize_std=None, device_id=0):
+def super_resolution(clip, model_prefix, epoch=0, up_scale=2, block_w=128, block_h=None, is_rgb_model=True, pad=None, crop=None, pre_upscale=False, upscale_uv=False, merge_source=False, use_fmtc=False, resample_kernel=None, resample_args=None, is_caffe_model=False, normalize_mean=None, normalize_std=None, dynamic_range=1, device_id=0):
     """ Super resolution in VapourSynth
 
     Wrapper function for super resolution algorithms.
@@ -1576,10 +1576,14 @@ def super_resolution(clip, model_prefix, epoch=0, up_scale=2, block_w=128, block
             (https://pytorch.org/docs/stable/torchvision/transforms.html#torchvision.transforms.Normalize)
             Default is None.
 
+        dynamic_range: (float) Dynamic range of network's input.
+            Default is 1.
+
     """
 
     import mxnet as mx
 
+    # initialize internal parameters
     isGray = clip.format.color_family == vs.GRAY
     isRGB = clip.format.color_family == vs.RGB
     block_size = (block_w, block_w if block_h is None else block_h)
@@ -1590,6 +1594,7 @@ def super_resolution(clip, model_prefix, epoch=0, up_scale=2, block_w=128, block
     if resample_args is None:
         resample_args = {}
 
+    # color space conversion
     if is_rgb_model and not isRGB:
         clip = mvf.ToRGB(clip, depth=32)
 
@@ -1600,8 +1605,10 @@ def super_resolution(clip, model_prefix, epoch=0, up_scale=2, block_w=128, block
         if not isGray and not upscale_uv: # isYUV/RGB and only upscale Y
             clip = mvf.GetPlane(clip)
 
-    clip = mvf.Depth(clip, depth=32)
+    # bit depth conversion
+    clip = mvf.Depth(clip, depth=32, sample=vs.FLOAT)
 
+    # pre-upscaling
     if pre_upscale:
         if up_scale != 1:
             if use_fmtc:
@@ -1619,22 +1626,27 @@ def super_resolution(clip, model_prefix, epoch=0, up_scale=2, block_w=128, block
 
         up_scale = 1
 
+    # load MXNet model
     sym, arg_params, aux_params = mx.model.load_checkpoint(model_prefix, epoch)
     ctx = mx.gpu(device_id) if device_id >= 0 else mx.cpu()
     net = mx.mod.Module(symbol=sym, context=ctx)
     net.bind(for_training=False, data_shapes=[('data', (1, 3 if is_rgb_model else 1, block_size[0], block_size[1]))])
     net.set_params(arg_params, aux_params, allow_missing=False)
 
+    # process
     if up_scale != 1:
         blank = core.std.BlankClip(clip, width=clip.width*up_scale, height=clip.height*up_scale)
         super_res = numpy_process([blank, clip], super_resolution_core, net=net, 
             input_per_plane=(not is_rgb_model), output_per_plane=(not is_rgb_model), up_scale=up_scale, block_size=block_size, pad=pad, crop=crop, 
-            omit_first_clip=True, channels_last=False, is_caffe_model=is_caffe_model, normalize_mean=normalize_mean, normalize_std=normalize_std)
+            omit_first_clip=True, channels_last=False, is_caffe_model=is_caffe_model, normalize_mean=normalize_mean, normalize_std=normalize_std,
+             dynamic_range=dynamic_range)
     else:
         super_res = numpy_process(clip, super_resolution_core, net=net, 
             input_per_plane=(not is_rgb_model), output_per_plane=(not is_rgb_model), up_scale=1, block_size=block_size, pad=pad, crop=crop, 
-            channels_last=False, is_caffe_model=is_caffe_model, normalize_mean=normalize_mean, normalize_std=normalize_std)
+            channels_last=False, is_caffe_model=is_caffe_model, normalize_mean=normalize_mean, normalize_std=normalize_std,
+            dynamic_range=dynamic_range)
 
+    # post-processing
     if merge_source:
         if up_scale != 1:
             if use_fmtc:
@@ -1655,13 +1667,14 @@ def super_resolution(clip, model_prefix, epoch=0, up_scale=2, block_w=128, block
     return super_res
 
 
-def super_resolution_core(img, net, up_scale=2, block_size=None, pad=None, crop=None, is_caffe_model=False, normalize_mean=None, normalize_std=None):
+def super_resolution_core(img, net, up_scale=2, block_size=None, pad=None, crop=None, is_caffe_model=False, normalize_mean=None, normalize_std=None, dynamic_range=1):
     """ Super resolution in Numpy
 
     Wrapper for super resolution methods.
 
     Args:
         img: Image data in CHW format, a.k.a. "channel first".
+            The dynamic range of the image is assumed to be 1.
         net: MXNet models.
 
     For detailed documentation, please refer to the documentation of "super_resolution" funcion in current library.
@@ -1675,6 +1688,9 @@ def super_resolution_core(img, net, up_scale=2, block_size=None, pad=None, crop=
   
     ndim = img.ndim
     h_img = mx.nd.array(img)
+
+    if dynamic_range != 1:
+        h_img *= dynamic_range
 
     if ndim == 2:
         h_img = h_img.reshape((1, 1, *h_img.shape)) # NCHW
@@ -1702,7 +1718,7 @@ def super_resolution_core(img, net, up_scale=2, block_size=None, pad=None, crop=
             if pad is not None:
                 h_in = mx.nd.pad(h_in, mode='edge', pad_width=(0, 0, 0, 0, *pad))
 
-            net.forward(Batch([h_in]))
+            net.forward(Batch([h_in]), is_train=False)
 
             h_out = net.get_outputs()[0]
 
@@ -1722,5 +1738,8 @@ def super_resolution_core(img, net, up_scale=2, block_size=None, pad=None, crop=
         pred = pred[0, :, :, :]
 
     super_res = pred.asnumpy()
+
+    if dynamic_range != 1:
+        super_res *= 1 / dynamic_range
 
     return super_res

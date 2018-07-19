@@ -2380,7 +2380,7 @@ def BlindDeHalo3(clp, rx=3.0, ry=3.0, strength=125, lodamp=0, hidamp=0, sharpnes
 
         rx, ry: (float) The radii to use for the [quasi-] Gaussian blur, on which the halo removal is based. Default is 3.0.
 
-        strength: (int) The overall strength of the halo removal effect. Default is 125.
+        strength: (float) The overall strength of the halo removal effect. Default is 125.
 
         lodamp, hidamp: (float) With these two values, one can reduce the basic effect on areas that would change only little anyway (lodamp),
             and/or on areas that would change very much (hidamp).
@@ -3323,7 +3323,7 @@ def SSIM(clip1, clip2, plane=None, downsample=True, k1=0.01, k2=0.03, fun=None, 
         downsample: (bool) Whether to average the clips over local 2x2 window and downsample by a factor of 2 before calculation.
             Default is True.
 
-        k1, k2: (int) Constants in the SSIM index formula.
+        k1, k2: (float) Constants in the SSIM index formula.
             According to the paper, the performance of the SSIM index algorithm is fairly insensitive to variations of these values.
             Default are 0.01 and 0.03.
 
