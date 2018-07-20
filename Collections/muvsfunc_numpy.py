@@ -1502,7 +1502,7 @@ def SigmaFilter_core(img_2D, radius=3, thr=0.01):
     return flt
 
 
-def super_resolution(clip, model_prefix, epoch=0, up_scale=2, block_w=128, block_h=None, is_rgb_model=True, pad=None, crop=None, pre_upscale=False, upscale_uv=False, merge_source=False, use_fmtc=False, resample_kernel=None, resample_args=None, is_caffe_model=False, normalize_mean=None, normalize_std=None, dynamic_range=1, device_id=0):
+def super_resolution(clip, model_prefix, epoch=0, up_scale=2, block_w=128, block_h=None, is_rgb_model=True, pad=None, crop=None, pre_upscale=False, upscale_uv=False, use_fmtc=False, resample_kernel=None, resample_args=None, is_caffe_model=False, normalize_mean=None, normalize_std=None, dynamic_range=1, device_id=0):
     """ Super resolution in VapourSynth
 
     Wrapper function for super resolution algorithms.
@@ -1553,20 +1553,17 @@ def super_resolution(clip, model_prefix, epoch=0, up_scale=2, block_w=128, block
             Only works when "is_rgb_model" is False.
             Default is False.
 
-        merge_source: (bool) Whether to merge the output of the network to the (nearest/bilinear/bicubic) enlarged source image.
-            Default is False.
-
         use_fmtc: (bool) Whether to use fmtconv for enlarging. If not, vszimg (core.resize.*) will be used.
-            Only works when "pre_upscale" or "merge_source" is True.
+            Only works when "pre_upscale" is True.
             Default is False.
 
         resample_kernel: (str) Resample kernel.
             If can be 'Catmull-Rom', i.e. BicubicResize with b=0 and c=0.5.
-            Only works when "pre_upscale" or "merge_source" is True.
+            Only works when "pre_upscale" is True.
             Default is 'Catmull-Rom'.
 
         resample_args: (dict) Additional arguments passed to vszimg/fmtconv for post enlarging.
-            Only works when "pre_upscale" or "merge_source" is True.
+            Only works when "pre_upscale" is True.
             Default is {}.
 
         is_caffe_model: (bool) Whether the source model is a Caffe model, i.e. the data format of color input is BGR rather than RGB.
@@ -1593,6 +1590,11 @@ def super_resolution(clip, model_prefix, epoch=0, up_scale=2, block_w=128, block
 
     if resample_args is None:
         resample_args = {}
+
+    if pad is None:
+        pad_size = (0, 0)
+    else:
+        pad_size = (pad[0] + pad[1], pad[2] + pad[3])
 
     # color space conversion
     if is_rgb_model and not isRGB:
@@ -1630,7 +1632,7 @@ def super_resolution(clip, model_prefix, epoch=0, up_scale=2, block_w=128, block
     sym, arg_params, aux_params = mx.model.load_checkpoint(model_prefix, epoch)
     ctx = mx.gpu(device_id) if device_id >= 0 else mx.cpu()
     net = mx.mod.Module(symbol=sym, context=ctx)
-    net.bind(for_training=False, data_shapes=[('data', (1, 3 if is_rgb_model else 1, block_size[0], block_size[1]))])
+    net.bind(for_training=False, data_shapes=[('data', (1, 3 if is_rgb_model else 1, block_size[0] + pad_size[0], block_size[1] + pad_size[1]))])
     net.set_params(arg_params, aux_params, allow_missing=False)
 
     # process
@@ -1645,24 +1647,6 @@ def super_resolution(clip, model_prefix, epoch=0, up_scale=2, block_w=128, block
             input_per_plane=(not is_rgb_model), output_per_plane=(not is_rgb_model), up_scale=1, block_size=block_size, pad=pad, crop=crop, 
             channels_last=False, is_caffe_model=is_caffe_model, normalize_mean=normalize_mean, normalize_std=normalize_std,
             dynamic_range=dynamic_range)
-
-    # post-processing
-    if merge_source:
-        if up_scale != 1:
-            if use_fmtc:
-                if resample_kernel.lower() == 'catmull-rom':
-                    low_res = core.fmtc.resample(clip, super_res.width, super_res.height, kernel='bicubic', a1=0, a2=0.5, **resample_args)
-                else:
-                    low_res = core.fmtc.resample(clip, super_res.width, super_res.height, kernel=resample_kernel, **resample_args)
-            else: # use vszimg
-                if resample_kernel.lower() == 'catmull-rom':
-                    low_res = core.resize.Bicubic(clip, super_res.width, super_res.height, filter_param_a=0, filter_param_b=0.5, **resample_args)
-                else:
-                    low_res = eval('core.resize.{kernel}(clip, {w}, {h}, **resample_args)'.format(w=super_res.width, h=super_res.height, kernel=resample_kernel.capitalize()))
-        else:
-            low_res = clip
-
-        super_res = core.std.Expr([super_res, low_res], ['x y +'])
 
     return super_res
 
