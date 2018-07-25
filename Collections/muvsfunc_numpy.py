@@ -1502,7 +1502,7 @@ def SigmaFilter_core(img_2D, radius=3, thr=0.01):
     return flt
 
 
-def super_resolution(clip, model_prefix, epoch=0, up_scale=2, block_w=128, block_h=None, is_rgb_model=True, pad=None, crop=None, pre_upscale=False, upscale_uv=False, use_fmtc=False, resample_kernel=None, resample_args=None, is_caffe_model=False, normalize_mean=None, normalize_std=None, dynamic_range=1, device_id=0):
+def super_resolution(clip, model_prefix, epoch=0, up_scale=2, block_w=128, block_h=None, is_rgb_model=True, pad=None, crop=None, pre_upscale=False, upscale_uv=False, use_fmtc=False, resample_kernel=None, resample_args=None, pad_mode=None, device_id=0):
     """ Super resolution in VapourSynth
 
     Wrapper function for super resolution algorithms.
@@ -1539,13 +1539,15 @@ def super_resolution(clip, model_prefix, epoch=0, up_scale=2, block_w=128, block
             If not, it is assumed to be Y model.
             Default is True.
 
-        pad: (list of four ints) Padding before upscaling.
+        pad: (list of four ints) Patch-wise padding before upscaling.
             Default is None.
 
-        crop: (list of four ints) Cropping after upscaling.
+        crop: (list of four ints) Patch-wise cropping after upscaling.
             Default is None.
 
         pre_upscale: (bool) Whether to upscale the image before feed to the network.
+            If true, currently the function will only upscale the whole image directly rather than upscale
+                the patches separately, which may results in blocking artifacts on some algorithms.
             Default is False.
 
         upscale_uv: (bool) Whether to upscale UV channels when using Y model.
@@ -1562,19 +1564,15 @@ def super_resolution(clip, model_prefix, epoch=0, up_scale=2, block_w=128, block
             Only works when "pre_upscale" is True.
             Default is 'Catmull-Rom'.
 
-        resample_args: (dict) Additional arguments passed to vszimg/fmtconv for post enlarging.
+        resample_args: (dict) Additional arguments passed to vszimg/fmtconv resample kernel.
             Only works when "pre_upscale" is True.
             Default is {}.
 
-        is_caffe_model: (bool) Whether the source model is a Caffe model, i.e. the data format of color input is BGR rather than RGB.
-            Default is False.
-
-        normalize_mean, normalize_std: (list of floats) Channel-wise noralization coefficients.
-            (https://pytorch.org/docs/stable/torchvision/transforms.html#torchvision.transforms.Normalize)
-            Default is None.
-
-        dynamic_range: (float) Dynamic range of network's input.
-            Default is 1.
+        pad_mode: (str, 'constant', 'edge' or 'reflect') Padding type to use.
+            “constant” pads with constant_value.
+            “edge” pads using the edge values of the input array.
+            “reflect” pads by reflecting values with respect to the edges.
+            Default is "reflect"
 
     """
 
@@ -1596,6 +1594,9 @@ def super_resolution(clip, model_prefix, epoch=0, up_scale=2, block_w=128, block
     else:
         pad_size = (pad[0] + pad[1], pad[2] + pad[3])
 
+    if pad_mode is None:
+        pad_mode = 'reflect'
+
     # color space conversion
     if is_rgb_model and not isRGB:
         clip = mvf.ToRGB(clip, depth=32)
@@ -1604,8 +1605,11 @@ def super_resolution(clip, model_prefix, epoch=0, up_scale=2, block_w=128, block
         if isRGB:
             clip = mvf.ToYUV(clip, depth=32)
 
-        if not isGray and not upscale_uv: # isYUV/RGB and only upscale Y
-            clip = mvf.GetPlane(clip)
+        if not isGray:
+            if not upscale_uv: # isYUV/RGB and only upscale Y
+                clip = mvf.GetPlane(clip)
+            else:
+                clip = core.std.Expr([clip], ['', 'x 0.5 +']) # change the range of UV from [-0.5, 0.5] to [0, 1]
 
     # bit depth conversion
     clip = mvf.Depth(clip, depth=32, sample=vs.FLOAT)
@@ -1640,18 +1644,20 @@ def super_resolution(clip, model_prefix, epoch=0, up_scale=2, block_w=128, block
         blank = core.std.BlankClip(clip, width=clip.width*up_scale, height=clip.height*up_scale)
         super_res = numpy_process([blank, clip], super_resolution_core, net=net, 
             input_per_plane=(not is_rgb_model), output_per_plane=(not is_rgb_model), up_scale=up_scale, block_size=block_size, pad=pad, crop=crop, 
-            omit_first_clip=True, channels_last=False, is_caffe_model=is_caffe_model, normalize_mean=normalize_mean, normalize_std=normalize_std,
-             dynamic_range=dynamic_range)
+            omit_first_clip=True, channels_last=False, pad_mode=pad_mode)
     else:
         super_res = numpy_process(clip, super_resolution_core, net=net, 
             input_per_plane=(not is_rgb_model), output_per_plane=(not is_rgb_model), up_scale=1, block_size=block_size, pad=pad, crop=crop, 
-            channels_last=False, is_caffe_model=is_caffe_model, normalize_mean=normalize_mean, normalize_std=normalize_std,
-            dynamic_range=dynamic_range)
+            channels_last=False, pad_mode=pad_mode)
+
+    # post-processing
+    if not is_rgb_model and not isGray and upscale_uv:
+        super_res = core.std.Expr([super_res], ['', 'x 0.5 -']) # restore the range of UV
 
     return super_res
 
 
-def super_resolution_core(img, net, up_scale=2, block_size=None, pad=None, crop=None, is_caffe_model=False, normalize_mean=None, normalize_std=None, dynamic_range=1):
+def super_resolution_core(img, net, up_scale=2, block_size=None, pad=None, crop=None, pad_mode=None):
     """ Super resolution in Numpy
 
     Wrapper for super resolution methods.
@@ -1659,7 +1665,10 @@ def super_resolution_core(img, net, up_scale=2, block_size=None, pad=None, crop=
     Args:
         img: Image data in CHW format, a.k.a. "channel first".
             The dynamic range of the image is assumed to be 1.
+
         net: MXNet models.
+
+    The default padding tymode is set to 'reflect'.
 
     For detailed documentation, please refer to the documentation of "super_resolution" funcion in current library.
 
@@ -1669,26 +1678,17 @@ def super_resolution_core(img, net, up_scale=2, block_size=None, pad=None, crop=
     from collections import namedtuple
 
     Batch = namedtuple('Batch', ['data'])
+
+    if pad_mode is None:
+        pad_mode = 'reflect'
   
     ndim = img.ndim
     h_img = mx.nd.array(img)
-
-    if dynamic_range != 1:
-        h_img *= dynamic_range
 
     if ndim == 2:
         h_img = h_img.reshape((1, 1, *h_img.shape)) # NCHW
     else: # ndim == 3
         h_img = h_img.reshape((1, *h_img.shape)) # NCHW
-
-    if normalize_mean is not None and normalize_std is not None:
-        normalize_mean = mx.nd.array(normalize_mean).reshape((1, -1, 1, 1))
-        normalize_std = mx.nd.array(normalize_std).reshape((1, -1, 1, 1))
-        normalize_std_inv = 1 / normalize_std
-        h_img = (h_img - normalize_mean) * normalize_std_inv
-
-    if is_caffe_model and h_img.shape[1] == 3:
-        h_img = mx.nd.reverse(h_img, axis=1)
 
     _, c, h, w = h_img.shape
     pred = mx.nd.empty((1, c, h*up_scale, w*up_scale))
@@ -1700,7 +1700,7 @@ def super_resolution_core(img, net, up_scale=2, block_size=None, pad=None, crop=
             h_in = h_img[:, :, i*block_size[0]:h_index, j*block_size[1]:w_index]
 
             if pad is not None:
-                h_in = mx.nd.pad(h_in, mode='edge', pad_width=(0, 0, 0, 0, *pad))
+                h_in = mx.nd.pad(h_in, mode=pad_mode, pad_width=(0, 0, 0, 0, *pad))
 
             net.forward(Batch([h_in]), is_train=False)
 
@@ -1711,19 +1711,11 @@ def super_resolution_core(img, net, up_scale=2, block_size=None, pad=None, crop=
             else:
                 pred[:, :, i*block_size[0]*up_scale:h_index*up_scale, j*block_size[1]*up_scale:w_index*up_scale] = h_out[:, :, :, :]
 
-    if normalize_mean is not None and normalize_std is not None:
-        unnormalize_mean = -normalize_mean * normalize_std_inv
-        unnormalize_std_inv = normalize_std
-        pred = (pred - unnormalize_mean) * unnormalize_std_inv
-
     if ndim == 2:
         pred = pred[0, 0, :, :]
     else:
         pred = pred[0, :, :, :]
 
     super_res = pred.asnumpy()
-
-    if dynamic_range != 1:
-        super_res *= 1 / dynamic_range
 
     return super_res
