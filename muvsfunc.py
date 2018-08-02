@@ -185,12 +185,10 @@ def Compare(src, flt, power=1.5, chroma=False, mode=2):
         raise TypeError(funcName + ': \"src\" must be a YUV clip!')
     if not isinstance(flt, vs.VideoNode):
         raise TypeError(funcName + ': \"flt\" must be a clip!')
-    if src.format.id != flt.format.id:
-        raise TypeError(funcName + ': \"flt\" must be of the same format as \"src\"!')
-    if src.width != flt.width or src.height != flt.height:
-        raise TypeError(funcName + ': \"flt\" must be of the same size as \"src\"!')
     if mode not in [1, 2]:
         raise TypeError(funcName + ': \"mode\" must be in [1, 2]!')
+
+    Compare2(src, flt, props_list=['width', 'height', 'format.name'])
 
     isGray = src.format.color_family == vs.GRAY
     bits = src.format.bits_per_sample

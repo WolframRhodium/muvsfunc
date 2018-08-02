@@ -1502,7 +1502,7 @@ def SigmaFilter_core(img_2D, radius=3, thr=0.01):
     return flt
 
 
-def super_resolution(clip, model_prefix, epoch=0, up_scale=2, block_w=128, block_h=None, is_rgb_model=True, pad=None, crop=None, pre_upscale=False, upscale_uv=False, use_fmtc=False, resample_kernel=None, resample_args=None, pad_mode=None, device_id=0):
+def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, block_h=None, is_rgb_model=True, pad=None, crop=None, pre_upscale=False, upscale_uv=False, use_fmtc=False, resample_kernel=None, resample_args=None, pad_mode=None, framework=None, data_format=None, device_id=0):
     """ Super resolution in VapourSynth
 
     Wrapper function for super resolution algorithms.
@@ -1521,10 +1521,13 @@ def super_resolution(clip, model_prefix, epoch=0, up_scale=2, block_w=128, block
             The color space will be automatically converted by mvf.ToRGB/YUV if it is not
             compatiable with the super resolution algorithm.
 
-        model_prefix: Path prefix of saved model files.
-            You should have "model_prefix-symbol.json", "model_prefix-xxxx.params", where xxxx is the epoch number.
+        model_filename: Path to the pre-trained model.
+            If MXNet framework is used, this specifies the path prefix of saved model files.
+            You should have "model_filename-symbol.json", "model_filename-xxxx.params", where xxxx is the epoch number.
 
-        epoch: (int) Epoch to load.
+            If TensorFlow framework is used, this specifies the path to the binary frozen graph (*.pb).
+
+        epoch: (int) Epoch to load of MXNet model file.
             Default is 0.
 
         up_scale: (int) Upscaling factor.
@@ -1568,15 +1571,20 @@ def super_resolution(clip, model_prefix, epoch=0, up_scale=2, block_w=128, block
             Only works when "pre_upscale" is True.
             Default is {}.
 
-        pad_mode: (str, 'constant', 'edge' or 'reflect') Padding type to use.
-            “constant” pads with constant_value.
-            “edge” pads using the edge values of the input array.
-            “reflect” pads by reflecting values with respect to the edges.
-            Default is "reflect"
+        pad_mode: (str) Padding type of NumPy to use.
+            Default is "symmetric"
+
+        framework: (str, 'MXNet' or 'TensorFlow') Deep learning framework to use.
+            Defaut is 'MXNet'.
+
+        data_format: (str, 'NCHW' or 'NHWC')
+            The image data format to be used as default by image processing layers.
+            Default is 'NCHW'.
+
+        device_id: (int) Which device to use. Starting with 0. If it is smaller than 0, CPU will be used.
+            Default is 0.
 
     """
-
-    import mxnet as mx
 
     # initialize internal parameters
     isGray = clip.format.color_family == vs.GRAY
@@ -1595,7 +1603,21 @@ def super_resolution(clip, model_prefix, epoch=0, up_scale=2, block_w=128, block
         pad_size = (pad[0] + pad[1], pad[2] + pad[3])
 
     if pad_mode is None:
-        pad_mode = 'reflect'
+        pad_mode = 'symmetric'
+
+    if framework is None:
+        framework = 'MXNet'
+
+    framework = framework.lower()
+    if framework not in ['mxnet', 'tensorflow']:
+        raise ValueError('Unsupported framework {}!'.format(framework))
+
+    if data_format is None:
+        data_format = 'NCHW'
+    else:
+        data_format = data_format.upper()
+        if data_format not in ['NCHW', 'NHWC']:
+            raise ValueError('Unsupported data_format {}!'.format(data_format))
 
     # color space conversion
     if is_rgb_model and not isRGB:
@@ -1632,23 +1654,50 @@ def super_resolution(clip, model_prefix, epoch=0, up_scale=2, block_w=128, block
 
         up_scale = 1
 
-    # load MXNet model
-    sym, arg_params, aux_params = mx.model.load_checkpoint(model_prefix, epoch)
-    ctx = mx.gpu(device_id) if device_id >= 0 else mx.cpu()
-    net = mx.mod.Module(symbol=sym, context=ctx)
-    net.bind(for_training=False, data_shapes=[('data', (1, 3 if is_rgb_model else 1, block_size[0] + pad_size[0], block_size[1] + pad_size[1]))])
-    net.set_params(arg_params, aux_params, allow_missing=False)
+    # load model
+    if framework == 'mxnet':
+        import mxnet as mx
 
-    # process
+        # load MXNet model
+        sym, arg_params, aux_params = mx.model.load_checkpoint(model_filename, epoch)
+        ctx = mx.gpu(device_id) if device_id >= 0 else mx.cpu()
+        net = mx.mod.Module(symbol=sym, context=ctx)
+        if data_format == 'NCHW':
+            data_shape = (1, 3 if is_rgb_model else 1, block_size[0] + pad_size[0], block_size[1] + pad_size[1])
+        else: # data_format == 'NHWC':
+            data_shape = (1, block_size[0] + pad_size[0], block_size[1] + pad_size[1], 3 if is_rgb_model else 1)
+        net.bind(for_training=False, data_shapes=[('data', data_shape)])
+        net.set_params(arg_params, aux_params, allow_missing=False)
+
+        runner = net
+
+    elif framework == 'tensorflow':
+        import tensorflow as tf
+
+        # load TensorFlow model
+        sess = tf.Session(config=None)
+
+        device = '/cpu:0' if device_id < 0 else '/gpu:{}'.format(device_id)
+        with tf.device(device):
+            with tf.gfile.FastGFile(model_filename, 'rb') as f:
+                graph_def = tf.GraphDef()
+                graph_def.ParseFromString(f.read())
+                tf.import_graph_def(graph_def, name='')
+
+        runner = sess
+
+    # inference
     if up_scale != 1:
         blank = core.std.BlankClip(clip, width=clip.width*up_scale, height=clip.height*up_scale)
-        super_res = numpy_process([blank, clip], super_resolution_core, net=net, 
-            input_per_plane=(not is_rgb_model), output_per_plane=(not is_rgb_model), up_scale=up_scale, block_size=block_size, pad=pad, crop=crop, 
-            omit_first_clip=True, channels_last=False, pad_mode=pad_mode)
+        super_res = numpy_process([blank, clip], super_resolution_core, runner=runner, framework=framework,
+            input_per_plane=(not is_rgb_model), output_per_plane=(not is_rgb_model), up_scale=up_scale, block_size=block_size,
+            pad=pad, crop=crop, pad_mode=pad_mode, data_format=data_format, channels_last=data_format == 'NHWC',
+            omit_first_clip=True)
     else:
-        super_res = numpy_process(clip, super_resolution_core, net=net, 
-            input_per_plane=(not is_rgb_model), output_per_plane=(not is_rgb_model), up_scale=1, block_size=block_size, pad=pad, crop=crop, 
-            channels_last=False, pad_mode=pad_mode)
+        super_res = numpy_process(clip, super_resolution_core, runner=runner, framework=framework,
+            input_per_plane=(not is_rgb_model), output_per_plane=(not is_rgb_model), up_scale=1, block_size=block_size,
+            pad=pad, crop=crop, pad_mode=pad_mode, data_format=data_format, channels_last=data_format == 'NHWC')
+
 
     # post-processing
     if not is_rgb_model and not isGray and upscale_uv:
@@ -1657,65 +1706,102 @@ def super_resolution(clip, model_prefix, epoch=0, up_scale=2, block_w=128, block
     return super_res
 
 
-def super_resolution_core(img, net, up_scale=2, block_size=None, pad=None, crop=None, pad_mode=None):
+def super_resolution_core(img, runner, up_scale=2, block_size=None, pad=None, crop=None, pad_mode=None, framework=None, data_format=None):
     """ Super resolution in Numpy
-
     Wrapper for super resolution methods.
-
     Args:
-        img: Image data in CHW format, a.k.a. "channel first".
+        img: Image data.
             The dynamic range of the image is assumed to be 1.
+        runner: Framwork-specific runner.
+            If TensorFlow framework is used, then it specifies the session.
+            If MXNet framework is used, then it specifies the model.
 
-        net: MXNet models.
-
-    The default padding tymode is set to 'reflect'.
-
+    The default padding tymode is set to 'symmetric'.
     For detailed documentation, please refer to the documentation of "super_resolution" funcion in current library.
-
     """
 
-    import mxnet as mx
-    from collections import namedtuple
-
-    Batch = namedtuple('Batch', ['data'])
-
+    # initialization
     if pad_mode is None:
-        pad_mode = 'reflect'
-  
+        pad_mode = 'symmetric'
+
+    if data_format is None:
+        data_format = 'NCHW'
+    else:
+        data_format = data_format.upper()
+
+    framework = framework.lower()
+    if framework not in ['mxnet', 'tensorflow']:
+        raise ValueError('Unsupported framework {}!'.format(framework))
+
+    # reshape 2-D or 3-D image to 4-D tensor
     ndim = img.ndim
-    h_img = mx.nd.array(img)
-
     if ndim == 2:
-        h_img = h_img.reshape((1, 1, *h_img.shape)) # NCHW
+        img = img.reshape((1, 1, *img.shape) if data_format == 'NCHW' else (1, *img.shape, 1))
     else: # ndim == 3
-        h_img = h_img.reshape((1, *h_img.shape)) # NCHW
+        img = img.reshape((1, *img.shape))
 
-    _, c, h, w = h_img.shape
-    pred = mx.nd.empty((1, c, h*up_scale, w*up_scale))
+    # pre-allocation
+    _, c, h, w = img.shape
+    if data_format == 'NCHW':
+        pred = np.empty((1, c, h * up_scale, w * up_scale), dtype=np.float32)
+    else:
+        pred = np.empty((1, h * up_scale, w * up_scale, c), dtype=np.float32)
 
+    # framework-related operations
+    if framework == 'mxnet':
+        import mxnet as mx
+        net = runner
+        from collections import namedtuple
+        Batch = namedtuple('Batch', ['data'])
+
+    elif framework == 'tensorflow':
+        sess = runner
+        input_ = sess.graph.get_tensor_by_name('Input:0')
+        output_ = sess.graph.get_tensor_by_name('Output:0')
+
+    # patch-wise processing
     for i in range(math.ceil(h / block_size[0])):
         for j in range(math.ceil(w / block_size[1])):
-            h_index = min(h, (i+1)*block_size[0])
-            w_index = min(w, (j+1)*block_size[1])
-            h_in = h_img[:, :, i*block_size[0]:h_index, j*block_size[1]:w_index]
 
+            top = i * block_size[0]
+            bottom = min(h, (i + 1) * block_size[0])
+            left = j * block_size[1]
+            right = min(w, (j + 1) * block_size[1])
+
+            h_in = img[:, :, top:bottom, left:right]
+
+            # pre-padding
             if pad is not None:
-                h_in = mx.nd.pad(h_in, mode=pad_mode, pad_width=(0, 0, 0, 0, *pad))
+                if data_format == 'NCHW':
+                    pad_width = ((0, 0), (0, 0), (pad[0], pad[1]), (pad[2], pad[3]))
+                else:
+                    pad_width = ((0, 0), (pad[0], pad[1]), (pad[2], pad[3]), (0, 0))
+                h_in = np.pad(h_in, mode=pad_mode, pad_width=pad_width)
 
-            net.forward(Batch([h_in]), is_train=False)
+            # forward
+            if framework == 'mxnet':
+                h_in = mx.nd.array(h_in)
+                net.forward(Batch([h_in]), is_train=False)
+                h_out = net.get_outputs()[0].asnumpy()
 
-            h_out = net.get_outputs()[0]
+            elif framework == 'tensorflow':
+                h_out = sess.run(output_, feed_dict={input_: h_in})
 
+            # post-cropping
             if crop is not None:
-                pred[:, :, i*block_size[0]*up_scale:h_index*up_scale, j*block_size[1]*up_scale:w_index*up_scale] = h_out[:, :, crop[0]:-crop[1], crop[2]:-crop[3]]
+                if data_format == 'NCHW':
+                    pred[:, :, top*up_scale:bottom*up_scale, left*up_scale:right*up_scale] = h_out[:, :, crop[0]:-crop[1], crop[2]:-crop[3]]
+                else:
+                    pred[:, top*up_scale:bottom*up_scale, left*up_scale:right*up_scale, :] = h_out[:, crop[0]:-crop[1], crop[2]:-crop[3], :]
             else:
-                pred[:, :, i*block_size[0]*up_scale:h_index*up_scale, j*block_size[1]*up_scale:w_index*up_scale] = h_out[:, :, :, :]
+                if data_format == 'NCHW':
+                    pred[:, :, top*up_scale:bottom*up_scale, left*up_scale:right*up_scale] = h_out[:, :, :, :]
+                else:
+                    pred[:, top*up_scale:bottom*up_scale, left*up_scale:right*up_scale, :] = h_out[:, :, :, :]
 
     if ndim == 2:
-        pred = pred[0, 0, :, :]
-    else:
-        pred = pred[0, :, :, :]
-
-    super_res = pred.asnumpy()
+        super_res = pred.squeeze(axis=(0, 1) if data_format == 'NCHW' else (0, 3))
+    else: # ndim == 2
+        super_res = pred.squeeze(axis=0)
 
     return super_res
