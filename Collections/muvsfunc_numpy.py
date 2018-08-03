@@ -1502,7 +1502,7 @@ def SigmaFilter_core(img_2D, radius=3, thr=0.01):
     return flt
 
 
-def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, block_h=None, is_rgb_model=True, pad=None, crop=None, pre_upscale=False, upscale_uv=False, use_fmtc=False, resample_kernel=None, resample_args=None, pad_mode=None, framework=None, data_format=None, device_id=0):
+def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, block_h=None, is_rgb_model=True, pad=None, crop=None, pre_upscale=False, upscale_uv=False, merge_source=False, use_fmtc=False, resample_kernel=None, resample_args=None, pad_mode=None, framework=None, data_format=None, device_id=0):
     """ Super resolution in VapourSynth
 
     Wrapper function for super resolution algorithms.
@@ -1556,6 +1556,9 @@ def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, blo
         upscale_uv: (bool) Whether to upscale UV channels when using Y model.
             If not, the UV channels will be discarded.
             Only works when "is_rgb_model" is False.
+            Default is False.
+
+        merge_source: (bool) Whether to merge the output of the network to the (nearest/bilinear/bicubic) enlarged source image.
             Default is False.
 
         use_fmtc: (bool) Whether to use fmtconv for enlarging. If not, vszimg (core.resize.*) will be used.
@@ -1702,6 +1705,23 @@ def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, blo
     # post-processing
     if not is_rgb_model and not isGray and upscale_uv:
         super_res = core.std.Expr([super_res], ['', 'x 0.5 -']) # restore the range of UV
+
+    if merge_source:
+        if up_scale != 1:
+            if use_fmtc:
+                if resample_kernel.lower() == 'catmull-rom':
+                    low_res = core.fmtc.resample(clip, super_res.width, super_res.height, kernel='bicubic', a1=0, a2=0.5, **resample_args)
+                else:
+                    low_res = core.fmtc.resample(clip, super_res.width, super_res.height, kernel=resample_kernel, **resample_args)
+            else: # use vszimg
+                if resample_kernel.lower() == 'catmull-rom':
+                    low_res = core.resize.Bicubic(clip, super_res.width, super_res.height, filter_param_a=0, filter_param_b=0.5, **resample_args)
+                else:
+                    low_res = eval('core.resize.{kernel}(clip, {w}, {h}, **resample_args)'.format(w=super_res.width, h=super_res.height, kernel=resample_kernel.capitalize()))
+        else:
+            low_res = clip
+
+        super_res = core.std.Expr([super_res, low_res], ['x y +'])
 
     return super_res
 
