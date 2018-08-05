@@ -1761,10 +1761,11 @@ def super_resolution_core(img, runner, up_scale=2, block_size=None, pad=None, cr
         img = img.reshape((1, *img.shape))
 
     # pre-allocation
-    _, c, h, w = img.shape
     if data_format == 'NCHW':
+        _, c, h, w = img.shape
         pred = np.empty((1, c, h * up_scale, w * up_scale), dtype=np.float32)
     else:
+        _, h, w, c = img.shape
         pred = np.empty((1, h * up_scale, w * up_scale, c), dtype=np.float32)
 
     # framework-related operations
@@ -1788,7 +1789,10 @@ def super_resolution_core(img, runner, up_scale=2, block_size=None, pad=None, cr
             left = j * block_size[1]
             right = min(w, (j + 1) * block_size[1])
 
-            h_in = img[:, :, top:bottom, left:right]
+            if data_format == 'NCHW':
+                h_in = img[:, :, top:bottom, left:right]
+            else:
+                h_in = img[:, top:bottom, left:right, :]
 
             # pre-padding
             if pad is not None:
