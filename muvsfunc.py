@@ -1980,7 +1980,7 @@ def ColorBarsHD(clip=None, width=1288, height=720):
     return pattern
 
 
-def SeeSaw(clp, denoised=None, NRlimit=2, NRlimit2=None, Sstr=1.5, Slimit=None, Spower=4, SdampLo=None, SdampHi=24, Szp=18, bias=49, Smode=None, sootheT=49, sootheS=0, ssx=1.0, ssy=None):
+def SeeSaw(clp, denoised=None, NRlimit=2, NRlimit2=None, Sstr=1.5, Slimit=None, Spower=4, SdampLo=None, SdampHi=24, Szp=18, bias=49, Smode=None, sootheT=49, sootheS=0, ssx=1.0, ssy=None, diff=False):
     """Avisynth's SeeSaw v0.3e
 
     Author: Didée (http://avisynth.nl/images/SeeSaw.avs)
@@ -2037,6 +2037,9 @@ def SeeSaw(clp, denoised=None, NRlimit=2, NRlimit2=None, Sstr=1.5, Slimit=None, 
 
         ssx, ssy: (int) SeeSaw doesn't require supersampling urgently, if at all, small values ~1.25 seem to be enough. Default is 1.0.
 
+        diff: (bool) When True, limit the sharp-difference instead of the sharpened clip.
+                     Relative limiting is more safe, less aliasing, but also less sharpening.
+                     
     Usage: (in Avisynth)
         a = TheNoisySource
         b = a.YourPreferredDenoising()
@@ -2108,13 +2111,16 @@ def SeeSaw(clp, denoised=None, NRlimit=2, NRlimit2=None, Sstr=1.5, Slimit=None, 
     tameexpr = 'x {NRLL} + y < x {NRL2} + x {NRLL} - y > x {NRL2} - x {BIAS1} * y {BIAS2} * + 100 / ? ?'.format(NRLL=NRLL, NRL2=NRL2, BIAS1=bias, BIAS2=100-bias)
     tame = core.std.Expr([clp, denoised], [tameexpr])
 
-    head = _SeeSaw_sharpen2(tame, Sstr, Spower, Szp, SdampLo, SdampHi, 4)
+    head = _SeeSaw_sharpen2(tame, Sstr, Spower, Szp, SdampLo, SdampHi, 4, diff)
 
     if ssx == 1 and ssy == 1:
-        last = core.rgvs.Repair(_SeeSaw_sharpen2(tame, Sstr, Spower, Szp, SdampLo, SdampHi, Smode), head, [1])
+        last = core.rgvs.Repair(_SeeSaw_sharpen2(tame, Sstr, Spower, Szp, SdampLo, SdampHi, Smode, diff), head, [1])
     else:
-        last = core.rgvs.Repair(_SeeSaw_sharpen2(tame.fmtc.resample(xss, yss, kernel='lanczos').fmtc.bitdepth(bits=bits), Sstr, Spower, Szp, SdampLo, SdampHi, Smode), head.fmtc.resample(xss, yss, kernel='bicubic', a1=-0.2, a2=0.6).fmtc.bitdepth(bits=bits), [1]).fmtc.resample(ox, oy, kernel='lanczos').fmtc.bitdepth(bits=bits)
-
+        last = core.rgvs.Repair(_SeeSaw_sharpen2(tame.resize.Lanczos(xss, yss), Sstr, Spower, Szp, SdampLo, SdampHi, Smode, diff), head.resize.Bicubic(xss, yss, filter_param_a=-0.2, filter_param_b=0.6), [1]).resize.Lanczos(ox, oy)
+        
+    if diff:
+        last = core.std.MergeDiff(tame, last)
+        
     last = _SeeSaw_SootheSS(last, tame, sootheT, sootheS)
     sharpdiff = core.std.MakeDiff(tame, last)
 
@@ -2134,7 +2140,7 @@ def SeeSaw(clp, denoised=None, NRlimit=2, NRlimit2=None, Sstr=1.5, Slimit=None, 
     return last if isGray else core.std.ShufflePlanes([last, clp_src], list(range(clp_src.format.num_planes)), clp_src.format.color_family)
 
 
-def _SeeSaw_sharpen2(clp, strength, power, zp, lodmp, hidmp, rgmode):
+def _SeeSaw_sharpen2(clp, strength, power, zp, lodmp, hidmp, rgmode, diff):
     """Modified sharpening function from SeeSaw()
 
     Only the first plane (luma) will be processed.
@@ -2169,7 +2175,8 @@ def _SeeSaw_sharpen2(clp, strength, power, zp, lodmp, hidmp, rgmode):
 
     method = clp.rgvs.RemoveGrain([rgmode] if isGray else [rgmode, 0])
     sharpdiff = core.std.MakeDiff(clp, method, [0]).std.Lut(function=get_lut1, planes=[0])
-    return core.std.MergeDiff(clp, sharpdiff, [0])
+    
+    return sharpdiff if diff else core.std.MergeDiff(clp, sharpdiff, [0])
 
 
 def _SeeSaw_SootheSS(sharp, orig, sootheT=25, sootheS=0):
