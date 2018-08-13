@@ -9,7 +9,6 @@ Functions:
     AnimeMask (2)
     PolygonExInpand
     Luma
-
     ediaa
     nnedi3aa
     maa
@@ -580,7 +579,7 @@ def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=
         dmask = core.std.Expr([dmask], [mexpr])
         dmask = core.rgvs.RemoveGrain([dmask], [22])
         if mask > 1:
-            dmask = core.rgvs.RemoveGrain([dmask], [11])
+            dmask = core.std.Convolution(dmask, matrix=[1, 2, 1, 2, 4, 2, 1, 2, 1])
             if mask > 2:
                 dmask = core.std.Convolution(dmask, matrix=[1]*9)
         dmask = core.fmtc.bitdepth(dmask, bits=16, fulls=True, fulld=True)
@@ -678,7 +677,7 @@ def _Build_gf3_range_mask(src, radius=1):
     return last
 
 
-def AnimeMask(input, shift=0, expr=None, mode=1, resample_args=None):
+def AnimeMask(input, shift=0, expr=None, mode=1, **resample_args):
     """Generates edge/ringing mask for anime based on gradient operator.
 
     For Anime's ringing mask, it's recommended to set "shift" between 0.5 and 1.0.
@@ -692,8 +691,7 @@ def AnimeMask(input, shift=0, expr=None, mode=1, resample_args=None):
 
         mode: (-1 or 1) Type of the kernel, which simply inverts the pixel values and "shift". Typically, -1 is for edge, 1 is for ringing. Default is 1.
 
-        resample_args: (dict) Additional parameters passed to core.fmtc.resample in the form of dict.
-            Default is dict(kernel='bicubic').
+        resample_args: (dict) Additional parameters passed to core.resize in the form of dict.
 
     """
 
@@ -712,16 +710,11 @@ def AnimeMask(input, shift=0, expr=None, mode=1, resample_args=None):
         input = core.std.Invert(input)
         shift = -shift
 
-    if resample_args is None:
-        resample_args = dict(kernel='bicubic')
-
-    bits = input.format.bits_per_sample
-
-    fmtc_args = dict(fulls=True, fulld=True)
-    mask1 = core.std.Convolution(input, [0, 0, 0, 0, 2, -1, 0, -1, 0], saturate=True).fmtc.resample(sx=shift, sy=shift, **fmtc_args, **resample_args)
-    mask2 = core.std.Convolution(input, [0, -1, 0, -1, 2, 0, 0, 0, 0], saturate=True).fmtc.resample(sx=-shift, sy=-shift, **fmtc_args, **resample_args)
-    mask3 = core.std.Convolution(input, [0, -1, 0, 0, 2, -1, 0, 0, 0], saturate=True).fmtc.resample(sx=shift, sy=-shift, **fmtc_args, **resample_args)
-    mask4 = core.std.Convolution(input, [0, 0, 0, -1, 2, 0, 0, -1, 0], saturate=True).fmtc.resample(sx=-shift, sy=shift, **fmtc_args, **resample_args)
+    full_args = dict(range_s="full", range_in_s="full")
+    mask1 = core.std.Convolution(input, [0, 0, 0, 0, 2, -1, 0, -1, 0], saturate=True).resize.Bicubic(src_left=shift, src_top=shift, **full_args, **resample_args)
+    mask2 = core.std.Convolution(input, [0, -1, 0, -1, 2, 0, 0, 0, 0], saturate=True).resize.Bicubic(src_left=-shift, src_top=-shift, **full_args, **resample_args)
+    mask3 = core.std.Convolution(input, [0, -1, 0, 0, 2, -1, 0, 0, 0], saturate=True).resize.Bicubic(src_left=shift, src_top=-shift, **full_args, **resample_args)
+    mask4 = core.std.Convolution(input, [0, 0, 0, -1, 2, 0, 0, -1, 0], saturate=True).resize.Bicubic(src_left=-shift, src_top=shift, **full_args, **resample_args)
 
     calc_expr = 'x x * y y * + z z * + a a * + sqrt '
 
@@ -729,9 +722,6 @@ def AnimeMask(input, shift=0, expr=None, mode=1, resample_args=None):
         calc_expr += expr
 
     mask = core.std.Expr([mask1, mask2, mask3, mask4], [calc_expr])
-
-    if bits != mask.format.bits_per_sample:
-        mask = core.fmtc.bitdepth(mask, bits=bits, fulls=True, fulld=True, dmode=1)
 
     return mask
 
@@ -762,13 +752,12 @@ def AnimeMask2(input, r=1.2, expr=None, mode=1):
 
     w = input.width
     h = input.height
-    bits = input.format.bits_per_sample
 
     if mode not in [-1, 1]:
         raise ValueError(funcName + ': \'mode\' have not a correct value! [-1 or 1]')
 
-    smooth = core.fmtc.resample(input, haf.m4(w / r), haf.m4(h / r), kernel='bicubic').fmtc.resample(w, h, kernel='bicubic', a1=1, a2=0)
-    smoother = core.fmtc.resample(input, haf.m4(w / r), haf.m4(h / r), kernel='bicubic').fmtc.resample(w, h, kernel='bicubic', a1=1.5, a2=-0.25)
+    smooth = core.resize.Bicubic(input, haf.m4(w / r), haf.m4(h / r)).resize.Bicubic(w, h, filter_param_a=1, filter_param_b=0)
+    smoother = core.resize.Bicubic(input, haf.m4(w / r), haf.m4(h / r)).resize.Bicubic(w, h, filter_param_a=1.5, filter_param_b=-0.25)
 
     calc_expr = 'x y - ' if mode == 1 else 'y x - '
 
@@ -777,13 +766,10 @@ def AnimeMask2(input, r=1.2, expr=None, mode=1):
 
     mask = core.std.Expr([smooth, smoother], [calc_expr])
 
-    if bits != mask.format.bits_per_sample:
-        mask = core.fmtc.bitdepth(mask, bits=bits, fulls=True, fulld=True, dmode=1)
-
     return mask
 
 
-def PolygonExInpand(input, shift=0, shape=0, mixmode=0, noncentral=False, step=1, amp=1, fmtc_args=None, resample_args=None):
+def PolygonExInpand(input, shift=0, shape=0, mixmode=0, noncentral=False, step=1, amp=1, **resample_args):
     """Processes mask based on resampling.
 
     Args:
@@ -802,11 +788,7 @@ def PolygonExInpand(input, shift=0, shape=0, mixmode=0, noncentral=False, step=1
 
         amp: (float) Linear multiple to strengthen the final mask. Default is 1.
 
-        fmtc_args: (dict) Additional parameters passed to core.fmtc.resample and core.fmtc.bitdepth in the form of dict.
-            Default is {}.
-
-        resample_args: (dict) Additional parameters passed to core.fmtc.resample in the form of dict. Controls which kernel is used to shift the mask.
-            Default is dict(kernel='bilinear').
+        resample_args: (dict) Additional parameters passed to core.resize in the form of dict.
 
     """
 
@@ -832,37 +814,29 @@ def PolygonExInpand(input, shift=0, shape=0, mixmode=0, noncentral=False, step=1
     elif shift == 0:
         return input
 
-    if fmtc_args is None:
-        fmtc_args = {}
-
-    if resample_args is None:
-        resample_args = dict(kernel='bilinear')
-
-    bits = input.format.bits_per_sample
-
     mask5 = input
 
     while shift > 0:
         step = min(step, shift)
         shift = shift - step
 
-        ortho = [step, step * (1<< input.format.subsampling_h)]
-        inv_ortho = [-step, -step * (1<< input.format.subsampling_h)]
-        dia = [math.sqrt(step / 2), math.sqrt(step / 2) * (1 << input.format.subsampling_h)]
-        inv_dia = [-math.sqrt(step / 2), -math.sqrt(step / 2) * (1 << input.format.subsampling_h)]
+        ortho = step
+        inv_ortho = -step
+        dia = math.sqrt(step / 2)
+        inv_dia = math.sqrt(step / 2)
 
         # shift
         if shape == 0 or shape == 2:
-            mask2 = core.fmtc.resample(mask5, sx=0, sy=ortho, **fmtc_args, **resample_args)
-            mask4 = core.fmtc.resample(mask5, sx=ortho, sy=0, **fmtc_args, **resample_args)
-            mask6 = core.fmtc.resample(mask5, sx=inv_ortho, sy=0, **fmtc_args, **resample_args)
-            mask8 = core.fmtc.resample(mask5, sx=0, sy=inv_ortho, **fmtc_args, **resample_args)
+            mask2 = core.resize.Bilinear(mask5, src_left=0, src_top=ortho, **resample_args)
+            mask4 = core.resize.Bilinear(mask5, src_left=ortho, src_top=0, **resample_args)
+            mask6 = core.resize.Bilinear(mask5, src_left=inv_ortho, src_top=0, **resample_args)
+            mask8 = core.resize.Bilinear(mask5, src_left=0, src_top=inv_ortho, **resample_args)
 
         if shape == 1 or shape == 2:
-            mask1 = core.fmtc.resample(mask5, sx=dia, sy=dia, **fmtc_args, **resample_args)
-            mask3 = core.fmtc.resample(mask5, sx=inv_dia, sy=dia, **fmtc_args, **resample_args)
-            mask7 = core.fmtc.resample(mask5, sx=dia, sy=inv_dia, **fmtc_args, **resample_args)
-            mask9 = core.fmtc.resample(mask5, sx=inv_dia, sy=inv_dia, **fmtc_args, **resample_args)
+            mask1 = core.resize.Bilinear(mask5, src_left=dia, src_top=dia, **resample_args)
+            mask3 = core.resize.Bilinear(mask5, src_left=inv_dia, src_top=dia, **resample_args)
+            mask7 = core.resize.Bilinear(mask5, src_left=dia, src_top=inv_dia, **resample_args)
+            mask9 = core.resize.Bilinear(mask5, src_left=inv_dia, src_top=inv_dia, **resample_args)
 
         # mix
         if noncentral:
@@ -897,9 +871,6 @@ def PolygonExInpand(input, shift=0, shape=0, mixmode=0, noncentral=False, step=1
             else: # shape == 2
                 expr = expr_list[mixmode + 3] + ' {amp} *'.format(amp=amp)
                 mask5 = core.std.Expr([mask1, mask2, mask3, mask4, mask5, mask6, mask7, mask8, mask9], [expr])
-
-    if bits != mask5.format.bits_per_sample:
-        mask5 = core.fmtc.bitdepth(mask5, bits=bits, dmode=1, **fmtc_args)
 
     return core.std.Invert(mask5) if invert else mask5
 
@@ -949,16 +920,11 @@ def ediaa(a):
     if not isinstance(a, vs.VideoNode):
         raise TypeError(funcName + ': \"a\" must be a clip!')
 
-    bits = a.format.bits_per_sample
-
     last = core.eedi2.EEDI2(a, field=1).std.Transpose()
     last = core.eedi2.EEDI2(last, field=1).std.Transpose()
-    last = core.fmtc.resample(last, a.width, a.height, [-0.5, -0.5 * (1 << a.format.subsampling_w)], [-0.5, -0.5 * (1 << a.format.subsampling_h)], kernel='spline36')
+    last = core.resize.Spline36(last, a.width, a.height, src_left=-0.5, src_top=-0.5)
 
-    if last.format.bits_per_sample == bits:
-        return last
-    else:
-        return core.fmtc.bitdepth(last, bits=bits)
+    return last
 
 
 def nnedi3aa(a):
@@ -973,16 +939,11 @@ def nnedi3aa(a):
     if not isinstance(a, vs.VideoNode):
         raise TypeError(funcName + ': \"a\" must be a clip!')
 
-    bits = a.format.bits_per_sample
-
     last = core.nnedi3.nnedi3(a, field=1, dh=True).std.Transpose()
     last = core.nnedi3.nnedi3(last, field=1, dh=True).std.Transpose()
-    last = core.fmtc.resample(last, a.width, a.height, [-0.5, -0.5 * (1 << a.format.subsampling_w)], [-0.5, -0.5 * (1 << a.format.subsampling_h)], kernel='spline36')
+    last = core.resize.Spline36(last, a.width, a.height, src_left=-0.5, src_top=-0.5)
 
-    if last.format.bits_per_sample == bits:
-        return last
-    else:
-        return core.fmtc.bitdepth(last, bits=bits)
+    return last
 
 
 def maa(input):
@@ -1085,7 +1046,7 @@ def SharpAAMcmod(orig, dark=0.2, thin=10, sharp=150, smooth=-1, stabilize=False,
     if aablk is None:
         aablk = 16 if w > 1100 else 8
 
-    m = core.std.Expr([core.std.Convolution(orig, [5, 10, 5, 0, 0, 0, -5, -10, -5], divisor=4, saturate=False), core.std.Convolution(orig, [5, 0, -5, 10, 0, -10, 5, 0, -5], divisor=4, saturate=False)], ['x y max {neutral8} / 0.86 pow {peak8} *'.format(neutral8=scale(128, bits), peak8=scale(255, bits))])
+    m = core.std.Expr([core.std.Convolution(orig, [5, 10, 5, 0, 0, 0, -5, -10, -5], divisor=4, saturate=False), core.std.Convolution(orig, [5, 0, -5, 10, 0, -10, 5, 0, -5], divisor=4, saturate=False)], ['x y max {neutral} / 0.86 pow {peak} *'.format(neutral=1 << (bits-1), peak=(1 << bits)-1)])
 
     if thin == 0 and dark == 0:
         preaa = orig
@@ -1138,8 +1099,7 @@ def SharpAAMcmod(orig, dark=0.2, thin=10, sharp=150, smooth=-1, stabilize=False,
         else:
             raise ValueError(funcName + ': valid values of \"tradius\" are 1, 2 and 3!')
 
-        reduc = 0.4
-        sDD = core.std.Expr([sD, sDD], ['x {neutral} - abs y {neutral} - abs < x y ?'.format(neutral=scale(128, bits))]).std.Merge(sDD, 1.0 - reduc)
+        sDD = core.std.Expr([sD, sDD], ['x {neutral} - abs y {neutral} - abs < x y ?'.format(neutral=1 << (bits-1))]).std.Merge(sDD, 0.6)
 
         last = core.std.MakeDiff(orig, sDD)
     else:
@@ -1317,11 +1277,11 @@ def Soothe_mod(input, source, keep=24, radius=1, scenechange=32, use_misc=True):
         diff2 = TemporalSoften(diff, radius, scenechange)
     else:
         if 'TemporalSoften' in dir(haf):
-            diff2 = haf.TemporalSoften(diff, radius, scale(255, bits), 0, scenechange)
+            diff2 = haf.TemporalSoften(diff, radius, (1 << bits)-1, 0, scenechange)
         else:
             raise NameError(funcName + ': \"TemporalSoften\" has been deprecated from the latest havsfunc. If you would like to use it, copy the old function in https://github.com/HomeOfVapourSynthEvolution/havsfunc/blob/0f5e6c5c2f1e825caf17f6b7de6edd4a0e13d27d/havsfunc.py#L4300 and function set_scenechange() in the following line 4320 to havsfunc in your disk.')
 
-    expr = 'x {neutral} - y {neutral} - * 0 < x {neutral} - {KP} * {neutral} + x {neutral} - abs y {neutral} - abs > x {KP} * y {iKP} * + x ? ?'.format(neutral=scale(128, bits), KP=keep/100, iKP=1-keep/100)
+    expr = 'x {neutral} - y {neutral} - * 0 < x {neutral} - {KP} * {neutral} + x {neutral} - abs y {neutral} - abs > x {KP} * y {iKP} * + x ? ?'.format(neutral=1 << (bits-1), KP=keep/100, iKP=1-keep/100)
     diff3 = core.std.Expr([diff, diff2], [expr])
 
     last = core.std.MakeDiff(source, diff3)
@@ -1632,7 +1592,7 @@ def MergeChroma(clip1, clip2, weight=1.0):
         return output
 
 
-def firniture(clip, width, height, kernel='binomial7', taps=None, gamma=False, transfer='709', **resample_args):
+def firniture(clip, width, height, kernel='binomial7', taps=None, gamma=False, fulls=False, fulld=False, curve='709', sigmoid=False, **resample_args):
     '''5 new interpolation kernels (via fmtconv)
 
     Proposed by *.mp4 guy (https://forum.doom9.org/showthread.php?t=166080)
@@ -1654,6 +1614,19 @@ def firniture(clip, width, height, kernel='binomial7', taps=None, gamma=False, t
         gamma: (bool) Default is False.
             Set to true to turn on gamma correction for the y channel.
 
+        fulls: (bool) Default is False.
+            Specifies if the luma is limited range (False) or full range (True) 
+
+        fulld: (bool) Default is False.
+            Same as fulls, but for output.
+        
+        curve: (string) Default is '709'.
+            Type of gamma mapping.
+
+        sigmoid: (bool) Default is False.
+            When True, applies a sigmoidal curve after the power-like curve (or before when converting from linear to gamma-corrected). 
+            This helps reducing the dark halo artefacts around sharp edges caused by resizing in linear luminance.
+        
         resample_args: (dict) Additional parameters passed to core.fmtc.resample in the form of keyword arguments.
 
     Examples:
@@ -1665,6 +1638,8 @@ def firniture(clip, width, height, kernel='binomial7', taps=None, gamma=False, t
 
     if not isinstance(clip, vs.VideoNode):
         raise TypeError(funcName + ': \"clip\" must be a clip!')
+
+    import nnedi3_resample as nnrs
 
     impulseCoefficents = dict(
         binomial5=[8, 0, -589, 0, 11203, 0, -93355, 0, 606836, 1048576, 606836, 0, -93355, 0, 11203, 0, -589, 0, 8],
@@ -1678,13 +1653,16 @@ def firniture(clip, width, height, kernel='binomial7', taps=None, gamma=False, t
     if taps is None:
         taps = int(kernel[-1])
 
+    if clip.format.bits_per_sample != 16:
+        clip = mvf.Depth(clip, 16)
+
     if gamma:
-        clip = core.resize.Bicubic(clip, transfer_s="linear")
+        clip = nnrs.GammaToLinear(clip, fulls=fulls, fulld=fulld, curve=curve, sigmoid=sigmoid, planes=[0])
 
     clip = core.fmtc.resample(clip, width, height, kernel='impulse', impulse=impulseCoefficents[kernel], kovrspl=2, taps=taps, **resample_args)
 
     if gamma:
-        clip = core.resize.Bicubic(clip, transfer_s=transfer)
+        clip = nnrs.LinearToGamma(clip, fulls=fulls, fulld=fulld, curve=curve, sigmoid=sigmoid, planes=[0])
 
     return clip
 
@@ -2086,8 +2064,8 @@ def SeeSaw(clp, denoised=None, NRlimit=2, NRlimit2=None, Sstr=1.5, Slimit=None, 
     NRL2 = scale(NRlimit2, bits)
     NRLL = scale(round(NRlimit2 * 100 / bias - 1), bits)
     SLIM = scale(abs(Slimit), bits)
-    multiple = scale(1, bits)
-    neutral = scale(128, bits)
+    multiple = 1 << (bits - 8)
+    neutral = 1 << (bits - 1)
 
     if denoised is None:
         dnexpr = 'x {NRL} + y < x {NRL} + x {NRL} - y > x {NRL} - y ? ?'.format(NRL=NRL)
@@ -2140,7 +2118,7 @@ def SeeSaw(clp, denoised=None, NRlimit=2, NRlimit2=None, Sstr=1.5, Slimit=None, 
     return last if isGray else core.std.ShufflePlanes([last, clp_src], list(range(clp_src.format.num_planes)), clp_src.format.color_family)
 
 
-def _SeeSaw_sharpen2(clp, strength, power, zp, lodmp, hidmp, rgmode, diff):
+def _SeeSaw_sharpen2(clp, strength, power, zp, lodmp, hidmp, rg, diff):
     """Modified sharpening function from SeeSaw()
 
     Only the first plane (luma) will be processed.
@@ -2154,13 +2132,11 @@ def _SeeSaw_sharpen2(clp, strength, power, zp, lodmp, hidmp, rgmode, diff):
 
     isGray = clp.format.color_family == vs.GRAY
     bits = clp.format.bits_per_sample
-    multiple = scale(1, bits)
-    neutral = scale(128, bits)
-    peak = scale(255, bits)
+    multiple = 1 << (bits - 8)
+    neutral = 1 << (bits - 1)
+    peak = (1 << bits) - 1
 
-    power = int(power)
-    if power <= 0:
-        raise ValueError(funcName + ': Power must be integer value 1 or more')
+    power = max(power, 1)
     power = 1 / power
 
     # copied from havsfunc
@@ -2173,7 +2149,17 @@ def _SeeSaw_sharpen2(clp, strength, power, zp, lodmp, hidmp, rgmode, diff):
             tmp3 = zp ** 2
             return min(max(math.floor(neutral + (tmp1 / zp) ** power * zp * (strength * multiple) * (1 if x > neutral else -1) * (tmp2 * (tmp3 + lodmp) / ((tmp2 + lodmp) * tmp3)) * ((1 + (0 if hidmp == 0 else (zp / hidmp) ** 4)) / (1 + (0 if hidmp == 0 else (tmp1 / hidmp) ** 4))) + 0.5), 0), peak)
 
-    method = clp.rgvs.RemoveGrain([rgmode] if isGray else [rgmode, 0])
+    if rg == 4:
+        method = clp.std.Median(planes=[0])
+    elif rg in [11, 12]:
+        method = clp.std.Convolution(matrix=[1, 2, 1, 2, 4, 2, 1, 2, 1], planes=[0])
+    elif rg == 19:
+        method = clp.std.Convolution(matrix=[1, 1, 1, 1, 0, 1, 1, 1, 1], planes=[0])
+    elif rg == 20:
+        method = clp.std.Convolution(matrix=[1, 1, 1, 1, 1, 1, 1, 1, 1], planes=[0])
+    else:
+        method = clp.rgvs.RemoveGrain([rg] if isGray else [rg, 0])
+
     sharpdiff = core.std.MakeDiff(clp, method, [0]).std.Lut(function=get_lut1, planes=[0])
     
     return sharpdiff if diff else core.std.MergeDiff(clp, sharpdiff, [0])
@@ -2451,7 +2437,7 @@ def BlindDeHalo3(clp, rx=3.0, ry=3.0, strength=125, lodamp=0, hidamp=0, sharpnes
     HD = hidamp ** 2
     TWK0 = 'x y - {i} /'.format(i=12 / ST / RR)
     TWK = 'x y - {i} / abs'.format(i=12 / ST / RR)
-    TWK_HLIGHT = 'x y - abs {i} < {neutral} {TWK} {neutral} {TWK} - {TWK} {neutral} / * + {TWK0} {TWK} {LD} + / * {neutral} {TWK} - {j} / dup * {neutral} {TWK} - {j} / dup * {HD} + / * {neutral} + ?'.format(i=scale(1, bits), neutral=neutral, TWK=TWK, TWK0=TWK0, LD=LD, j=scale(20, bits), HD=HD)
+    TWK_HLIGHT = 'x y - abs {i} < {neutral} {TWK} {neutral} {TWK} - {TWK} {neutral} / * + {TWK0} {TWK} {LD} + / * {neutral} {TWK} - {j} / dup * {neutral} {TWK} - {j} / dup * {HD} + / * {neutral} + ?'.format(i=1 << (bits-8), neutral=neutral, TWK=TWK, TWK0=TWK0, LD=LD, j=scale(20, bits), HD=HD)
 
     i = clp if not interlaced else core.std.SeparateFields(clp, tff=True)
     oxi = i.width
@@ -2473,12 +2459,12 @@ def BlindDeHalo3(clp, rx=3.0, ry=3.0, strength=125, lodamp=0, hidamp=0, sharpnes
         small = core.resize.Bicubic(base, haf.m4(oxi / math.sqrt(rx * 1.5)), haf.m4(oyi / math.sqrt(ry * 1.5)))
         ex1 = Blur(small.std.Maximum(), 0.5)
         in1 = Blur(small.std.Minimum(), 0.5)
-        hull = core.std.Expr([ex1.std.Maximum().rgvs.RemoveGrain(11), ex1, in1, in1.std.Minimum().rgvs.RemoveGrain(11)], ['x y - {i} - 5 * z a - {i} - 5 * max'.format(i=scale(1, bits))]).resize.Bicubic(oxi, oyi, filter_param_a=1, filter_param_b=0)
+        hull = core.std.Expr([ex1.std.Maximum().std.Convolution(matrix=[1, 2, 1, 2, 4, 2, 1, 2, 1]), ex1, in1, in1.std.Minimum().std.Convolution(matrix=[1, 2, 1, 2, 4, 2, 1, 2, 1])], ['x y - {i} - 5 * z a - {i} - 5 * max'.format(i=1 << (bits-8))]).resize.Bicubic(oxi, oyi, filter_param_a=1, filter_param_b=0)
 
         if abs(PPmode) == 1:
             postclean = core.std.MaskedMerge(base, small.resize.Bicubic(oxi, oyi, filter_param_a=1, filter_param_b=0), hull)
         elif abs(PPmode) == 2:
-            postclean = core.std.MaskedMerge(base, base.rgvs.RemoveGrain(19), hull)
+            postclean = core.std.MaskedMerge(base, base.std.Convolution(matrix=[1, 1, 1, 1, 0, 1, 1, 1, 1]), hull)
         elif abs(PPmode) == 3:
             postclean = core.std.MaskedMerge(base, base.std.Median(), hull)
         else:
@@ -2736,14 +2722,14 @@ def _BalanceTopBorder(c, cTop, thresh, blur):
 
     c2 = mvf.PointPower(c, 1, 1)
 
-    last = core.std.CropRel(c2, 0, 0, cTop*2, (cHeight - cTop - 1) * 2)
+    last = core.std.Crop(c2, 0, 0, cTop*2, (cHeight - cTop - 1) * 2)
     last = core.resize.Point(last, cWidth * 2, cTop * 2)
     last = core.resize.Bilinear(last, blurWidth * 2, cTop * 2)
     last = core.std.Convolution(last, [1, 1, 1], mode='h')
     last = core.resize.Bilinear(last, cWidth * 2, cTop * 2)
     referenceBlur = last
 
-    original = core.std.CropRel(c2, 0, 0, 0, (cHeight - cTop) * 2)
+    original = core.std.Crop(c2, 0, 0, 0, (cHeight - cTop) * 2)
 
     last = original
     last = core.resize.Bilinear(last, blurWidth * 2, cTop * 2)
@@ -2765,7 +2751,7 @@ def _BalanceTopBorder(c, cTop, thresh, blur):
     tm = -tp
     last = core.std.Expr([original, originalBlur, referenceBlur], ['z y - {tp} min {tm} max x +'.format(tp=tp, tm=tm)])
 
-    return core.std.StackVertical([last, core.std.CropRel(c2, 0, 0, cTop * 2, 0)]).resize.Point(cWidth, cHeight)
+    return core.std.StackVertical([last, core.std.Crop(c2, 0, 0, cTop * 2, 0)]).resize.Point(cWidth, cHeight)
 
 
 def DisplayHistogram(clip, factor=None):
@@ -2799,10 +2785,10 @@ def DisplayHistogram(clip, factor=None):
     histogram_v = core.hist.Classic(clip)
 
     clip_8 = mvf.Depth(clip, 8)
-    levels = core.hist.Levels(clip_8, factor=factor).std.CropRel(left=clip.width, right=0, top=0, bottom=clip.height - 256)
+    levels = core.hist.Levels(clip_8, factor=factor).std.Crop(left=clip.width, right=0, top=0, bottom=clip.height - 256)
     if clip.format.bits_per_sample != 8:
         levels = mvf.Depth(levels, clip.format.bits_per_sample)
-    histogram_h = TurnLeft(core.hist.Classic(clip.std.Transpose()).std.CropRel(left=clip.height))
+    histogram_h = TurnLeft(core.hist.Classic(clip.std.Transpose()).std.Crop(left=clip.height))
 
     bottom = core.std.StackHorizontal([histogram_h, levels])
 
@@ -3436,7 +3422,7 @@ def _IQA_downsample(clip):
     return core.std.Convolution(clip, [1, 1, 0, 1, 1, 0, 0, 0, 0]).resize.Point(clip.width // 2, clip.height // 2, src_left=-1, src_top=-1)
 
 
-def SSIM_downsample(clip, w, h, smooth=1, kernel=None, use_fmtc=False, epsilon=1e-6, depth_args=None, **resample_args):
+def SSIM_downsample(clip, w, h, smooth=1, kernel=None, use_fmtc=False, gamma=False, fulls=False, fulld=False, curve='709', sigmoid=False, epsilon=1e-6, depth_args=None, **resample_args):
     """SSIM downsampler
 
     SSIM downsampler is an image downscaling technique that aims to optimize for the perceptual quality of the downscaled results.
@@ -3449,7 +3435,7 @@ def SSIM_downsample(clip, w, h, smooth=1, kernel=None, use_fmtc=False, epsilon=1
     This is an pseudo-implementation of SSIM downsampler with slight modification.
     The pre-downsampling is performed by vszimg/fmtconv, and the behaviour of convolution at the border is uniform.
 
-    All the internal calculations are done at 32-bit float.
+    All the internal calculations are done at 32-bit float, except gamma correction is done at integer.
 
     Args:
         clip: The input clip.
@@ -3471,6 +3457,22 @@ def SSIM_downsample(clip, w, h, smooth=1, kernel=None, use_fmtc=False, epsilon=1
         depth_args: (dict) Additional arguments passed to mvf.Depth().
             Default is {}.
 
+        gamma: (bool) Default is False.
+            Set to true to turn on gamma correction for the y channel.
+
+        fulls: (bool) Default is False.
+            Specifies if the luma is limited range (False) or full range (True) 
+
+        fulld: (bool) Default is False.
+            Same as fulls, but for output.
+        
+        curve: (string) Default is '709'.
+            Type of gamma mapping.
+
+        sigmoid: (bool) Default is False.
+            When True, applies a sigmoidal curve after the power-like curve (or before when converting from linear to gamma-corrected). 
+            This helps reducing the dark halo artefacts around sharp edges caused by resizing in linear luminance.
+
         resample_args: (dict) Additional arguments passed to vszimg/fmtconv in the form of keyword arguments.
             Default is {}.
 
@@ -3484,8 +3486,7 @@ def SSIM_downsample(clip, w, h, smooth=1, kernel=None, use_fmtc=False, epsilon=1
     if not isinstance(clip, vs.VideoNode):
         raise TypeError(funcName + ': \"clip\" must be a clip!')
 
-    bits = clip.format.bits_per_sample
-    sampleType = clip.format.sample_type
+    import nnedi3_resample as nnrs
 
     if depth_args is None:
         depth_args = {}
@@ -3502,6 +3503,9 @@ def SSIM_downsample(clip, w, h, smooth=1, kernel=None, use_fmtc=False, epsilon=1
     if kernel is None:
         kernel = 'Bicubic'
 
+    if gamma:
+        clip = nnrs.GammaToLinear(mvf.Depth(clip, 16), fulls=fulls, fulld=fulld, curve=curve, sigmoid=sigmoid, planes=[0])
+    
     clip = mvf.Depth(clip, depth=32, sample=vs.FLOAT, **depth_args)
 
     if use_fmtc:
@@ -3521,9 +3525,10 @@ def SSIM_downsample(clip, w, h, smooth=1, kernel=None, use_fmtc=False, epsilon=1
     r = Filter(r)
     d = core.std.Expr([m, r, l, t], ['x y z * + a -'])
 
-    out = mvf.Depth(d, depth=bits, sample=sampleType, **depth_args)
+    if gamma:
+        d = nnrs.LinearToGamma(mvf.Depth(d, 16), fulls=fulls, fulld=fulld, curve=curve, sigmoid=sigmoid, planes=[0])
 
-    return out
+    return d
 
 
 def LocalStatisticsMatching(src, ref, radius=1, return_all=False, **depth_args):
@@ -3750,7 +3755,7 @@ def mdering(clip, thr=2):
     bits = clip.format.bits_per_sample
     thr = scale(thr, bits)
 
-    rg11_1 = core.rgvs.RemoveGrain(clip, 11)
+    rg11_1 = core.std.Convolution(clip, matrix=[1, 2, 1, 2, 4, 2, 1, 2, 1])
     rg11_2 = core.std.Convolution(rg11_1, [1]*9)
     rg4_1 = core.std.Median(clip)
 
@@ -3837,11 +3842,10 @@ def BMAFilter(clip, guidance=None, radius=1, lamda=1e-2, epsilon=1e-5, mode=3, *
         Filter = functools.partial(BoxFilter, radius=radius+1)
     elif mode in (2, 4):
         def Filter(clip):
-            bits = clip.format.bits_per_sample
             if radius == 1:
                 clip = core.std.Median(clip)
             else:
-                clip = mvf.Depth(clip, depth=min(bits, 12), **depth_args)
+                clip = mvf.Depth(clip, 12, **depth_args)
                 clip = core.ctmf.CTMF(clip, radius=radius)
             return mvf.Depth(clip, 32, **depth_args)
 
