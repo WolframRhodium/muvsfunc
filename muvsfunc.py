@@ -823,7 +823,7 @@ def PolygonExInpand(input, shift=0, shape=0, mixmode=0, noncentral=False, step=1
         ortho = step
         inv_ortho = -step
         dia = math.sqrt(step / 2)
-        inv_dia = math.sqrt(step / 2)
+        inv_dia = -math.sqrt(step / 2)
 
         # shift
         if shape == 0 or shape == 2:
@@ -1841,7 +1841,8 @@ def DeFilter(input, fun, iter=10, planes=None, **fun_args):
 
     Ref:
         [1] Tao, X., Zhou, C., Shen, X., Wang, J., & Jia, J. (2017, October). Zero-Order Reverse Filtering. In Computer Vision (ICCV), 2017 IEEE International Conference on (pp. 222-230). IEEE.
-        [2] Milanfar, P. (2018). Rendition: Reclaiming what a black box takes away. arXiv preprint arXiv:1804.08651.
+        [2] https://github.com/jiangsutx/DeFilter
+        [3] Milanfar, P. (2018). Rendition: Reclaiming what a black box takes away. arXiv preprint arXiv:1804.08651.
 
     '''
 
@@ -2063,7 +2064,7 @@ def SeeSaw(clp, denoised=None, NRlimit=2, NRlimit2=None, Sstr=1.5, Slimit=None, 
     NRL = scale(NRlimit, bits)
     NRL2 = scale(NRlimit2, bits)
     NRLL = scale(round(NRlimit2 * 100 / bias - 1), bits)
-    SLIM = scale(abs(Slimit), bits)
+    SLIM = scale(Slimit, peak) if Slimit >= 0 else abs(Slimit)
     multiple = 1 << (bits - 8)
     neutral = 1 << (bits - 1)
 
@@ -2886,8 +2887,10 @@ def GuidedFilter(input, guidance=None, radius=4, regulation=0.01, regulation_mod
     Ref:
         [1] He, K., Sun, J., & Tang, X. (2013). Guided image filtering. IEEE transactions on pattern analysis and machine intelligence, 35(6), 1397-1409.
         [2] He, K., & Sun, J. (2015). Fast guided filter. arXiv preprint arXiv:1505.00996.
-        [3] Li, Z., Zheng, J., Zhu, Z., Yao, W., & Wu, S. (2015). Weighted guided image filtering. IEEE Transactions on Image Processing, 24(1), 120-129.
-        [4] Kou, F., Chen, W., Wen, C., & Li, Z. (2015). Gradient domain guided image filtering. IEEE Transactions on Image Processing, 24(11), 4528-4539.
+        [3] http://kaiminghe.com/eccv10/index.html
+        [4] Li, Z., Zheng, J., Zhu, Z., Yao, W., & Wu, S. (2015). Weighted guided image filtering. IEEE Transactions on Image Processing, 24(1), 120-129.
+        [5] Kou, F., Chen, W., Wen, C., & Li, Z. (2015). Gradient domain guided image filtering. IEEE Transactions on Image Processing, 24(11), 4528-4539.
+        [6] http://koufei.weebly.com/
 
     """
 
@@ -2932,8 +2935,8 @@ def GuidedFilter(input, guidance=None, radius=4, regulation=0.01, regulation_mod
 
     # Fast guided filter's subsampling
     if fast:
-        down_w = round(width / s + 0.5)
-        down_h = round(height / s + 0.5)
+        down_w = math.floor(width / s)
+        down_h = math.floor(height / s)
         if use_fmtc1:
             p = core.fmtc.resample(p, down_w, down_h, kernel=kernel1, **kernel1_args)
             I = core.fmtc.resample(I, down_w, down_h, kernel=kernel1, **kernel1_args) if guidance is not None else p
@@ -2941,7 +2944,7 @@ def GuidedFilter(input, guidance=None, radius=4, regulation=0.01, regulation_mod
             p = eval('core.resize.{kernel}(p, down_w, down_h, **kernel1_args)'.format(kernel=kernel1.capitalize()))
             I = eval('core.resize.{kernel}(I, down_w, down_h, **kernel1_args)'.format(kernel=kernel1.capitalize())) if guidance is not None else p
 
-        r = round(r / s + 0.5)
+        r = math.floor(r / s)
 
     # Select the shape of the kernel. As the width of BoxFilter in this module is (radius*2-1) rather than (radius*2+1), radius should be increased by one.
     Filter = functools.partial(core.tcanny.TCanny, sigma=r/2 * math.sqrt(2), mode=-1) if use_gauss else functools.partial(BoxFilter, radius=r+1)
@@ -3047,6 +3050,7 @@ def GuidedFilterColor(input, guidance, radius=4, regulation=0.01, use_gauss=Fals
     Ref:
         [1] He, K., Sun, J., & Tang, X. (2013). Guided image filtering. IEEE transactions on pattern analysis and machine intelligence, 35(6), 1397-1409.
         [2] He, K., & Sun, J. (2015). Fast guided filter. arXiv preprint arXiv:1505.00996.
+        [3] http://kaiminghe.com/eccv10/fast-guided-filter-code-v1.rar
 
     """
 
@@ -3088,8 +3092,8 @@ def GuidedFilterColor(input, guidance, radius=4, regulation=0.01, use_gauss=Fals
 
     # Fast guided filter's subsampling
     if fast:
-        down_w = round(width / s + 0.5)
-        down_h = round(height / s + 0.5)
+        down_w = math.floor(width / s)
+        down_h = math.floor(height / s)
         if use_fmtc1:
             p = core.fmtc.resample(p, down_w, down_h, kernel=kernel1, **kernel1_args)
             I = core.fmtc.resample(I, down_w, down_h, kernel=kernel1, **kernel1_args)
@@ -3097,7 +3101,7 @@ def GuidedFilterColor(input, guidance, radius=4, regulation=0.01, use_gauss=Fals
             p = eval('core.resize.{kernel}(p, {w}, {h}, **kernel1_args)'.format(kernel=kernel1.capitalize(), w=down_w, h=down_h))
             I = eval('core.resize.{kernel}(I, {w}, {h}, **kernel1_args)'.format(kernel=kernel1.capitalize(), w=down_w, h=down_h)) if guidance is not None else p
 
-        r = round(r / s + 0.5)
+        r = math.floor(r / s)
 
     # Select kernel shape. As the width of BoxFilter in this module is (radius*2-1) rather than (radius*2+1), radius should be be incremented by one.
     Filter = functools.partial(core.tcanny.TCanny, sigma=r/2 * math.sqrt(2), mode=-1) if use_gauss else functools.partial(BoxFilter, radius=r+1)

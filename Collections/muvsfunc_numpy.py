@@ -11,7 +11,7 @@ VapourSynth functions:
     FDD
     SSFDeband
     SigmaFilter
-    super_resolution (backend: MXNet)
+    super_resolution (backend: MXNet/TensorFlow)
 
 NumPy functions:
     L0Smooth_core
@@ -24,7 +24,7 @@ NumPy functions:
     FDD_2D_core
     SSFDeband_core
     SigmaFilter_core
-    super_resolution_core (backend: MXNet)
+    super_resolution_core (backend: MXNet/TensorFlow)
 """
 
 import functools
