@@ -2064,7 +2064,7 @@ def SeeSaw(clp, denoised=None, NRlimit=2, NRlimit2=None, Sstr=1.5, Slimit=None, 
     NRL = scale(NRlimit, bits)
     NRL2 = scale(NRlimit2, bits)
     NRLL = scale(round(NRlimit2 * 100 / bias - 1), bits)
-    SLIM = scale(Slimit, peak) if Slimit >= 0 else abs(Slimit)
+    SLIM = scale(Slimit, bits) if Slimit >= 0 else abs(Slimit)
     multiple = 1 << (bits - 8)
     neutral = 1 << (bits - 1)
 
@@ -3050,7 +3050,7 @@ def GuidedFilterColor(input, guidance, radius=4, regulation=0.01, use_gauss=Fals
     Ref:
         [1] He, K., Sun, J., & Tang, X. (2013). Guided image filtering. IEEE transactions on pattern analysis and machine intelligence, 35(6), 1397-1409.
         [2] He, K., & Sun, J. (2015). Fast guided filter. arXiv preprint arXiv:1505.00996.
-        [3] http://kaiminghe.com/eccv10/fast-guided-filter-code-v1.rar
+        [3] http://kaiminghe.com/eccv10/index.html
 
     """
 
