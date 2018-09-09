@@ -147,7 +147,10 @@ def LDMerge(flt_h, flt_v, src, mrad=0, show=0, planes=None, convknl=1, conv_div=
         hmap = haf.mt_inpand_multi(hmap, sw=0, sh=-mrad, planes=planes)
         vmap = haf.mt_inpand_multi(vmap, sw=-mrad, sh=0, planes=planes)
 
-    ldexpr = '{peak} 1 x 0.0001 + y 0.0001 + / {power} pow + /'.format(peak=(1 << bits) - 1, power=power) if calc_mode == 0 else 'y 0.0001 + x 0.0001 + dup * y 0.0001 + dup * + sqrt / {peak} *'.format(peak=(1 << bits) - 1)
+    if calc_mode == 0:
+        ldexpr = '{peak} 1 x 0.0001 + y 0.0001 + / {power} pow + /'.format(peak=(1 << bits) - 1, power=power)
+    else:
+        ldexpr = 'y 0.0001 + x 0.0001 + dup * y 0.0001 + dup * + sqrt / {peak} *'.format(peak=(1 << bits) - 1)
     ldmap = core.std.Expr([hmap, vmap], [(ldexpr if i in planes else '') for i in range(src.format.num_planes)])
 
     if show == 0:
@@ -648,7 +651,7 @@ def _GF3_dfttest(src, ref, radius, thr, elast, planes):
 
 def _GF3_bilateral_multistage(src, ref, radius, thr, elast, planes):
 
-    last = core.bilateral.Bilateral(src, ref=ref, sigmaS=radius / 2, sigmaR=thr / 255, planes=planes, algorithm=0) # The use of "thr" may be wrong
+    last = core.bilateral.Bilateral(src, ref=ref, sigmaS=radius / 2, sigmaR=thr / 255, planes=planes, algorithm=0)
 
     last = mvf.LimitFilter(last, src, thr=thr, elast=elast, planes=planes)
 
@@ -689,7 +692,8 @@ def AnimeMask(input, shift=0, expr=None, mode=1, **resample_args):
 
         expr: (string) Subsequent processing in std.Expr(). Default is "".
 
-        mode: (-1 or 1) Type of the kernel, which simply inverts the pixel values and "shift". Typically, -1 is for edge, 1 is for ringing. Default is 1.
+        mode: (-1 or 1) Type of the kernel, which simply inverts the pixel values and "shift". 
+            Typically, -1 is for edge, 1 is for ringing. Default is 1.
 
         resample_args: (dict) Additional parameters passed to core.resize in the form of dict.
 
@@ -711,10 +715,14 @@ def AnimeMask(input, shift=0, expr=None, mode=1, **resample_args):
         shift = -shift
 
     full_args = dict(range_s="full", range_in_s="full")
-    mask1 = core.std.Convolution(input, [0, 0, 0, 0, 2, -1, 0, -1, 0], saturate=True).resize.Bicubic(src_left=shift, src_top=shift, **full_args, **resample_args)
-    mask2 = core.std.Convolution(input, [0, -1, 0, -1, 2, 0, 0, 0, 0], saturate=True).resize.Bicubic(src_left=-shift, src_top=-shift, **full_args, **resample_args)
-    mask3 = core.std.Convolution(input, [0, -1, 0, 0, 2, -1, 0, 0, 0], saturate=True).resize.Bicubic(src_left=shift, src_top=-shift, **full_args, **resample_args)
-    mask4 = core.std.Convolution(input, [0, 0, 0, -1, 2, 0, 0, -1, 0], saturate=True).resize.Bicubic(src_left=-shift, src_top=shift, **full_args, **resample_args)
+    mask1 = core.std.Convolution(input, [0, 0, 0, 0, 2, -1, 0, -1, 0], saturate=True).resize.Bicubic(src_left=shift, 
+        src_top=shift, **full_args, **resample_args)
+    mask2 = core.std.Convolution(input, [0, -1, 0, -1, 2, 0, 0, 0, 0], saturate=True).resize.Bicubic(src_left=-shift, 
+        src_top=-shift, **full_args, **resample_args)
+    mask3 = core.std.Convolution(input, [0, -1, 0, 0, 2, -1, 0, 0, 0], saturate=True).resize.Bicubic(src_left=shift, 
+        src_top=-shift, **full_args, **resample_args)
+    mask4 = core.std.Convolution(input, [0, 0, 0, -1, 2, 0, 0, -1, 0], saturate=True).resize.Bicubic(src_left=-shift, 
+        src_top=shift, **full_args, **resample_args)
 
     calc_expr = 'x x * y y * + z z * + a a * + sqrt '
 
@@ -867,7 +875,8 @@ def PolygonExInpand(input, shift=0, shape=0, mixmode=0, noncentral=False, step=1
 
             if (shape == 0) or (shape == 1):
                 expr = expr_list[mixmode] + ' {amp} *'.format(amp=amp)
-                mask5 = core.std.Expr([mask2, mask4, mask5, mask6, mask8] if shape == 0 else [mask1, mask3, mask5, mask7, mask9], [expr])
+                mask5 = core.std.Expr([mask2, mask4, mask5, mask6, mask8] if shape == 0 else 
+                    [mask1, mask3, mask5, mask7, mask9], [expr])
             else: # shape == 2
                 expr = expr_list[mixmode + 3] + ' {amp} *'.format(amp=amp)
                 mask5 = core.std.Expr([mask1, mask2, mask3, mask4, mask5, mask6, mask7, mask8, mask9], [expr])
@@ -947,7 +956,8 @@ def nnedi3aa(a):
 
 
 def maa(input):
-    """Anti-aliasing with edge masking by martino, mask using "sobel" taken from Kintaro's useless filterscripts and modded by thetoof for spline36
+    """Anti-aliasing with edge masking by martino, 
+    mask using "sobel" taken from Kintaro's useless filterscripts and modded by thetoof for spline36
 
     Read the document of Avisynth version for more details.
 
@@ -978,10 +988,12 @@ def maa(input):
     if input_src is None:
         return last
     else:
-        return core.std.ShufflePlanes([last, input_src], planes=list(range(input_src.format.num_planes)), colorfamily=input_src.format.color_family)
+        return core.std.ShufflePlanes([last, input_src], planes=list(range(input_src.format.num_planes)), 
+            colorfamily=input_src.format.color_family)
 
 
-def SharpAAMcmod(orig, dark=0.2, thin=10, sharp=150, smooth=-1, stabilize=False, tradius=2, aapel=1, aaov=None, aablk=None, aatype='nnedi3'):
+def SharpAAMcmod(orig, dark=0.2, thin=10, sharp=150, smooth=-1, stabilize=False, tradius=2, aapel=1, aaov=None, 
+    aablk=None, aatype='nnedi3'):
     """High quality MoComped AntiAliasing script.
 
     Also a line darkener since it uses edge masking to apply tweakable warp-sharpening,
@@ -1046,7 +1058,9 @@ def SharpAAMcmod(orig, dark=0.2, thin=10, sharp=150, smooth=-1, stabilize=False,
     if aablk is None:
         aablk = 16 if w > 1100 else 8
 
-    m = core.std.Expr([core.std.Convolution(orig, [5, 10, 5, 0, 0, 0, -5, -10, -5], divisor=4, saturate=False), core.std.Convolution(orig, [5, 0, -5, 10, 0, -10, 5, 0, -5], divisor=4, saturate=False)], ['x y max {neutral} / 0.86 pow {peak} *'.format(neutral=1 << (bits-1), peak=(1 << bits)-1)])
+    m = core.std.Expr([core.std.Convolution(orig, [5, 10, 5, 0, 0, 0, -5, -10, -5], divisor=4, saturate=False), 
+        core.std.Convolution(orig, [5, 0, -5, 10, 0, -10, 5, 0, -5], divisor=4, saturate=False)], 
+        ['x y max {neutral} / 0.86 pow {peak} *'.format(neutral=1 << (bits-1), peak=(1 << bits)-1)])
 
     if thin == 0 and dark == 0:
         preaa = orig
@@ -1108,7 +1122,8 @@ def SharpAAMcmod(orig, dark=0.2, thin=10, sharp=150, smooth=-1, stabilize=False,
     if orig_src is None:
         return last
     else:
-        return core.std.ShufflePlanes([last, orig_src], planes=list(range(orig_src.format.num_planes)), colorfamily=orig_src.format.color_family)
+        return core.std.ShufflePlanes([last, orig_src], planes=list(range(orig_src.format.num_planes)), 
+            colorfamily=orig_src.format.color_family)
 
 
 def TEdge(input, min=0, max=65535, planes=None, rshift=0):
@@ -1279,9 +1294,13 @@ def Soothe_mod(input, source, keep=24, radius=1, scenechange=32, use_misc=True):
         if 'TemporalSoften' in dir(haf):
             diff2 = haf.TemporalSoften(diff, radius, (1 << bits)-1, 0, scenechange)
         else:
-            raise NameError(funcName + ': \"TemporalSoften\" has been deprecated from the latest havsfunc. If you would like to use it, copy the old function in https://github.com/HomeOfVapourSynthEvolution/havsfunc/blob/0f5e6c5c2f1e825caf17f6b7de6edd4a0e13d27d/havsfunc.py#L4300 and function set_scenechange() in the following line 4320 to havsfunc in your disk.')
+            raise NameError(funcName + (': \"TemporalSoften\" has been deprecated from the latest havsfunc.' 
+                'If you would like to use it, copy the old function in ' 
+                'https://github.com/HomeOfVapourSynthEvolution/havsfunc/blob/0f5e6c5c2f1e825caf17f6b7de6edd4a0e13d27d/havsfunc.py#L4300-L4308'
+                'and function set_scenechange() at line 4320-4344 to havsfunc in your disk.'))
 
-    expr = 'x {neutral} - y {neutral} - * 0 < x {neutral} - {KP} * {neutral} + x {neutral} - abs y {neutral} - abs > x {KP} * y {iKP} * + x ? ?'.format(neutral=1 << (bits-1), KP=keep/100, iKP=1-keep/100)
+    expr = 'x {neutral} - y {neutral} - * 0 < x {neutral} - {KP} * {neutral} + x {neutral} - abs y {neutral} - abs > x {KP} * y {iKP} * + x ? ?'.format(
+        neutral=1 << (bits-1), KP=keep/100, iKP=1-keep/100)
     diff3 = core.std.Expr([diff, diff2], [expr])
 
     last = core.std.MakeDiff(source, diff3)
@@ -1289,7 +1308,8 @@ def Soothe_mod(input, source, keep=24, radius=1, scenechange=32, use_misc=True):
     if source_src is None:
         return last
     else:
-        return core.std.ShufflePlanes([last, source_src], planes=list(range(source_src.format.num_planes)), colorfamily=source_src.format.color_family)
+        return core.std.ShufflePlanes([last, source_src], planes=list(range(source_src.format.num_planes)), 
+            colorfamily=source_src.format.color_family)
 
 
 def TemporalSoften(input, radius=4, scenechange=15):
@@ -1488,14 +1508,17 @@ def FixTelecinedFades(input, mode=0, threshold=[0.0], color=[0.0], full=None, pl
             inputPlane = mvf.GetPlane(input, i)
             topFieldPlanes[i] = mvf.GetPlane(topField, i).std.PlaneStats()
             bottomFieldPlanes[i] = mvf.GetPlane(bottomField, i).std.PlaneStats()
-            adjustedPlanes[i] = core.std.FrameEval(inputPlane, functools.partial(Adjust, clip=inputPlane, core=core, mode=mode[i], threshold=threshold[i], color=color[i]), prop_src=[topFieldPlanes[i], bottomFieldPlanes[i]])
+            adjustedPlanes[i] = core.std.FrameEval(inputPlane, functools.partial(Adjust, clip=inputPlane, core=core, mode=mode[i], 
+                threshold=threshold[i], color=color[i]), prop_src=[topFieldPlanes[i], bottomFieldPlanes[i]])
         else:
             adjustedPlanes[i] = None
 
-    adjusted = core.std.ShufflePlanes([(adjustedPlanes[i] if i in planes else input_src) for i in range(input.format.num_planes)], [(0 if i in planes else i) for i in range(input.format.num_planes)], input.format.color_family)
+    adjusted = core.std.ShufflePlanes([(adjustedPlanes[i] if i in planes else input_src) for i in range(input.format.num_planes)], 
+        [(0 if i in planes else i) for i in range(input.format.num_planes)], input.format.color_family)
     if not full and not isFloat:
         adjusted = core.fmtc.bitdepth(adjusted, fulls=True, fulld=False, planes=planes)
-        adjusted = core.std.ShufflePlanes([(adjusted if i in planes else input_src) for i in range(input.format.num_planes)], list(range(input.format.num_planes)), input.format.color_family)
+        adjusted = core.std.ShufflePlanes([(adjusted if i in planes else input_src) for i in range(input.format.num_planes)], 
+            list(range(input.format.num_planes)), input.format.color_family)
     return adjusted
 
 
@@ -1513,7 +1536,8 @@ def TCannyHelper(input, t_h=8.0, t_l=1.0, plane=0, returnAll=False, **canny_args
 
         plane: (int) Which plane to be processed. Default is 0.
 
-        returnAll: (bint) Whether to return a tuple containing every 4 temporary clips(strongEdge, weakEdge, view, tcannyOutput) or just "view" clip.
+        returnAll: (bint) Whether to return a tuple containing every 4 temporary clips
+            (strongEdge, weakEdge, view, tcannyOutput) or just "view" clip.
             Default is False.
 
         canny_args: (dict) Additional parameters passed to core.tcanny.TCanny (except "mode" and "planes") in the form of keyword arguments.
@@ -1603,13 +1627,17 @@ def firniture(clip, width, height, kernel='binomial7', taps=None, gamma=False, f
         width, height: (int) New picture width and height in pixels.
 
         kernel: (string) Default is "binomial7".
-            "binomial5", "binomial7": A binomial windowed sinc filter with 5 or 7 taps. Should have the least ringing of any available interpolator, except perhaps "noaliasnoring4".
-            "maxflat5", "maxflat8": 5 or 8 tap interpolation that is maximally flat in the passband. In English, these filters have a sharp and relatively neutral look, but can have ringing and aliasing problems.
-            "noalias4": A 4 tap filter hand designed to be free of aliasing while having acceptable ringing and blurring characteristics. Not always a good choice, but sometimes very useful.
+            "binomial5", "binomial7": A binomial windowed sinc filter with 5 or 7 taps. 
+                Should have the least ringing of any available interpolator, except perhaps "noaliasnoring4".
+            "maxflat5", "maxflat8": 5 or 8 tap interpolation that is maximally flat in the passband. 
+                In English, these filters have a sharp and relatively neutral look, but can have ringing and aliasing problems.
+            "noalias4": A 4 tap filter hand designed to be free of aliasing while having acceptable ringing and blurring characteristics. 
+                Not always a good choice, but sometimes very useful.
             "noaliasnoring4": Derived from the "noalias4" kernel, but modified to have reduced ringing. Other attributes are slightly worse.
 
         taps: (int) Default is the last num in "kernel".
-            "taps" in fmtc.resample. This parameter is now mostly superfluous. It has been retained so that you can truncate the kernels to shorter taps then they would normally use.
+            "taps" in fmtc.resample. This parameter is now mostly superfluous. 
+            It has been retained so that you can truncate the kernels to shorter taps then they would normally use.
 
         gamma: (bool) Default is False.
             Set to true to turn on gamma correction for the y channel.
@@ -1643,9 +1671,12 @@ def firniture(clip, width, height, kernel='binomial7', taps=None, gamma=False, f
 
     impulseCoefficents = dict(
         binomial5=[8, 0, -589, 0, 11203, 0, -93355, 0, 606836, 1048576, 606836, 0, -93355, 0, 11203, 0, -589, 0, 8],
-        binomial7=[146, 0, -20294, 0, 744006, 0, -11528384, 0, 94148472, 0, -487836876, 0, 2551884458, 4294967296, 2551884458, 0, -487836876, 0, 94148472, 0, -11528384, 0, 744006, 0, -20294, 0, 146],
-        maxflat5=[-259, 1524, -487, -12192, 17356, 42672, -105427, -85344, 559764, 1048576, 559764, -85344, -105427, 42672, 17356, -12192, -487, 1524, -259],
-        maxflat8=[2, -26, 166, -573, 912, 412, 1524, -589, -12192, 17356, 42672, -105427, -85344, 606836, 1048576, 606836, -85344, -105427, 42672, 17356, -12192, -589, 1524, 412, 912, -573, 166, -26, 2],
+        binomial7=[146, 0, -20294, 0, 744006, 0, -11528384, 0, 94148472, 0, -487836876, 0, 2551884458, 4294967296, 2551884458, 
+            0, -487836876, 0, 94148472, 0, -11528384, 0, 744006, 0, -20294, 0, 146],
+        maxflat5=[-259, 1524, -487, -12192, 17356, 42672, -105427, -85344, 559764, 1048576, 559764, -85344, -105427, 42672, 
+            17356, -12192, -487, 1524, -259],
+        maxflat8=[2, -26, 166, -573, 912, 412, 1524, -589, -12192, 17356, 42672, -105427, -85344, 606836, 1048576, 606836, -85344, 
+            -105427, 42672, 17356, -12192, -589, 1524, 412, 912, -573, 166, -26, 2],
         noalias4=[-1, 2, 4, -6, -17, 7, 59, 96, 59, 7, -17, -6, 4, 2, -1],
         noaliasnoring4=[-1, 8, 40, -114, -512, 360, 3245, 5664, 3245, 360, -512, -114, 40, 8, -1]
         )
@@ -1659,7 +1690,8 @@ def firniture(clip, width, height, kernel='binomial7', taps=None, gamma=False, f
     if gamma:
         clip = nnrs.GammaToLinear(clip, fulls=fulls, fulld=fulld, curve=curve, sigmoid=sigmoid, planes=[0])
 
-    clip = core.fmtc.resample(clip, width, height, kernel='impulse', impulse=impulseCoefficents[kernel], kovrspl=2, taps=taps, **resample_args)
+    clip = core.fmtc.resample(clip, width, height, kernel='impulse', impulse=impulseCoefficents[kernel], kovrspl=2, 
+        taps=taps, **resample_args)
 
     if gamma:
         clip = nnrs.LinearToGamma(clip, fulls=fulls, fulld=fulld, curve=curve, sigmoid=sigmoid, planes=[0])
@@ -1667,7 +1699,8 @@ def firniture(clip, width, height, kernel='binomial7', taps=None, gamma=False, f
     return clip
 
 
-def BoxFilter(input, radius=16, radius_v=None, planes=None, fmtc_conv=0, radius_thr=None, resample_args=None, keep_bits=True, depth_args=None):
+def BoxFilter(input, radius=16, radius_v=None, planes=None, fmtc_conv=0, radius_thr=None, resample_args=None, keep_bits=True, 
+    depth_args=None):
     '''Box filter
 
     Performs a box filtering on the input clip.
@@ -1677,7 +1710,8 @@ def BoxFilter(input, radius=16, radius_v=None, planes=None, fmtc_conv=0, radius_
     Args:
         input: Input clip to be filtered.
 
-        radius, radius_v: (int) Size of the averaged square. The size is (radius*2-1) * (radius*2-1). If "radius_v" is None, it will be set to "radius".
+        radius, radius_v: (int) Size of the averaged square. The size is (radius*2-1) * (radius*2-1). 
+            If "radius_v" is None, it will be set to "radius".
             Default is 16.
 
         planes: (int []) Whether to process the corresponding plane. By default, every plane will be processed.
@@ -1685,7 +1719,8 @@ def BoxFilter(input, radius=16, radius_v=None, planes=None, fmtc_conv=0, radius_
 
         fmtc_conv: (0~2) Whether to use fmtc.resample for convolution.
             It's recommended to input clip without chroma subsampling when using fmtc.resample, otherwise the output may be incorrect.
-            0: False. 1: True (except both "radius" and "radius_v" is strictly smaller than 4). 2: Auto, determined by radius_thr (exclusive).
+            0: False. 1: True (except both "radius" and "radius_v" is strictly smaller than 4). 
+                2: Auto, determined by radius_thr (exclusive).
             Default is 0.
 
         radius_thr: (int) Threshold of wheter to use fmtc.resample when "fmtc_conv" is 2.
@@ -1741,13 +1776,15 @@ def BoxFilter(input, radius=16, radius_v=None, planes=None, fmtc_conv=0, radius_
     # process
     if input.format.sample_type == vs.FLOAT:
         if core.version_number() < 33:
-            raise NotImplementedError(funcName + ': Please update your VapourSynth. BoxBlur on float sample has not yet been implemented on current version.')
+            raise NotImplementedError(funcName + (': Please update your VapourSynth.'
+                'BoxBlur on float sample has not yet been implemented on current version.'))
         elif radius == radius_v == 2 or radius == radius_v == 3:
             return core.std.Convolution(input, [1] * ((radius * 2 - 1) * (radius * 2 - 1)), planes=planes, mode='s')
 
         else:
             if fmtc_conv == 1 or (fmtc_conv != 0 and radius > radius_thr): # Use fmtc.resample for convolution
-                flt = core.fmtc.resample(input, kernel='impulse', impulseh=kernel, impulsev=kernel_v, planes=planes2, cnorm=False, fh=-1, fv=-1, center=False, **resample_args)
+                flt = core.fmtc.resample(input, kernel='impulse', impulseh=kernel, impulsev=kernel_v, planes=planes2, 
+                    cnorm=False, fh=-1, fv=-1, center=False, **resample_args)
                 return flt # No bitdepth conversion is required since fmtc.resample outputs the same bitdepth as input
 
             elif core.version_number() >= 39:
@@ -1766,7 +1803,8 @@ def BoxFilter(input, radius=16, radius_v=None, planes=None, fmtc_conv=0, radius_
 
         else:
             if fmtc_conv == 1 or (fmtc_conv != 0 and radius > radius_thr): # Use fmtc.resample for convolution
-                flt = core.fmtc.resample(input, kernel='impulse', impulseh=kernel, impulsev=kernel_v, planes=planes2, cnorm=False, fh=-1, fv=-1, center=False, **resample_args)
+                flt = core.fmtc.resample(input, kernel='impulse', impulseh=kernel, impulsev=kernel_v, planes=planes2, 
+                    cnorm=False, fh=-1, fv=-1, center=False, **resample_args)
                 if keep_bits and input.format.bits_per_sample != flt.format.bits_per_sample:
                     flt = mvf.Depth(flt, depth=input.format.bits_per_sample, **depth_args)
                 return flt
@@ -1785,8 +1823,10 @@ def BoxFilter(input, radius=16, radius_v=None, planes=None, fmtc_conv=0, radius_
 def SmoothGrad(input, radius=9, thr=0.25, ref=None, elast=3.0, planes=None, **limit_filter_args):
     '''Avisynth's SmoothGrad
 
-    SmoothGrad smooths the low gradients or flat areas of a 16-bit clip. It proceeds by applying a huge blur filter and comparing the result with the input data for each pixel.
-    If the difference is below the specified threshold, the filtered version is taken into account, otherwise the input pixel remains unchanged.
+    SmoothGrad smooths the low gradients or flat areas of a 16-bit clip. 
+    It proceeds by applying a huge blur filter and comparing the result with the input data for each pixel.
+    If the difference is below the specified threshold, the filtered version is taken into account, 
+        otherwise the input pixel remains unchanged.
 
     Args:
         input: Input clip to be filtered.
@@ -1840,7 +1880,8 @@ def DeFilter(input, fun, iter=10, planes=None, **fun_args):
         fun_args: (dict) Additional arguments passed to "fun" in the form of keyword arguments. Alternative to functools.partial.
 
     Ref:
-        [1] Tao, X., Zhou, C., Shen, X., Wang, J., & Jia, J. (2017, October). Zero-Order Reverse Filtering. In Computer Vision (ICCV), 2017 IEEE International Conference on (pp. 222-230). IEEE.
+        [1] Tao, X., Zhou, C., Shen, X., Wang, J., & Jia, J. (2017, October). Zero-Order Reverse Filtering. 
+            In Computer Vision (ICCV), 2017 IEEE International Conference on (pp. 222-230). IEEE.
         [2] https://github.com/jiangsutx/DeFilter
         [3] Milanfar, P. (2018). Rendition: Reclaiming what a black box takes away. arXiv preprint arXiv:1804.08651.
 
@@ -1914,7 +1955,8 @@ def ColorBarsHD(clip=None, width=1288, height=720):
 
     blkclip_args = dict(format=vs.YUV444P8, length=1, fpsnum=30000, fpsden=1001)
 
-    pattern1_colors = dict(Gray40=[104, 128, 128], White75=[180, 128, 128], Yellow=[168, 44, 136], Cyan=[145, 147, 44], Green=[134, 63, 52], Magenta=[63, 193, 204], Red=[51, 109, 212], Blue=[28, 212, 120])
+    pattern1_colors = dict(Gray40=[104, 128, 128], White75=[180, 128, 128], Yellow=[168, 44, 136], Cyan=[145, 147, 44], Green=[134, 63, 52], 
+        Magenta=[63, 193, 204], Red=[51, 109, 212], Blue=[28, 212, 120])
     Gray40 = core.std.BlankClip(clip, d, p1, color=pattern1_colors['Gray40'], **blkclip_args)
     White75 = core.std.BlankClip(clip, c, p1, color=pattern1_colors['White75'], **blkclip_args)
     Yellow = core.std.BlankClip(clip, c, p1, color=pattern1_colors['Yellow'], **blkclip_args)
@@ -1940,7 +1982,8 @@ def ColorBarsHD(clip=None, width=1288, height=720):
     Red100 = core.std.BlankClip(clip, d, p23, color=pattern3_colors['Red100'], **blkclip_args)
     pattern3 = core.std.StackHorizontal([Yellow100, Y_Ramp, Red100])
 
-    pattern4_colors = dict(Gray15=[49, 128, 128], Black0=[16, 128, 128], White100=[235, 128, 128], Black_neg2=[12, 128, 128], Black_pos2=[20, 128, 128], Black_pos4=[25, 128, 128])
+    pattern4_colors = dict(Gray15=[49, 128, 128], Black0=[16, 128, 128], White100=[235, 128, 128], Black_neg2=[12, 128, 128], 
+        Black_pos2=[20, 128, 128], Black_pos4=[25, 128, 128])
     Gray15 = core.std.BlankClip(clip, d, p4, color=pattern4_colors['Gray15'], **blkclip_args)
     Black0_1 = core.std.BlankClip(clip, round(c*3/2), p4, color=pattern4_colors['Black0'], **blkclip_args)
     White100 = core.std.BlankClip(clip, c*2, p4, color=pattern4_colors['White100'], **blkclip_args)
@@ -1951,7 +1994,8 @@ def ColorBarsHD(clip=None, width=1288, height=720):
     Black0_4 = Black0_3
     Black_pos4 = core.std.BlankClip(clip, round(c/3), p4, color=pattern4_colors['Black_pos4'], **blkclip_args)
     Black0_5 = core.std.BlankClip(clip, c, p4, color=pattern4_colors['Black0'], **blkclip_args)
-    pattern4 = core.std.StackHorizontal([Gray15, Black0_1, White100, Black0_2, Black_neg2, Black0_3, Black_pos2, Black0_4, Black_pos4, Black0_5, Gray15])
+    pattern4 = core.std.StackHorizontal([Gray15, Black0_1, White100, Black0_2, Black_neg2, Black0_3, Black_pos2, Black0_4, 
+        Black_pos4, Black0_5, Gray15])
 
     #pattern = core.std.StackVertical([pattern1, pattern2, pattern3, pattern4])
     #return pattern1, pattern2, pattern3, pattern4
@@ -1959,7 +2003,8 @@ def ColorBarsHD(clip=None, width=1288, height=720):
     return pattern
 
 
-def SeeSaw(clp, denoised=None, NRlimit=2, NRlimit2=None, Sstr=1.5, Slimit=None, Spower=4, SdampLo=None, SdampHi=24, Szp=18, bias=49, Smode=None, sootheT=49, sootheS=0, ssx=1.0, ssy=None, diff=False):
+def SeeSaw(clp, denoised=None, NRlimit=2, NRlimit2=None, Sstr=1.5, Slimit=None, Spower=4, SdampLo=None, SdampHi=24, Szp=18, bias=49, 
+    Smode=None, sootheT=49, sootheS=0, ssx=1.0, ssy=None, diff=False):
     """Avisynth's SeeSaw v0.3e
 
     Author: Didée (http://avisynth.nl/images/SeeSaw.avs)
@@ -2087,7 +2132,8 @@ def SeeSaw(clp, denoised=None, NRlimit=2, NRlimit2=None, Sstr=1.5, Slimit=None, 
 
     NRdiff = core.std.MakeDiff(clp, denoised)
 
-    tameexpr = 'x {NRLL} + y < x {NRL2} + x {NRLL} - y > x {NRL2} - x {BIAS1} * y {BIAS2} * + 100 / ? ?'.format(NRLL=NRLL, NRL2=NRL2, BIAS1=bias, BIAS2=100-bias)
+    tameexpr = 'x {NRLL} + y < x {NRL2} + x {NRLL} - y > x {NRL2} - x {BIAS1} * y {BIAS2} * + 100 / ? ?'.format(NRLL=NRLL, 
+        NRL2=NRL2, BIAS1=bias, BIAS2=100-bias)
     tame = core.std.Expr([clp, denoised], [tameexpr])
 
     head = _SeeSaw_sharpen2(tame, Sstr, Spower, Szp, SdampLo, SdampHi, 4, diff)
@@ -2095,7 +2141,8 @@ def SeeSaw(clp, denoised=None, NRlimit=2, NRlimit2=None, Sstr=1.5, Slimit=None, 
     if ssx == 1 and ssy == 1:
         last = core.rgvs.Repair(_SeeSaw_sharpen2(tame, Sstr, Spower, Szp, SdampLo, SdampHi, Smode, diff), head, [1])
     else:
-        last = core.rgvs.Repair(_SeeSaw_sharpen2(tame.resize.Lanczos(xss, yss), Sstr, Spower, Szp, SdampLo, SdampHi, Smode, diff), head.resize.Bicubic(xss, yss, filter_param_a=-0.2, filter_param_b=0.6), [1]).resize.Lanczos(ox, oy)
+        last = core.rgvs.Repair(_SeeSaw_sharpen2(tame.resize.Lanczos(xss, yss), Sstr, Spower, Szp, SdampLo, SdampHi, Smode, diff), 
+            head.resize.Bicubic(xss, yss, filter_param_a=-0.2, filter_param_b=0.6), [1]).resize.Lanczos(ox, oy)
         
     if diff:
         last = core.std.MergeDiff(tame, last)
@@ -2107,13 +2154,16 @@ def SeeSaw(clp, denoised=None, NRlimit=2, NRlimit2=None, Sstr=1.5, Slimit=None, 
         last = clp
     else:
         NRdiff = core.std.MakeDiff(clp, denoised)
-        last = core.std.Expr([clp, NRdiff], ['y {neutral} {NRL} + > x {NRL} - y {neutral} {NRL} - < x {NRL} + x y {neutral} - - ? ?'.format(neutral=neutral, NRL=NRL)])
+        last = core.std.Expr([clp, NRdiff], ['y {neutral} {NRL} + > x {NRL} - y {neutral} {NRL} - < x {NRL} + x y {neutral} - - ? ?'.format(
+            neutral=neutral, NRL=NRL)])
 
     if Slimit >= 0:
-        limitexpr = 'y {neutral} {SLIM} + > x {SLIM} - y {neutral} {SLIM} - < x {SLIM} + x y {neutral} - - ? ?'.format(neutral=neutral, SLIM=SLIM)
+        limitexpr = 'y {neutral} {SLIM} + > x {SLIM} - y {neutral} {SLIM} - < x {SLIM} + x y {neutral} - - ? ?'.format(
+            neutral=neutral, SLIM=SLIM)
         last = core.std.Expr([last, sharpdiff], [limitexpr])
     else:
-        limitexpr = 'y {neutral} = x x y {neutral} - abs {multiple} / 1 {SLIM} / pow {multiple} * y {neutral} - y {neutral} - abs / * - ?'.format(neutral=neutral, SLIM=SLIM, multiple=multiple)
+        limitexpr = 'y {neutral} = x x y {neutral} - abs {multiple} / 1 {SLIM} / pow {multiple} * y {neutral} - y {neutral} - abs / * - ?'.format(
+            neutral=neutral, SLIM=SLIM, multiple=multiple)
         last = core.std.Expr([last, sharpdiff], [limitexpr])
 
     return last if isGray else core.std.ShufflePlanes([last, clp_src], list(range(clp_src.format.num_planes)), clp_src.format.color_family)
@@ -2148,7 +2198,9 @@ def _SeeSaw_sharpen2(clp, strength, power, zp, lodmp, hidmp, rg, diff):
             tmp1 = abs(x - neutral) / multiple
             tmp2 = tmp1 ** 2
             tmp3 = zp ** 2
-            return min(max(math.floor(neutral + (tmp1 / zp) ** power * zp * (strength * multiple) * (1 if x > neutral else -1) * (tmp2 * (tmp3 + lodmp) / ((tmp2 + lodmp) * tmp3)) * ((1 + (0 if hidmp == 0 else (zp / hidmp) ** 4)) / (1 + (0 if hidmp == 0 else (tmp1 / hidmp) ** 4))) + 0.5), 0), peak)
+            return min(max(math.floor(neutral + (tmp1 / zp) ** power * zp * (strength * multiple) * (1 if x > neutral else -1) * 
+                (tmp2 * (tmp3 + lodmp) / ((tmp2 + lodmp) * tmp3)) * ((1 + (0 if hidmp == 0 else (zp / hidmp) ** 4)) / 
+                    (1 + (0 if hidmp == 0 else (tmp1 / hidmp) ** 4))) + 0.5), 0), peak)
 
     if rg == 4:
         method = clp.std.Median(planes=[0])
@@ -2200,8 +2252,10 @@ def _SeeSaw_SootheSS(sharp, orig, sootheT=25, sootheS=0):
         orig_src = orig
         orig = mvf.GetPlane(orig) if sharp_src != orig_src else sharp
 
-    expr1 = 'x {neutral} < y {neutral} < xor x {neutral} - 100 / {SSPT} * {neutral} + x {neutral} - abs y {neutral} - abs > x {SSPT} * y {i} * + 100 / x ? ?'.format(neutral=neutral, SSPT=SSPT, i=100-SSPT)
-    expr2 = 'x {neutral} < y {neutral} < xor x {neutral} - 100 / {ST} * {neutral} + x {neutral} - abs y {neutral} - abs > x {ST} * y {i} * + 100 / x ? ?'.format(neutral=neutral, ST=ST, i=100-ST)
+    expr1 = ('x {neutral} < y {neutral} < xor x {neutral} - 100 / {SSPT} * {neutral} + x {neutral} - ' 
+        'abs y {neutral} - abs > x {SSPT} * y {i} * + 100 / x ? ?'.format(neutral=neutral, SSPT=SSPT, i=100-SSPT))
+    expr2 = ('x {neutral} < y {neutral} < xor x {neutral} - 100 / {ST} * {neutral} + x {neutral} - ' 
+        'abs y {neutral} - abs > x {ST} * y {i} * + 100 / x ? ?'.format(neutral=neutral, ST=ST, i=100-ST))
 
     if sootheS != 0:
         last = core.std.Expr([last, core.std.Convolution(last, [1]*9)], [expr1])
@@ -2248,7 +2302,8 @@ def abcxyz(clp, rad=3.0, ss=1.5):
         clp = mvf.GetPlane(clp)
 
     x = core.resize.Bicubic(clp, haf.m4(ox/rad), haf.m4(oy/rad)).resize.Bicubic(ox, oy, filter_param_a=1, filter_param_b=0)
-    y = core.std.Expr([clp, x], ['x {a} + y < x {a} + x {b} - y > x {b} - y ? ? x y - abs * x {c} x y - abs - * + {c} /'.format(a=scale(8, bits), b=scale(24, bits), c=scale(32, bits))])
+    y = core.std.Expr([clp, x], ['x {a} + y < x {a} + x {b} - y > x {b} - y ? ? x y - abs * x {c} x y - abs - * + {c} /'.format(
+        a=scale(8, bits), b=scale(24, bits), c=scale(32, bits))])
 
     z1 = core.rgvs.Repair(clp, y, [1])
 
@@ -2441,13 +2496,16 @@ def BlindDeHalo3(clp, rx=3.0, ry=3.0, strength=125, lodamp=0, hidamp=0, sharpnes
     HD = hidamp ** 2
     TWK0 = 'x y - {i} /'.format(i=12 / ST / RR)
     TWK = 'x y - {i} / abs'.format(i=12 / ST / RR)
-    TWK_HLIGHT = 'x y - abs {i} < {neutral} {TWK} {neutral} {TWK} - {TWK} {neutral} / * + {TWK0} {TWK} {LD} + / * {neutral} {TWK} - {j} / dup * {neutral} {TWK} - {j} / dup * {HD} + / * {neutral} + ?'.format(i=1 << (bits-8), neutral=neutral, TWK=TWK, TWK0=TWK0, LD=LD, j=scale(20, bits), HD=HD)
+    TWK_HLIGHT = ('x y - abs {i} < {neutral} {TWK} {neutral} {TWK} - {TWK} {neutral} / * + {TWK0} {TWK} {LD} + / * '
+        '{neutral} {TWK} - {j} / dup * {neutral} {TWK} - {j} / dup * {HD} + / * {neutral} + ?'.format(
+            i=1 << (bits-8), neutral=neutral, TWK=TWK, TWK0=TWK0, LD=LD, j=scale(20, bits), HD=HD))
 
     i = clp if not interlaced else core.std.SeparateFields(clp, tff=True)
     oxi = i.width
     oyi = i.height
     sm = core.resize.Bicubic(i, haf.m4(oxi/rx), haf.m4(oyi/ry))
-    mm = core.std.Expr([sm.std.Maximum(), sm.std.Minimum()], ['x y - 4 *']).std.Maximum().std.Deflate().std.Convolution([1]*9).std.Inflate().resize.Bicubic(oxi, oyi, filter_param_a=1, filter_param_b=0).std.Inflate()
+    mm = core.std.Expr([sm.std.Maximum(), sm.std.Minimum()], ['x y - 4 *']).std.Maximum().std.Deflate().std.Convolution([1]*9)
+    mm = mm.std.Inflate().resize.Bicubic(oxi, oyi, filter_param_a=1, filter_param_b=0).std.Inflate()
     sm = core.resize.Bicubic(sm, oxi, oyi, filter_param_a=1, filter_param_b=0)
     smd = core.std.Expr([Sharpen(i, tweaker), sm], [TWK_HLIGHT])
     if sharpness != 0:
@@ -2463,7 +2521,9 @@ def BlindDeHalo3(clp, rx=3.0, ry=3.0, strength=125, lodamp=0, hidamp=0, sharpnes
         small = core.resize.Bicubic(base, haf.m4(oxi / math.sqrt(rx * 1.5)), haf.m4(oyi / math.sqrt(ry * 1.5)))
         ex1 = Blur(small.std.Maximum(), 0.5)
         in1 = Blur(small.std.Minimum(), 0.5)
-        hull = core.std.Expr([ex1.std.Maximum().std.Convolution(matrix=[1, 2, 1, 2, 4, 2, 1, 2, 1]), ex1, in1, in1.std.Minimum().std.Convolution(matrix=[1, 2, 1, 2, 4, 2, 1, 2, 1])], ['x y - {i} - 5 * z a - {i} - 5 * max'.format(i=1 << (bits-8))]).resize.Bicubic(oxi, oyi, filter_param_a=1, filter_param_b=0)
+        hull = core.std.Expr([ex1.std.Maximum().std.Convolution(matrix=[1, 2, 1, 2, 4, 2, 1, 2, 1]), ex1, in1, 
+            in1.std.Minimum().std.Convolution(matrix=[1, 2, 1, 2, 4, 2, 1, 2, 1])], 
+            ['x y - {i} - 5 * z a - {i} - 5 * max'.format(i=1 << (bits-8))]).resize.Bicubic(oxi, oyi, filter_param_a=1, filter_param_b=0)
 
         if abs(PPmode) == 1:
             postclean = core.std.MaskedMerge(base, small.resize.Bicubic(oxi, oyi, filter_param_a=1, filter_param_b=0), hull)
@@ -2487,7 +2547,8 @@ def BlindDeHalo3(clp, rx=3.0, ry=3.0, strength=125, lodamp=0, hidamp=0, sharpnes
     return last
 
 
-def dfttestMC(input, pp=None, mc=2, mdg=False, planes=None, sigma=None, sbsize=None, sosize=None, tbsize=None, mdgSAD=None, thSAD=None, thSCD1=None, thSCD2=None, pel=None, blksize=None, search=None, searchparam=None, overlap=2, dct=None, **dfttest_params):
+def dfttestMC(input, pp=None, mc=2, mdg=False, planes=None, sigma=None, sbsize=None, sosize=None, tbsize=None, mdgSAD=None, 
+    thSAD=None, thSCD1=None, thSCD2=None, pel=None, blksize=None, search=None, searchparam=None, overlap=2, dct=None, **dfttest_params):
     """Avisynth's dfttestMC
 
     Motion-compensated dfttest
@@ -2799,7 +2860,8 @@ def DisplayHistogram(clip, factor=None):
     return core.std.StackVertical([histogram_v, bottom])
 
 
-def GuidedFilter(input, guidance=None, radius=4, regulation=0.01, regulation_mode=0, use_gauss=False, fast=None, subsampling_ratio=4, use_fmtc1=False, kernel1='point', kernel1_args=None, use_fmtc2=False, kernel2='bilinear', kernel2_args=None, **depth_args):
+def GuidedFilter(input, guidance=None, radius=4, regulation=0.01, regulation_mode=0, use_gauss=False, fast=None, subsampling_ratio=4, 
+    use_fmtc1=False, kernel1='point', kernel1_args=None, use_fmtc2=False, kernel2='bilinear', kernel2_args=None, **depth_args):
     """Guided Filter - fast edge-preserving smoothing algorithm
 
     Author: Kaiming He et al. (http://kaiminghe.com/eccv10/)
@@ -2825,7 +2887,8 @@ def GuidedFilter(input, guidance=None, radius=4, regulation=0.01, regulation_mod
             Default is None.
 
         radius: (int) Box / Gaussian filter's radius.
-            If box filter is used, the range of radius is 1 ~ 12(fast=False) or 1 ~ 12*subsampling_ratio in VapourSynth R38 or older because of the limitation of std.Convolution().
+            If box filter is used, the range of radius is 1 ~ 12(fast=False) or 1 ~ 12*subsampling_ratio in VapourSynth R38 or older 
+                because of the limitation of std.Convolution().
             For gaussian filter, the radius can be much larger, even reaching the width/height of the clip.
             Default is 4.
 
@@ -2888,11 +2951,14 @@ def GuidedFilter(input, guidance=None, radius=4, regulation=0.01, regulation_mod
             Default is {}.
 
     Ref:
-        [1] He, K., Sun, J., & Tang, X. (2013). Guided image filtering. IEEE transactions on pattern analysis and machine intelligence, 35(6), 1397-1409.
+        [1] He, K., Sun, J., & Tang, X. (2013). Guided image filtering. 
+            IEEE transactions on pattern analysis and machine intelligence, 35(6), 1397-1409.
         [2] He, K., & Sun, J. (2015). Fast guided filter. arXiv preprint arXiv:1505.00996.
         [3] http://kaiminghe.com/eccv10/index.html
-        [4] Li, Z., Zheng, J., Zhu, Z., Yao, W., & Wu, S. (2015). Weighted guided image filtering. IEEE Transactions on Image Processing, 24(1), 120-129.
-        [5] Kou, F., Chen, W., Wen, C., & Li, Z. (2015). Gradient domain guided image filtering. IEEE Transactions on Image Processing, 24(11), 4528-4539.
+        [4] Li, Z., Zheng, J., Zhu, Z., Yao, W., & Wu, S. (2015). Weighted guided image filtering. 
+            IEEE Transactions on Image Processing, 24(1), 120-129.
+        [5] Kou, F., Chen, W., Wen, C., & Li, Z. (2015). Gradient domain guided image filtering. 
+            IEEE Transactions on Image Processing, 24(11), 4528-4539.
         [6] http://koufei.weebly.com/
 
     """
@@ -2969,7 +3035,8 @@ def GuidedFilter(input, guidance=None, radius=4, regulation=0.01, regulation_mod
         alpha = frameMean
         kk = -4 / (frameMin - alpha - 1e-6) # Add a small num to prevent divided by 0
 
-        return core.std.Expr([cov_Ip, weight_in, weight, var_I], ['x {eps} 1 1 1 {kk} y {alpha} - * exp + / - * z / + a {eps} z / + /'.format(eps=eps, kk=kk, alpha=alpha)])
+        return core.std.Expr([cov_Ip, weight_in, weight, var_I], 
+            ['x {eps} 1 1 1 {kk} y {alpha} - * exp + / - * z / + a {eps} z / + /'.format(eps=eps, kk=kk, alpha=alpha)])
 
     # Compute local linear coefficients.
     mean_p = Filter(p)
@@ -2998,13 +3065,15 @@ def GuidedFilter(input, guidance=None, radius=4, regulation=0.01, regulation_mod
         denominator = core.std.Expr([weight_in], ['1 x {} + /'.format(eps0)])
 
         denominator = core.std.PlaneStats(denominator, plane=[0])
-        weight = core.std.FrameEval(denominator, functools.partial(FLT, clip=weight_in, core=core, eps0=eps0), prop_src=[denominator]) # equation (5) in [3], or equation (9) in [4]
+        # equation (5) in [3], or equation (9) in [4]
+        weight = core.std.FrameEval(denominator, functools.partial(FLT, clip=weight_in, core=core, eps0=eps0), prop_src=[denominator])
 
         if regulation_mode == 1: # Weighted Guided Image Filter
             a = core.std.Expr([cov_Ip, var_I, weight], ['x y {eps} z / + /'.format(eps=eps)])
         else: # regulation_mode == 2, Gradient Domain Guided Image Filter
             weight_in = core.std.PlaneStats(weight_in, plane=[0])
-            a = core.std.FrameEval(weight, functools.partial(FLT2, cov_Ip=cov_Ip, weight_in=weight_in, weight=weight, var_I=var_I, core=core, eps=eps), prop_src=[weight_in])
+            a = core.std.FrameEval(weight, functools.partial(FLT2, cov_Ip=cov_Ip, weight_in=weight_in, weight=weight, 
+                var_I=var_I, core=core, eps=eps), prop_src=[weight_in])
     else: # regulation_mode == 0, Original Guided Filter
         a = core.std.Expr([cov_Ip, var_I], ['x y {} + /'.format(eps)])
 
@@ -3029,7 +3098,8 @@ def GuidedFilter(input, guidance=None, radius=4, regulation=0.01, regulation_mod
     return mvf.Depth(q, depth=bits, sample=sampleType, **depth_args)
 
 
-def GuidedFilterColor(input, guidance, radius=4, regulation=0.01, use_gauss=False, fast=None, subsampling_ratio=4, use_fmtc1=False, kernel1='point', kernel1_args=None, use_fmtc2=False, kernel2='bilinear', kernel2_args=None, **depth_args):
+def GuidedFilterColor(input, guidance, radius=4, regulation=0.01, use_gauss=False, fast=None, subsampling_ratio=4, use_fmtc1=False, kernel1='point', 
+    kernel1_args=None, use_fmtc2=False, kernel2='bilinear', kernel2_args=None, **depth_args):
     """Guided Filter Color - fast edge-preserving smoothing algorithm using a color image as the guidance
 
     Author: Kaiming He et al. (http://kaiminghe.com/eccv10/)
@@ -3226,7 +3296,8 @@ def GMSD(clip1, clip2, plane=None, downsample=True, c=0.0026, show_map=False, **
             Default is {}.
 
     Ref:
-        [1] Xue, W., Zhang, L., Mou, X., & Bovik, A. C. (2014). Gradient magnitude similarity deviation: A highly efficient perceptual image quality index. IEEE Transactions on Image Processing, 23(2), 684-695.
+        [1] Xue, W., Zhang, L., Mou, X., & Bovik, A. C. (2014). Gradient magnitude similarity deviation: 
+            A highly efficient perceptual image quality index. IEEE Transactions on Image Processing, 23(2), 684-695.
         [2] http://www4.comp.polyu.edu.hk/~cslzhang/IQA/GMSD/GMSD.htm.
 
     """
@@ -3326,7 +3397,8 @@ def SSIM(clip1, clip2, plane=None, downsample=True, k1=0.01, k2=0.03, fun=None, 
             Default are 0.01 and 0.03.
 
         fun: (function or float) The function of how the clips are filtered.
-            If it is None, it will be set to a gaussian filter whose standard deviation is 1.5. Note that the size of gaussian kernel is different from the one in MATLAB.
+            If it is None, it will be set to a gaussian filter whose standard deviation is 1.5.
+            Note that the size of gaussian kernel is different from the one in MATLAB.
             If it is a float, it specifies the standard deviation of the gaussian filter. (sigma in core.tcanny.TCanny)
             According to the paper, the quality map calculated from gaussian filter exhibits a locally isotropic property,
             which prevents the present of undesirable “blocking” artifacts in the resulting SSIM index map.
@@ -3340,7 +3412,8 @@ def SSIM(clip1, clip2, plane=None, downsample=True, k1=0.01, k2=0.03, fun=None, 
             Default is {}.
 
     Ref:
-        [1] Wang, Z., Bovik, A. C., Sheikh, H. R., & Simoncelli, E. P. (2004). Image quality assessment: from error visibility to structural similarity. IEEE transactions on image processing, 13(4), 600-612.
+        [1] Wang, Z., Bovik, A. C., Sheikh, H. R., & Simoncelli, E. P. (2004). Image quality assessment: from error visibility to structural similarity.
+            IEEE transactions on image processing, 13(4), 600-612.
         [2] https://ece.uwaterloo.ca/~z70wang/research/ssim/.
 
     """
@@ -3401,7 +3474,8 @@ def SSIM(clip1, clip2, plane=None, downsample=True, k1=0.01, k2=0.03, fun=None, 
 
         numerator1_expr = '2 z * {c1} +'.format(c1=c1)
         numerator2_expr = '2 a z - * {c2} +'.format(c2=c2)
-        expr = 'x y * 0 > {numerator1} {numerator2} * x y * / x 0 = not y 0 = and {numerator1} x / {i} ? ?'.format(numerator1=numerator1_expr, numerator2=numerator2_expr, i=1)
+        expr = 'x y * 0 > {numerator1} {numerator2} * x y * / x 0 = not y 0 = and {numerator1} x / {i} ? ?'.format(numerator1=numerator1_expr, 
+            numerator2=numerator2_expr, i=1)
         ssim_map = core.std.Expr([denominator1, denominator2, mu1_mu2, sigma12_pls_mu1_mu2], [expr])
 
     # The following code is modified from mvf.PlaneStatistics(), which is used to compute the mean of the SSIM index map as MSSIM
@@ -3429,7 +3503,8 @@ def _IQA_downsample(clip):
     return core.std.Convolution(clip, [1, 1, 0, 1, 1, 0, 0, 0, 0]).resize.Point(clip.width // 2, clip.height // 2, src_left=-1, src_top=-1)
 
 
-def SSIM_downsample(clip, w, h, smooth=1, kernel=None, use_fmtc=False, gamma=False, fulls=False, fulld=False, curve='709', sigmoid=False, epsilon=1e-6, depth_args=None, **resample_args):
+def SSIM_downsample(clip, w, h, smooth=1, kernel=None, use_fmtc=False, gamma=False, fulls=False, fulld=False, curve='709', sigmoid=False, 
+    epsilon=1e-6, depth_args=None, **resample_args):
     """SSIM downsampler
 
     SSIM downsampler is an image downscaling technique that aims to optimize for the perceptual quality of the downscaled results.
@@ -3930,7 +4005,8 @@ def LLSURE(clip, guidance=None, radius=2, sigma=0, epsilon=1e-5, **depth_args):
             Default is {}.
 
     Ref:
-        [1] Qiu, T., Wang, A., Yu, N., & Song, A. (2013). LLSURE: local linear SURE-based edge-preserving image filtering. IEEE Transactions on Image Processing, 22(1), 80-90.
+        [1] Qiu, T., Wang, A., Yu, N., & Song, A. (2013). LLSURE: local linear SURE-based edge-preserving image filtering. 
+            IEEE Transactions on Image Processing, 22(1), 80-90.
 
     """
 
@@ -4007,7 +4083,8 @@ def YAHRmod(clp, blur=2, depth=32, **limit_filter_args):
 
     Experiment can denmonstrate its better texture preserving performance over the original version.
 
-    The source code is modified from havsfunc(https://github.com/HomeOfVapourSynthEvolution/havsfunc/blob/2048fcb320ef8121c842d087191708d61f39416b/havsfunc.py#L644-L671).
+    The source code is modified from 
+    havsfunc(https://github.com/HomeOfVapourSynthEvolution/havsfunc/blob/2048fcb320ef8121c842d087191708d61f39416b/havsfunc.py#L644-L671).
 
     Args:
         clp: Input clip.
