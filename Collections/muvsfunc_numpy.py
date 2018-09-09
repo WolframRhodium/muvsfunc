@@ -1502,12 +1502,15 @@ def SigmaFilter_core(img_2D, radius=3, thr=0.01):
     return flt
 
 
-def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, block_h=None, is_rgb_model=True, pad=None, crop=None, pre_upscale=False, upscale_uv=False, merge_source=False, use_fmtc=False, resample_kernel=None, resample_args=None, pad_mode=None, framework=None, data_format=None, device_id=0):
+def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, block_h=None, is_rgb_model=True, pad=None, crop=None, 
+    pre_upscale=False, upscale_uv=False, merge_source=False, use_fmtc=False, resample_kernel=None, resample_args=None, pad_mode=None, 
+    framework=None, data_format=None, device_id=0):
     """ Super resolution in VapourSynth
 
     Wrapper function for super resolution algorithms.
+    See muvsfunc's counterpart for implementation using core.mx.Predict()
 
-    Currently only MXNet backend is supported.
+    Currently only MXNet and TensorFlow backends are supported.
 
     The color space and bit depth of the output depends on the super resolution algorithm.
 
@@ -1539,7 +1542,7 @@ def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, blo
             Default is 128.
 
         is_rgb_model: (bool) Whether the model is RGB model.
-            If not, it is assumed to be Y model.
+            If not, it is assumed to be Y model, and RGB input will be converted to YUV before feeding to the network
             Default is True.
 
         pad: (list of four ints) Patch-wise padding before upscaling.
@@ -1622,6 +1625,10 @@ def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, blo
         if data_format not in ['NCHW', 'NHWC']:
             raise ValueError('Unsupported data_format {}!'.format(data_format))
 
+    if isinstance(device_id, list):
+        raise ValueError(('super_resolution: \'device_id\' is a list but multi-GPU data parallelism is invalid!'
+            'Please switch to muvsfunc\'s implementation.'))
+
     # color space conversion
     if is_rgb_model and not isRGB:
         clip = mvf.ToRGB(clip, depth=32)
@@ -1652,10 +1659,8 @@ def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, blo
                     clip = core.resize.Bicubic(clip, clip.width*up_scale, clip.height*up_scale, filter_param_a=0, filter_param_b=0.5, **resample_args)
                 else:
                     clip = eval('core.resize.{kernel}(clip, clip.width*up_scale, clip.height*up_scale, **resample_args)'.format(kernel=resample_kernel.capitalize()))
-        else:
-            clip = clip
 
-        up_scale = 1
+            up_scale = 1
 
     # load model
     if framework == 'mxnet':

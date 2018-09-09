@@ -49,6 +49,7 @@ Functions:
     LLSURE
     YAHRmod
     RandomInterleave
+    super_resolution
 '''
 
 import functools
@@ -4171,3 +4172,245 @@ def RandomInterleave(clips, seed=None, rand_list=None):
         return f[rand_list[n]]
 
     return core.std.ModifyFrame(clips[0], clips=clips, selector=selector)
+
+
+def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, block_h=None, is_rgb_model=True, pad=None, crop=None, 
+    pre_upscale=False, upscale_uv=False, merge_source=False, use_fmtc=False, resample_kernel=None, resample_args=None, pad_mode=None, 
+    framework=None, data_format=None, device_id=0, use_plugins_padding=True):
+    ''' Drop-in replacement of muvsfunc_numpy's counterpart using core.mx.Predict()
+
+    The plugin can be downloaded from https://github.com/kice/vs_mxDnCNN
+
+    The results from two versions of the functinos are identical when the size of block is smaller than the frame
+        or padding is used due to different implementation.
+
+    Currently only MXNet backend is supported. Multi-GPU data parallelism is supported.
+
+    The color space and bit depth of the output depends on the super resolution algorithm.
+
+    All the internal calculations are done at 32-bit float.
+
+    Demo:
+        https://github.com/WolframRhodium/muvsfunc/blob/master/Collections/examples/super_resolution_mxnet.vpy
+
+    Args:
+        clip: Input clip.
+            The color space will be automatically converted by mvf.ToRGB/YUV if it is not
+            compatiable with the super resolution algorithm.
+
+        model_filename: Path to the pre-trained model.
+            This specifies the path prefix of saved model files.
+            You should have "model_filename-symbol.json", "model_filename-xxxx.params", where xxxx is the epoch number.
+
+        epoch: (int) Epoch to load of MXNet model file.
+            Default is 0.
+
+        up_scale: (int) Upscaling factor.
+            Should be compatiable with the model.
+            Default is 2.
+
+        block_w, block_h: (int) The horizontal/vertical block size for dividing the image during processing.
+            The optimal value may vary according to different graphics card and image size.
+            Default is 128.
+
+        is_rgb_model: (bool) Whether the model is RGB model.
+            If not, it is assumed to be Y model, and RGB input will be converted to YUV before feeding to the network
+            Default is True.
+
+        pad: (list of four ints) Patch-wise padding before upscaling.
+            The values of four ints should be the same.
+            Default is None.
+
+        crop: INVALID. Please switch to muvsfunc_numpy's implementation.
+
+        pre_upscale: (bool) Whether to upscale the image before feed to the network.
+            If true, currently the function will only upscale the whole image directly rather than upscale
+                the patches separately, which may results in blocking artifacts on some algorithms.
+            Default is False.
+
+        upscale_uv: (bool) Whether to upscale UV channels when using Y model.
+            If not, the UV channels will be discarded.
+            Only works when "is_rgb_model" is False.
+            Default is False.
+
+        merge_source: (bool) Whether to merge the output of the network to the (nearest/bilinear/bicubic) enlarged source image.
+            Default is False.
+
+        use_fmtc: (bool) Whether to use fmtconv for enlarging. If not, vszimg (core.resize.*) will be used.
+            Only works when "pre_upscale" is True.
+            Default is False.
+
+        resample_kernel: (str) Resample kernel.
+            If can be 'Catmull-Rom', i.e. BicubicResize with b=0 and c=0.5.
+            Only works when "pre_upscale" is True.
+            Default is 'Catmull-Rom'.
+
+        resample_args: (dict) Additional arguments passed to vszimg/fmtconv resample kernel.
+            Only works when "pre_upscale" is True.
+            Default is {}.
+
+        pad_mode: INVALID. Please switch to muvsfunc_numpy's implementation.
+
+        framework: INVALID. Please switch to muvsfunc_numpy's implementation.
+
+        data_format: INVALID. Please switch to muvsfunc_numpy's implementation.
+
+        device_id: (int or list of ints) Which device(s) to use. 
+            Starting with 0. If it is smaller than 0, CPU will be used.
+            It can be a list of integers, indicating devices for multi-GPU data parallelism.
+            Default is 0.
+
+    '''
+
+    funcName = 'super_resolution'
+
+    if not hasattr(core, 'mx'):
+        core.std.LoadPlugin(r'vs_mxnet.dll', altsearchpath=True)
+
+    isGray = clip.format.color_family == vs.GRAY
+    isRGB = clip.format.color_family == vs.RGB
+    block_size = (block_w, block_w if block_h is None else block_h)
+
+    symbol_filename = model_filename + '-symbol.json'
+    param_filename = model_filename + '-{:04d}.params'.format(epoch)
+
+    if pad is None:
+        pad_size = (0, 0)
+    else:
+        pad_size = (pad[0] + pad[1], pad[2] + pad[3])
+    if pad_size[0] != pad_size[1] or pad_size[0] % 2 != 0:
+        raise ValueError(funcName + ': Asymmetric padding is invalid! Please switch to muvsfunc_numpy\'s implementation.')
+    else:
+        pad = pad_size[0] // 2
+
+    if crop is not None:
+        raise ValueError(funcName + ': \'crop\' is invalid! Please switch to muvsfunc_numpy\'s implementation.')
+
+    if resample_kernel is None:
+        resample_kernel = 'Bicubic'
+
+    if resample_args is None:
+        resample_args = {}
+
+    if pad_mode is not None:
+        raise ValueError(funcName + ': \'pad_mode\' is invalid! Please switch to muvsfunc_numpy\'s implementation.')
+
+    if framework is None:
+        framework = 'MXNet'
+    framework = framework.lower()
+    if framework.lower() != 'mxnet':
+        raise ValueError(funcName + ': Only MXNet framework is supported! Please switch to muvsfunc_numpy\'s implementation.')
+
+    if data_format is None:
+        data_format = 'NCHW'
+    else:
+        data_format = data_format.upper()
+        if data_format != 'NCHW':
+            raise ValueError(funcName + ': Only NCHW data format is supported! Please switch to muvsfunc_numpy\'s implementation.')
+
+    if not isinstance(device_id, list):
+        device_id = [device_id]
+
+    # color space conversion
+    if is_rgb_model and not isRGB:
+        clip = mvf.ToRGB(clip, depth=32)
+
+    elif not is_rgb_model:
+        if isRGB:
+            clip = mvf.ToYUV(clip, depth=32)
+
+        if not isGray:
+            if not upscale_uv: # isYUV/RGB and only upscale Y
+                clip = mvf.GetPlane(clip)
+            else:
+                clip = core.std.Expr([clip], ['', 'x 0.5 +']) # change the range of UV from [-0.5, 0.5] to [0, 1]
+
+    # bit depth conversion
+    clip = mvf.Depth(clip, depth=32, sample=vs.FLOAT)
+
+    # pre-upscaling
+    if pre_upscale:
+        if up_scale != 1:
+            if use_fmtc:
+                if resample_kernel.lower() == 'catmull-rom':
+                    clip = core.fmtc.resample(clip, clip.width*up_scale, clip.height*up_scale, kernel='bicubic', a1=0, a2=0.5, **resample_args)
+                else:
+                    clip = core.fmtc.resample(clip, clip.width*up_scale, clip.height*up_scale, kernel=resample_kernel, **resample_args)
+            else: # use vszimg
+                if resample_kernel.lower() == 'catmull-rom':
+                    clip = core.resize.Bicubic(clip, clip.width*up_scale, clip.height*up_scale, filter_param_a=0, filter_param_b=0.5, **resample_args)
+                else:
+                    clip = eval('core.resize.{kernel}(clip, clip.width*up_scale, clip.height*up_scale, **resample_args)'.format(
+                        kernel=resample_kernel.capitalize()))
+
+            up_scale = 1
+
+    # inference
+    def inference(clip, dev_id):
+        '''wrapper function for inference'''
+
+        if is_rgb_model or not upscale_uv:
+            w, h = clip.width, clip.height
+
+            if not use_plugins_padding and pad > 0:
+                clip = haf.Padding(clip, pad, pad, pad, pad)
+
+            super_res = core.mx.Predict(clip, symbol=symbol_filename, param=param_filename, 
+                patch_w=block_w+pad*2, patch_h=block_h+pad*2, scale=up_scale, output_w=block_w*up_scale, output_h=block_h*up_scale, 
+                frame_w=w*up_scale, frame_h=h*up_scale, step_w=block_w, step_h=block_h, 
+                outstep_w=block_w*up_scale, outstep_h=block_h*up_scale, padding=pad if use_plugins_padding else 0, 
+                ctx=2 if dev_id >= 0 else 1, dev_id=dev_id)
+
+        else: # Y model, YUV input that may have subsampling, need to upscale uv
+            num_planes = clip.format.num_planes
+            yuv_list = [mvf.GetPlane(clip, i) for i in range(num_planes)]
+
+            for i in range(num_planes):
+                w, h = yuv_list[i].width, yuv_list[i].height
+
+                if not use_plugins_padding and pad > 0:
+                    yuv_list[i] = haf.Padding(yuv_list[i], pad, pad, pad, pad)
+
+                raise vs.Erorr(yuv_list[i].format.num_planes)
+
+                yuv_list[i] = core.mx.Predict(yuv_list[i], symbol=symbol_filename, param=param_filename, 
+                    patch_w=block_w+pad*2, patch_h=block_h+pad*2, scale=up_scale, output_w=block_w*up_scale, output_h=block_h*up_scale, 
+                    frame_w=w*up_scale, frame_h=h*up_scale, step_w=block_w, step_h=block_h, 
+                    outstep_w=block_w*up_scale, outstep_h=block_h*up_scale, padding=pad if use_plugins_padding else 0, 
+                    ctx=2 if dev_id >= 0 else 1, dev_id=dev_id)
+
+            super_res = core.std.ShufflePlanes(yuv_list, list(range(num_planes)), clip.format.colorfamily)
+
+        return super_res
+
+    if len(device_id) == 1:
+        super_res = inference(clip, device_id[0])
+
+    else: # multi-GPU data parallelism
+        workers = len(device_id)
+        super_res_list = [inference(clip[i::workers], device_id[i]) for i in range(workers)]
+        super_res = core.std.Interleave(super_res_list)
+
+    # post-processing
+    if not is_rgb_model and not isGray and upscale_uv:
+        super_res = core.std.Expr([super_res], ['', 'x 0.5 -']) # restore the range of UV
+
+    if merge_source:
+        if up_scale != 1:
+            if use_fmtc:
+                if resample_kernel.lower() == 'catmull-rom':
+                    low_res = core.fmtc.resample(clip, super_res.width, super_res.height, kernel='bicubic', a1=0, a2=0.5, **resample_args)
+                else:
+                    low_res = core.fmtc.resample(clip, super_res.width, super_res.height, kernel=resample_kernel, **resample_args)
+            else: # use vszimg
+                if resample_kernel.lower() == 'catmull-rom':
+                    low_res = core.resize.Bicubic(clip, super_res.width, super_res.height, filter_param_a=0, filter_param_b=0.5, **resample_args)
+                else:
+                    low_res = eval('core.resize.{kernel}(clip, {w}, {h}, **resample_args)'.format(w=super_res.width, h=super_res.height, 
+                        kernel=resample_kernel.capitalize()))
+        else:
+            low_res = clip
+
+        super_res = core.std.Expr([super_res, low_res], ['x y +'])
+
+    return super_res

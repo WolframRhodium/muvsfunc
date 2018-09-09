@@ -1,4 +1,10 @@
+import os
+os.environ['MXNET_CUDNN_AUTOTUNE_DEFAULT'] = '0' # 0: False 1: Default 2: Full
+
+import mxnet as mx
+
 import vapoursynth as vs
+import muvsfunc as muf
 import muvsfunc_numpy as mufnp
 
 core = vs.get_core()
@@ -19,8 +25,9 @@ if sr_algorithm == 0:
     sr_args = dict(model_prefix=r'waifu2x\upconv_7_anime_style_art_rgb\scale2.0x_model', device_id=device_id, block_w=128, block_h=128, pad=(7,7,7,7))
 
 elif sr_algorithm == 3:
-    sr_args = dict(model_prefix=r'VDSR (unofficial)\VDSR', device_id=device_id, block_w=128, block_h=128, is_rgb_model=False, pre_upscale=True)
+    sr_args = dict(model_prefix=r'VDSR\VDSR', device_id=device_id, block_w=128, block_h=128, is_rgb_model=False, pre_upscale=True)
 
-sr = mufnp.super_resolution(src, **sr_args)
+# sr = mufnp.super_resolution(src, **sr_args) # using NumPy
+sr = muf.super_resolution(src, **sr_args) # using C++ plugin
 
 sr.set_output()
