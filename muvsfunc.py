@@ -2418,6 +2418,9 @@ def BlindDeHalo3(clp, rx=3.0, ry=3.0, strength=125, lodamp=0, hidamp=0, sharpnes
     if not isinstance(clp, vs.VideoNode):
         raise TypeError(funcName + ': \"clp\" is not a clip!')
 
+    if clp.format.sample_type != vs.INTEGER:
+        raise TypeError(funcName + ': Only integer clip is supported!')
+
     if PPlimit is None:
         PPlimit = 4 if abs(PPmode) == 3 else 0
 
