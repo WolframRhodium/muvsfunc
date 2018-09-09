@@ -4371,8 +4371,6 @@ def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, blo
                 if not use_plugins_padding and pad > 0:
                     yuv_list[i] = haf.Padding(yuv_list[i], pad, pad, pad, pad)
 
-                raise vs.Erorr(yuv_list[i].format.num_planes)
-
                 yuv_list[i] = core.mx.Predict(yuv_list[i], symbol=symbol_filename, param=param_filename, 
                     patch_w=block_w+pad*2, patch_h=block_h+pad*2, scale=up_scale, output_w=block_w*up_scale, output_h=block_h*up_scale, 
                     frame_w=w*up_scale, frame_h=h*up_scale, step_w=block_w, step_h=block_h, 
