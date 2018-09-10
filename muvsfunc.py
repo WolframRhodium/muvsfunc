@@ -4381,7 +4381,7 @@ def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, blo
                     patch_w=block_w+pad*2, patch_h=block_h+pad*2, scale=up_scale, output_w=block_w*up_scale, output_h=block_h*up_scale, 
                     frame_w=w*up_scale, frame_h=h*up_scale, step_w=block_w, step_h=block_h, 
                     outstep_w=block_w*up_scale, outstep_h=block_h*up_scale, padding=pad if use_plugins_padding else 0, 
-                    ctx=2 if dev_id >= 0 else 1, dev_id=dev_id)
+                    ctx=2 if dev_id >= 0 else 1, dev_id=max(dev_id, 0))
 
             super_res = core.std.ShufflePlanes(yuv_list, [0] * num_planes, clip.format.color_family)
 
