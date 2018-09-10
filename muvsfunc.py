@@ -4177,16 +4177,18 @@ def RandomInterleave(clips, seed=None, rand_list=None):
 def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, block_h=None, is_rgb_model=True, pad=None, crop=None, 
     pre_upscale=False, upscale_uv=False, merge_source=False, use_fmtc=False, resample_kernel=None, resample_args=None, pad_mode=None, 
     framework=None, data_format=None, device_id=0, use_plugins_padding=True):
-    ''' Drop-in replacement of muvsfunc_numpy's counterpart using core.mx.Predict()
+    ''' Use MXNet to accelerated Image-Processing in VapourSynth using C++ interface
 
-    The plugin can be downloaded from https://github.com/kice/vs_mxDnCNN
+    Drop-in replacement of muvsfunc_numpy's counterpart using core.mx.Predict().
+    The plugin can be downloaded from https://github.com/kice/vs_mxnet
 
-    The results from two versions of the functinos are identical when the size of block is smaller than the frame
-        or padding is used due to different implementation.
+    The results from two versions of the functinos may not identical when the size of block is smaller than the frame
+        or padding is used, due to different implementation.
 
     Currently only MXNet backend is supported. Multi-GPU data parallelism is supported.
 
     The color space and bit depth of the output depends on the super resolution algorithm.
+    Currently only RGB and GRAY models are supported.
 
     All the internal calculations are done at 32-bit float.
 
@@ -4259,6 +4261,10 @@ def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, blo
             Starting with 0. If it is smaller than 0, CPU will be used.
             It can be a list of integers, indicating devices for multi-GPU data parallelism.
             Default is 0.
+
+        use_plugins_padding: (bool) Whether to use core.mx.Predict()'s built-in OpenCV based inplace padding'.
+            If not, vszimg (core.resize.Point) will be used.
+            Default is True.
 
     '''
 
@@ -4359,7 +4365,7 @@ def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, blo
                 patch_w=block_w+pad*2, patch_h=block_h+pad*2, scale=up_scale, output_w=block_w*up_scale, output_h=block_h*up_scale, 
                 frame_w=w*up_scale, frame_h=h*up_scale, step_w=block_w, step_h=block_h, 
                 outstep_w=block_w*up_scale, outstep_h=block_h*up_scale, padding=pad if use_plugins_padding else 0, 
-                ctx=2 if dev_id >= 0 else 1, dev_id=dev_id)
+                ctx=2 if dev_id >= 0 else 1, dev_id=max(dev_id, 0))
 
         else: # Y model, YUV input that may have subsampling, need to upscale uv
             num_planes = clip.format.num_planes
@@ -4377,7 +4383,7 @@ def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, blo
                     outstep_w=block_w*up_scale, outstep_h=block_h*up_scale, padding=pad if use_plugins_padding else 0, 
                     ctx=2 if dev_id >= 0 else 1, dev_id=dev_id)
 
-            super_res = core.std.ShufflePlanes(yuv_list, list(range(num_planes)), clip.format.colorfamily)
+            super_res = core.std.ShufflePlanes(yuv_list, [0] * num_planes, clip.format.color_family)
 
         return super_res
 
