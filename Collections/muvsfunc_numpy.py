@@ -1579,7 +1579,8 @@ def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, blo
             Default is {}.
 
         pad_mode: (str) Padding type of NumPy to use.
-            Default is "symmetric"
+            If set to "source", the pixels in the source image will be used.
+            Default is "source"
 
         framework: (str, 'MXNet' or 'TensorFlow') Deep learning framework to use.
             Defaut is 'MXNet'.
@@ -1747,13 +1748,13 @@ def super_resolution_core(img, runner, up_scale=2, block_size=None, pad=None, cr
             If TensorFlow framework is used, then it specifies the session.
             If MXNet framework is used, then it specifies the model.
 
-    The default padding tymode is set to 'symmetric'.
+    The default padding mode is set to 'source'.
     For detailed documentation, please refer to the documentation of "super_resolution" funcion in current library.
     """
 
     # initialization
     if pad_mode is None:
-        pad_mode = 'symmetric'
+        pad_mode = 'source'
 
     if data_format is None:
         data_format = 'NCHW'
@@ -1794,24 +1795,49 @@ def super_resolution_core(img, runner, up_scale=2, block_size=None, pad=None, cr
     # patch-wise processing
     for i in range(math.ceil(h / block_size[0])):
         for j in range(math.ceil(w / block_size[1])):
-
             top = i * block_size[0]
             bottom = min(h, (i + 1) * block_size[0])
             left = j * block_size[1]
             right = min(w, (j + 1) * block_size[1])
 
-            if data_format == 'NCHW':
-                h_in = img[:, :, top:bottom, left:right]
-            else:
-                h_in = img[:, top:bottom, left:right, :]
+            if pad_mode.lower() == 'source' and pad is not None: # use "source" padding
 
-            # pre-padding
-            if pad is not None:
+                padded_top = max(0, top - pad[0])
+                padded_bottom = min(h, bottom + pad[1])
+                padded_left = max(0, left - pad[2])
+                padded_right = min(w, right + pad[1])
+
                 if data_format == 'NCHW':
-                    pad_width = ((0, 0), (0, 0), (pad[0], pad[1]), (pad[2], pad[3]))
+                    h_in = img[:, :, padded_top:padded_bottom, padded_left:padded_right]
+                    if ((top - padded_top != pad[0]) or (padded_bottom - bottom != pad[1])
+                        or (left - padded_left != pad[2]) or (padded_right - right != pad[3])):
+
+                        pad_width = ((0, 0), (0, 0), (pad[0] - top + padded_top, pad[1] - padded_bottom + bottom), 
+                            (pad[2] - left + padded_left, pad[3] - padded_right + right))
+                        h_in = np.pad(h_in, mode='symmetric', pad_width=pad_width)
                 else:
-                    pad_width = ((0, 0), (pad[0], pad[1]), (pad[2], pad[3]), (0, 0))
-                h_in = np.pad(h_in, mode=pad_mode, pad_width=pad_width)
+                    h_in = img[:, padded_top:padded_bottom, padded_left:padded_right, :]
+                    if ((top - padded_top != pad[0]) or (padded_bottom - bottom != pad[1])
+                        or (left - padded_left != pad[2]) or (padded_right - right != pad[3])):
+
+                        pad_width = ((0, 0), (pad[0] - top + padded_top, pad[1] - padded_bottom + bottom), 
+                            (pad[2] - left + padded_left, pad[3] - padded_right + eright), (0, 0))
+                        h_in = np.pad(h_in, mode='symmetric', pad_width=pad_width)
+
+            else: # use NumPy's padding
+
+                if data_format == 'NCHW':
+                    h_in = img[:, :, top:bottom, left:right]
+                else:
+                    h_in = img[:, top:bottom, left:right, :]
+
+                # pre-padding
+                if pad is not None:
+                    if data_format == 'NCHW':
+                        pad_width = ((0, 0), (0, 0), (pad[0], pad[1]), (pad[2], pad[3]))
+                    else:
+                        pad_width = ((0, 0), (pad[0], pad[1]), (pad[2], pad[3]), (0, 0))
+                    h_in = np.pad(h_in, mode=pad_mode, pad_width=pad_width)
 
             # forward
             if framework == 'mxnet':
