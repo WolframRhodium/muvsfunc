@@ -4176,7 +4176,7 @@ def RandomInterleave(clips, seed=None, rand_list=None):
 
 def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, block_h=None, is_rgb_model=True, pad=None, crop=None, 
     pre_upscale=False, upscale_uv=False, merge_source=False, use_fmtc=False, resample_kernel=None, resample_args=None, pad_mode=None, 
-    framework=None, data_format=None, device_id=0, use_plugins_padding=True):
+    framework=None, data_format=None, device_id=0, use_plugins_padding=False):
     ''' Use MXNet to accelerated Image-Processing in VapourSynth using C++ interface
 
     Drop-in replacement of muvsfunc_numpy's counterpart using core.mx.Predict().
@@ -4220,10 +4220,13 @@ def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, blo
             Default is True.
 
         pad: (list of four ints) Patch-wise padding before upscaling.
-            The values of four ints should be the same.
+            The four values indicate padding at left, right, top, bottom of each patch respectively.
             Default is None.
 
-        crop: INVALID. Please switch to muvsfunc_numpy's implementation.
+        crop: (list of four ints) Patch-wise cropping after upscaling.
+            The four values indicate cropping at left, right, top, bottom of each patch respectively.
+            Moreover, due to the implementation of vs_mxnet, the values at top and left should be zero.
+            Default is None.
 
         pre_upscale: (bool) Whether to upscale the image before feed to the network.
             If true, currently the function will only upscale the whole image directly rather than upscale
@@ -4251,7 +4254,10 @@ def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, blo
             Only works when "pre_upscale" is True.
             Default is {}.
 
-        pad_mode: INVALID. Please switch to muvsfunc_numpy's implementation.
+        pad_mode: (str) Padding type to use.
+            If set to "source", the pixels in the source image will be used.
+            Only "source" is supported. Please switch to muvsfunc_numpy's implementation for other modes.
+            Default is "source"
 
         framework: INVALID. Please switch to muvsfunc_numpy's implementation.
 
@@ -4264,7 +4270,7 @@ def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, blo
 
         use_plugins_padding: (bool) Whether to use core.mx.Predict()'s built-in OpenCV based inplace padding'.
             If not, vszimg (core.resize.Point) will be used.
-            Default is True.
+            Default is False.
 
     '''
 
@@ -4282,15 +4288,15 @@ def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, blo
 
     if pad is None:
         pad_size = (0, 0)
+        pad = (0, 0, 0, 0)
     else:
         pad_size = (pad[0] + pad[1], pad[2] + pad[3])
-    if pad_size[0] != pad_size[1] or pad_size[0] % 2 != 0:
-        raise ValueError(funcName + ': Asymmetric padding is invalid! Please switch to muvsfunc_numpy\'s implementation.')
-    else:
-        pad = pad_size[0] // 2
 
-    if crop is not None:
-        raise ValueError(funcName + ': \'crop\' is invalid! Please switch to muvsfunc_numpy\'s implementation.')
+    if crop is None:
+        crop = (0, 0, 0, 0)
+    else:
+        if crop[0] != 0 or crop[2] != 0:
+            raise ValueError(funcName + ': Cropping at left or top should be zero! Please switch to muvsfunc_numpy\'s implementation.')
 
     if resample_kernel is None:
         resample_kernel = 'Bicubic'
@@ -4298,8 +4304,8 @@ def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, blo
     if resample_args is None:
         resample_args = {}
 
-    if pad_mode is not None:
-        raise ValueError(funcName + ': \'pad_mode\' is invalid! Please switch to muvsfunc_numpy\'s implementation.')
+    if pad_mode is not None and pad_mode.lower() != 'source':
+        raise ValueError(funcName + ': Only source padding mode is supported! Please switch to muvsfunc_numpy\'s implementation.')
 
     if framework is None:
         framework = 'MXNet'
@@ -4316,6 +4322,9 @@ def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, blo
 
     if not isinstance(device_id, list):
         device_id = [device_id]
+
+    if use_plugins_padding and not pad[0] == pad[1] == pad[2] == pad[3]:
+        raise ValueError(funcName + ': \'use_plugins_padding\' only allows symmetric padding! Please set its value to False!')
 
     # color space conversion
     if is_rgb_model and not isRGB:
@@ -4358,13 +4367,13 @@ def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, blo
         if is_rgb_model or not upscale_uv:
             w, h = clip.width, clip.height
 
-            if not use_plugins_padding and pad > 0:
-                clip = haf.Padding(clip, pad, pad, pad, pad)
+            if not use_plugins_padding and (pad[0]-crop[0]//up_scale > 0 or pad[1]-crop[1]//up_scale > 0 or pad[2]-crop[2]//up_scale > 0 or pad[3]-crop[3]//up_scale > 0):
+                clip = haf.Padding(clip, pad[0]-crop[0]//up_scale, pad[1]-crop[1]//up_scale, pad[2]-crop[2]//up_scale, pad[3]-crop[3]//up_scale)
 
             super_res = core.mx.Predict(clip, symbol=symbol_filename, param=param_filename, 
-                patch_w=block_w+pad*2, patch_h=block_h+pad*2, scale=up_scale, output_w=block_w*up_scale, output_h=block_h*up_scale, 
+                patch_w=block_w+pad[0]+pad[1], patch_h=block_h+pad[2]+pad[3], scale=up_scale, output_w=block_w*up_scale+crop[0]+crop[1], output_h=block_h*up_scale+crop[2]+crop[3], 
                 frame_w=w*up_scale, frame_h=h*up_scale, step_w=block_w, step_h=block_h, 
-                outstep_w=block_w*up_scale, outstep_h=block_h*up_scale, padding=pad if use_plugins_padding else 0, 
+                outstep_w=block_w*up_scale, outstep_h=block_h*up_scale, padding=pad[0]-crop[0]//up_scale if use_plugins_padding else 0, 
                 ctx=2 if dev_id >= 0 else 1, dev_id=max(dev_id, 0))
 
         else: # Y model, YUV input that may have subsampling, need to upscale uv
@@ -4374,13 +4383,13 @@ def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, blo
             for i in range(num_planes):
                 w, h = yuv_list[i].width, yuv_list[i].height
 
-                if not use_plugins_padding and pad > 0:
-                    yuv_list[i] = haf.Padding(yuv_list[i], pad, pad, pad, pad)
+                if not use_plugins_padding and (pad[0]-crop[0]//up_scale > 0 or pad[1]-crop[1]//up_scale > 0 or pad[2]-crop[2]//up_scale > 0 or pad[3]-crop[3]//up_scale > 0):
+                    clip = haf.Padding(clip, pad[0]-crop[0]//up_scale, pad[1]-crop[1]//up_scale, pad[2]-crop[2]//up_scale, pad[3]-crop[3]//up_scale)
 
                 yuv_list[i] = core.mx.Predict(yuv_list[i], symbol=symbol_filename, param=param_filename, 
-                    patch_w=block_w+pad*2, patch_h=block_h+pad*2, scale=up_scale, output_w=block_w*up_scale, output_h=block_h*up_scale, 
+                    patch_w=block_w+pad[0]+pad[1], patch_h=block_h+pad[2]+pad[3], scale=up_scale, output_w=block_w*up_scale+crop[0]+crop[1], output_h=block_h*up_scale+crop[2]+crop[3], 
                     frame_w=w*up_scale, frame_h=h*up_scale, step_w=block_w, step_h=block_h, 
-                    outstep_w=block_w*up_scale, outstep_h=block_h*up_scale, padding=pad if use_plugins_padding else 0, 
+                    outstep_w=block_w*up_scale, outstep_h=block_h*up_scale, padding=pad[0]-crop[0]//up_scale if use_plugins_padding else 0, 
                     ctx=2 if dev_id >= 0 else 1, dev_id=max(dev_id, 0))
 
             super_res = core.std.ShufflePlanes(yuv_list, [0] * num_planes, clip.format.color_family)

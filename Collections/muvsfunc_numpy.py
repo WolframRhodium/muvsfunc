@@ -1547,9 +1547,11 @@ def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, blo
             Default is True.
 
         pad: (list of four ints) Patch-wise padding before upscaling.
+            The four values indicate padding at left, right, top, bottom of each patch respectively.
             Default is None.
 
         crop: (list of four ints) Patch-wise cropping after upscaling.
+            The four values indicate cropping at left, right, top, bottom of each patch respectively.
             Default is None.
 
         pre_upscale: (bool) Whether to upscale the image before feed to the network.
@@ -1851,9 +1853,11 @@ def super_resolution_core(img, runner, up_scale=2, block_size=None, pad=None, cr
             # post-cropping
             if crop is not None:
                 if data_format == 'NCHW':
-                    pred[:, :, top*up_scale:bottom*up_scale, left*up_scale:right*up_scale] = h_out[:, :, crop[0]:-crop[1], crop[2]:-crop[3]]
+                    pred[:, :, top*up_scale:bottom*up_scale, left*up_scale:right*up_scale] = h_out[:, :, 
+                        crop[0]:(-crop[1] if crop[1] > 0 else None), crop[2]:(-crop[3] if crop[3] > 0 else None)]
                 else:
-                    pred[:, top*up_scale:bottom*up_scale, left*up_scale:right*up_scale, :] = h_out[:, crop[0]:-crop[1], crop[2]:-crop[3], :]
+                    pred[:, top*up_scale:bottom*up_scale, left*up_scale:right*up_scale, :] = h_out[:, 
+                        crop[0]:(-crop[1] if crop[1] > 0 else None), crop[2]:(-crop[3] if crop[3] > 0 else None), :]
             else:
                 if data_format == 'NCHW':
                     pred[:, :, top*up_scale:bottom*up_scale, left*up_scale:right*up_scale] = h_out[:, :, :, :]
