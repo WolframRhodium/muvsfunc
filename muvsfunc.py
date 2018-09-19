@@ -4320,7 +4320,7 @@ def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, blo
         if data_format != 'NCHW':
             raise ValueError(funcName + ': Only NCHW data format is supported! Please switch to muvsfunc_numpy\'s implementation.')
 
-    if not isinstance(device_id, list):
+    if not isinstance(device_id, list) or not isinstance(device_id, tuple):
         device_id = [device_id]
 
     if use_plugins_padding and not pad[0] == pad[1] == pad[2] == pad[3]:
@@ -4375,7 +4375,7 @@ def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, blo
 
             super_res = core.mx.Predict(clip, symbol=symbol_filename, param=param_filename, 
                 patch_w=block_w+pad[0]+pad[1], patch_h=block_h+pad[2]+pad[3], scale=up_scale, 
-                output_w=block_w*up_scale+crop[0]+crop[1], output_h=block_h*up_scale+crop[2]+crop[3], 
+                output_w=block_w*up_scale+crop[0]+crop[1], output_h=block_h*up_scale+crop[2]+crop[3], # crop[0] == crop[2] == 0
                 frame_w=w*up_scale, frame_h=h*up_scale, step_w=block_w, step_h=block_h, 
                 outstep_w=block_w*up_scale, outstep_h=block_h*up_scale, 
                 padding=pad[0]-crop[0]//up_scale if use_plugins_padding else 0, 
@@ -4396,7 +4396,7 @@ def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, blo
 
                 yuv_list[i] = core.mx.Predict(yuv_list[i], symbol=symbol_filename, param=param_filename, 
                     patch_w=block_w+pad[0]+pad[1], patch_h=block_h+pad[2]+pad[3], scale=up_scale, 
-                    output_w=block_w*up_scale+crop[0]+crop[1], output_h=block_h*up_scale+crop[2]+crop[3], # 0 == crop[0] == crop[2]
+                    output_w=block_w*up_scale+crop[0]+crop[1], output_h=block_h*up_scale+crop[2]+crop[3], # crop[0] == crop[2] == 0
                     frame_w=w*up_scale, frame_h=h*up_scale, step_w=block_w, step_h=block_h, 
                     outstep_w=block_w*up_scale, outstep_h=block_h*up_scale, 
                     padding=pad[0]-crop[0]//up_scale if use_plugins_padding else 0, 

@@ -66,17 +66,17 @@ if sr_algorithm == 0:
 
     # 2 GPUS
     sr_args = dict(model_filename=r'waifu2x\upconv_7_anime_style_art_rgb\scale2.0x_model', 
-        device_id=(0, 1), block_w=128, block_h=128, 
+        device_id=[0, 1], block_w=128, block_h=128, 
         up_scale=2, pad=(7,7,7,7))
 
     # 2 Queues
     sr_args = dict(model_filename=r'waifu2x\upconv_7_anime_style_art_rgb\scale2.0x_model', 
-        device_id=(0, 0), block_w=128, block_h=128, 
+        device_id=[0, 0], block_w=128, block_h=128, 
         up_scale=2, pad=(7,7,7,7))
 
     # 4 Queues 2 GPUs
     sr_args = dict(model_filename=r'waifu2x\upconv_7_anime_style_art_rgb\scale2.0x_model', 
-        device_id=(0, 1, 0, 1), block_w=128, block_h=128, 
+        device_id=[0, 1, 0, 1], block_w=128, block_h=128, 
         up_scale=2, pad=(7,7,7,7))
     """
 
