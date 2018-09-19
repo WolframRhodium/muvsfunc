@@ -27,7 +27,7 @@ if sr_algorithm == 0:
         up_scale=2, pad=(7,7,7,7))
 
 
-    # advanced: padded upsampling to reduce blocking artifacts when small patch size is used
+    # advanced I: padded upsampling to reduce blocking artifacts when small patch size is used
 
     r"""
     # both NumPy and C++ versions are available
@@ -56,6 +56,28 @@ if sr_algorithm == 0:
     Such procedure can be denoted as "pad=( +5, +5, +5, +5), crop=( +10, +10, +10, +10)".
     The value 5 is obtained by (58-48)/2=5, and the value 10 is obtained by 5*2=10, where 2 is the upsampling factor.
     Note that if pre_upscale is "True", the upsampling factor is always 1, regardless the value of "up_scale".
+    """
+
+
+    # advanced II: multi-GPU data parallelism
+
+    r"""
+    # only C++ version is available
+
+    # 2 GPUS
+    sr_args = dict(model_filename=r'waifu2x\upconv_7_anime_style_art_rgb\scale2.0x_model', 
+        device_id=(0, 1), block_w=128, block_h=128, 
+        up_scale=2, pad=(7,7,7,7))
+
+    # 2 Queues
+    sr_args = dict(model_filename=r'waifu2x\upconv_7_anime_style_art_rgb\scale2.0x_model', 
+        device_id=(0, 0), block_w=128, block_h=128, 
+        up_scale=2, pad=(7,7,7,7))
+
+    # 4 Queues 2 GPUs
+    sr_args = dict(model_filename=r'waifu2x\upconv_7_anime_style_art_rgb\scale2.0x_model', 
+        device_id=(0, 1, 0, 1), block_w=128, block_h=128, 
+        up_scale=2, pad=(7,7,7,7))
     """
 
 # VDSR
