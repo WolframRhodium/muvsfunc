@@ -4367,13 +4367,18 @@ def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, blo
         if is_rgb_model or not upscale_uv:
             w, h = clip.width, clip.height
 
-            if not use_plugins_padding and (pad[0]-crop[0]//up_scale > 0 or pad[1]-crop[1]//up_scale > 0 or pad[2]-crop[2]//up_scale > 0 or pad[3]-crop[3]//up_scale > 0):
-                clip = haf.Padding(clip, pad[0]-crop[0]//up_scale, pad[1]-crop[1]//up_scale, pad[2]-crop[2]//up_scale, pad[3]-crop[3]//up_scale)
+            if not use_plugins_padding and (pad[0]-crop[0]//up_scale > 0 or pad[1]-crop[1]//up_scale > 0 or 
+                pad[2]-crop[2]//up_scale > 0 or pad[3]-crop[3]//up_scale > 0):
+
+                clip = haf.Padding(clip, pad[0]-crop[0]//up_scale, pad[1]-crop[1]//up_scale, 
+                    pad[2]-crop[2]//up_scale, pad[3]-crop[3]//up_scale)
 
             super_res = core.mx.Predict(clip, symbol=symbol_filename, param=param_filename, 
-                patch_w=block_w+pad[0]+pad[1], patch_h=block_h+pad[2]+pad[3], scale=up_scale, output_w=block_w*up_scale+crop[0]+crop[1], output_h=block_h*up_scale+crop[2]+crop[3], 
+                patch_w=block_w+pad[0]+pad[1], patch_h=block_h+pad[2]+pad[3], scale=up_scale, 
+                output_w=block_w*up_scale+crop[0]+crop[1], output_h=block_h*up_scale+crop[2]+crop[3], 
                 frame_w=w*up_scale, frame_h=h*up_scale, step_w=block_w, step_h=block_h, 
-                outstep_w=block_w*up_scale, outstep_h=block_h*up_scale, padding=pad[0]-crop[0]//up_scale if use_plugins_padding else 0, 
+                outstep_w=block_w*up_scale, outstep_h=block_h*up_scale, 
+                padding=pad[0]-crop[0]//up_scale if use_plugins_padding else 0, 
                 ctx=2 if dev_id >= 0 else 1, dev_id=max(dev_id, 0))
 
         else: # Y model, YUV input that may have subsampling, need to upscale uv
@@ -4383,13 +4388,18 @@ def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, blo
             for i in range(num_planes):
                 w, h = yuv_list[i].width, yuv_list[i].height
 
-                if not use_plugins_padding and (pad[0]-crop[0]//up_scale > 0 or pad[1]-crop[1]//up_scale > 0 or pad[2]-crop[2]//up_scale > 0 or pad[3]-crop[3]//up_scale > 0):
-                    clip = haf.Padding(clip, pad[0]-crop[0]//up_scale, pad[1]-crop[1]//up_scale, pad[2]-crop[2]//up_scale, pad[3]-crop[3]//up_scale)
+                if not use_plugins_padding and (pad[0]-crop[0]//up_scale > 0 or pad[1]-crop[1]//up_scale > 0 or 
+                    pad[2]-crop[2]//up_scale > 0 or pad[3]-crop[3]//up_scale > 0):
+
+                    yuv_list[i] = haf.Padding(yuv_list[i], pad[0]-crop[0]//up_scale, pad[1]-crop[1]//up_scale, 
+                        pad[2]-crop[2]//up_scale, pad[3]-crop[3]//up_scale)
 
                 yuv_list[i] = core.mx.Predict(yuv_list[i], symbol=symbol_filename, param=param_filename, 
-                    patch_w=block_w+pad[0]+pad[1], patch_h=block_h+pad[2]+pad[3], scale=up_scale, output_w=block_w*up_scale+crop[0]+crop[1], output_h=block_h*up_scale+crop[2]+crop[3], 
+                    patch_w=block_w+pad[0]+pad[1], patch_h=block_h+pad[2]+pad[3], scale=up_scale, 
+                    output_w=block_w*up_scale+crop[0]+crop[1], output_h=block_h*up_scale+crop[2]+crop[3], # 0 == crop[0] == crop[2]
                     frame_w=w*up_scale, frame_h=h*up_scale, step_w=block_w, step_h=block_h, 
-                    outstep_w=block_w*up_scale, outstep_h=block_h*up_scale, padding=pad[0]-crop[0]//up_scale if use_plugins_padding else 0, 
+                    outstep_w=block_w*up_scale, outstep_h=block_h*up_scale, 
+                    padding=pad[0]-crop[0]//up_scale if use_plugins_padding else 0, 
                     ctx=2 if dev_id >= 0 else 1, dev_id=max(dev_id, 0))
 
             super_res = core.std.ShufflePlanes(yuv_list, [0] * num_planes, clip.format.color_family)
