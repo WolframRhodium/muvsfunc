@@ -3689,7 +3689,8 @@ def LocalStatistics(clip, radius=1, **depth_args):
     clip = mvf.Depth(clip, depth=32, sample=vs.FLOAT, **depth_args)
 
     mean = Expectation(clip)
-    var = Expectation(core.std.Expr([clip, mean], ['x y - dup *']))
+    squared = Expectation(core.std.Expr(clip, 'x dup *'))
+    var = core.std.Expr([squared, mean], 'x y dup * -')
 
     return clip, mean, var
 
