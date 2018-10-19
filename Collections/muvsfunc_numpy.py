@@ -1547,11 +1547,11 @@ def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, blo
             Default is True.
 
         pad: (list of four ints) Patch-wise padding before upscaling.
-            The four values indicate padding at left, right, top, bottom of each patch respectively.
+            The four values indicate padding at top, bottom, left, right of each patch respectively.
             Default is None.
 
         crop: (list of four ints) Patch-wise cropping after upscaling.
-            The four values indicate cropping at left, right, top, bottom of each patch respectively.
+            The four values indicate cropping at top, bottom, left, right of each patch respectively.
             Default is None.
 
         pre_upscale: (bool) Whether to upscale the image before feed to the network.
@@ -1601,7 +1601,9 @@ def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, blo
     # initialize internal parameters
     isGray = clip.format.color_family == vs.GRAY
     isRGB = clip.format.color_family == vs.RGB
-    block_size = (block_w, block_w if block_h is None else block_h)
+
+    if block_h is None:
+        block_h = block_w
 
     if resample_kernel is None:
         resample_kernel = 'Bicubic'
@@ -1610,9 +1612,10 @@ def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, blo
         resample_args = {}
 
     if pad is None:
-        pad_size = (0, 0)
+        pad_h = pad_w = 0
     else:
-        pad_size = (pad[0] + pad[1], pad[2] + pad[3])
+        pad_h = pad[0] + pad[1]
+        pad_w = pad[2] + pad[3]
 
     if pad_mode is None:
         pad_mode = 'symmetric'
@@ -1680,9 +1683,9 @@ def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, blo
         ctx = mx.gpu(device_id) if device_id >= 0 else mx.cpu()
         net = mx.mod.Module(symbol=sym, context=ctx)
         if data_format == 'NCHW':
-            data_shape = (1, 3 if is_rgb_model else 1, block_size[0] + pad_size[0], block_size[1] + pad_size[1])
+            data_shape = (1, 3 if is_rgb_model else 1, block_h + pad_h, block_w + pad_w)
         else: # data_format == 'NHWC':
-            data_shape = (1, block_size[0] + pad_size[0], block_size[1] + pad_size[1], 3 if is_rgb_model else 1)
+            data_shape = (1, block_h + pad_h, block_w + pad_w, 3 if is_rgb_model else 1)
         net.bind(for_training=False, data_shapes=[('data', data_shape)])
         net.set_params(arg_params, aux_params, allow_missing=False)
 
@@ -1707,12 +1710,12 @@ def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, blo
     if up_scale != 1:
         blank = core.std.BlankClip(clip, width=clip.width*up_scale, height=clip.height*up_scale)
         super_res = numpy_process([blank, clip], super_resolution_core, runner=runner, framework=framework,
-            input_per_plane=(not is_rgb_model), output_per_plane=(not is_rgb_model), up_scale=up_scale, block_size=block_size,
+            input_per_plane=(not is_rgb_model), output_per_plane=(not is_rgb_model), up_scale=up_scale, block_h=block_h, block_w=block_w,
             pad=pad, crop=crop, pad_mode=pad_mode, data_format=data_format, channels_last=data_format == 'NHWC',
             omit_first_clip=True)
     else:
         super_res = numpy_process(clip, super_resolution_core, runner=runner, framework=framework,
-            input_per_plane=(not is_rgb_model), output_per_plane=(not is_rgb_model), up_scale=1, block_size=block_size,
+            input_per_plane=(not is_rgb_model), output_per_plane=(not is_rgb_model), up_scale=1, block_h=block_h, block_w=block_w,
             pad=pad, crop=crop, pad_mode=pad_mode, data_format=data_format, channels_last=data_format == 'NHWC')
 
 
@@ -1740,7 +1743,7 @@ def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, blo
     return super_res
 
 
-def super_resolution_core(img, runner, up_scale=2, block_size=None, pad=None, crop=None, pad_mode=None, framework=None, data_format=None):
+def super_resolution_core(img, runner, up_scale=2, block_h=None, block_w=None, pad=None, crop=None, pad_mode=None, framework=None, data_format=None):
     """ Super resolution in Numpy
     Wrapper for super resolution methods.
     Args:
@@ -1795,12 +1798,12 @@ def super_resolution_core(img, runner, up_scale=2, block_size=None, pad=None, cr
         output_ = sess.graph.get_tensor_by_name('Output:0')
 
     # patch-wise processing
-    for i in range(math.ceil(h / block_size[0])):
-        for j in range(math.ceil(w / block_size[1])):
-            top = i * block_size[0]
-            bottom = min(h, (i + 1) * block_size[0])
-            left = j * block_size[1]
-            right = min(w, (j + 1) * block_size[1])
+    for i in range(math.ceil(h / block_h)):
+        for j in range(math.ceil(w / block_w)):
+            top = i * block_h
+            bottom = min(h, (i + 1) * block_h)
+            left = j * block_w
+            right = min(w, (j + 1) * block_w)
 
             if pad_mode.lower() == 'source' and pad is not None: # use "source" padding
 
@@ -1823,7 +1826,7 @@ def super_resolution_core(img, runner, up_scale=2, block_size=None, pad=None, cr
                         or (left - padded_left != pad[2]) or (padded_right - right != pad[3])):
 
                         pad_width = ((0, 0), (pad[0] - top + padded_top, pad[1] - padded_bottom + bottom), 
-                            (pad[2] - left + padded_left, pad[3] - padded_right + eright), (0, 0))
+                            (pad[2] - left + padded_left, pad[3] - padded_right + right), (0, 0))
                         h_in = np.pad(h_in, mode='symmetric', pad_width=pad_width)
 
             else: # use NumPy's padding

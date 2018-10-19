@@ -4178,7 +4178,7 @@ def RandomInterleave(clips, seed=None, rand_list=None):
 def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, block_h=None, is_rgb_model=True, pad=None, crop=None, 
     pre_upscale=False, upscale_uv=False, merge_source=False, use_fmtc=False, resample_kernel=None, resample_args=None, pad_mode=None, 
     framework=None, data_format=None, device_id=0, use_plugins_padding=False):
-    ''' Use MXNet to accelerated Image-Processing in VapourSynth using C++ interface
+    ''' Use MXNet to accelerate Image-Processing in VapourSynth using C++ interface
 
     Drop-in replacement of muvsfunc_numpy's counterpart using core.mx.Predict().
     The plugin can be downloaded from https://github.com/kice/vs_mxnet
@@ -4221,11 +4221,11 @@ def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, blo
             Default is True.
 
         pad: (list of four ints) Patch-wise padding before upscaling.
-            The four values indicate padding at left, right, top, bottom of each patch respectively.
+            The four values indicate padding at top, bottom, left, right of each patch respectively.
             Default is None.
 
         crop: (list of four ints) Patch-wise cropping after upscaling.
-            The four values indicate cropping at left, right, top, bottom of each patch respectively.
+            The four values indicate cropping at top, bottom, left, right of each patch respectively.
             Moreover, due to the implementation of vs_mxnet, the values at top and left should be zero.
             Default is None.
 
@@ -4277,21 +4277,17 @@ def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, blo
 
     funcName = 'super_resolution'
 
-    if not hasattr(core, 'mx'):
-        core.std.LoadPlugin(r'vs_mxnet.dll', altsearchpath=True)
-
     isGray = clip.format.color_family == vs.GRAY
     isRGB = clip.format.color_family == vs.RGB
-    block_size = (block_w, block_w if block_h is None else block_h)
 
     symbol_filename = model_filename + '-symbol.json'
     param_filename = model_filename + '-{:04d}.params'.format(epoch)
 
+    if block_h is None:
+        block_h = block_w
+
     if pad is None:
-        pad_size = (0, 0)
         pad = (0, 0, 0, 0)
-    else:
-        pad_size = (pad[0] + pad[1], pad[2] + pad[3])
 
     if crop is None:
         crop = (0, 0, 0, 0)
@@ -4313,6 +4309,11 @@ def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, blo
     framework = framework.lower()
     if framework.lower() != 'mxnet':
         raise ValueError(funcName + ': Only MXNet framework is supported! Please switch to muvsfunc_numpy\'s implementation.')
+    else:
+        import mxnet as mx
+
+        if not hasattr(core, 'mx'):
+            core.std.LoadPlugin(r'vs_mxnet.dll', altsearchpath=True)        
 
     if data_format is None:
         data_format = 'NCHW'
@@ -4371,12 +4372,12 @@ def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, blo
             if not use_plugins_padding and (pad[0]-crop[0]//up_scale > 0 or pad[1]-crop[1]//up_scale > 0 or 
                 pad[2]-crop[2]//up_scale > 0 or pad[3]-crop[3]//up_scale > 0):
 
-                clip = haf.Padding(clip, pad[0]-crop[0]//up_scale, pad[1]-crop[1]//up_scale, 
-                    pad[2]-crop[2]//up_scale, pad[3]-crop[3]//up_scale)
+                clip = haf.Padding(clip, pad[2]-crop[2]//up_scale, pad[3]-crop[3]//up_scale, 
+                    pad[0]-crop[0]//up_scale, pad[1]-crop[1]//up_scale)
 
             super_res = core.mx.Predict(clip, symbol=symbol_filename, param=param_filename, 
-                patch_w=block_w+pad[0]+pad[1], patch_h=block_h+pad[2]+pad[3], scale=up_scale, 
-                output_w=block_w*up_scale+crop[0]+crop[1], output_h=block_h*up_scale+crop[2]+crop[3], # crop[0] == crop[2] == 0
+                patch_w=block_w+pad[2]+pad[3], patch_h=block_h+pad[0]+pad[1], scale=up_scale, 
+                output_w=block_w*up_scale+crop[2]+crop[3], output_h=block_h*up_scale+crop[0]+crop[1], # crop[0] == crop[2] == 0
                 frame_w=w*up_scale, frame_h=h*up_scale, step_w=block_w, step_h=block_h, 
                 outstep_w=block_w*up_scale, outstep_h=block_h*up_scale, 
                 padding=pad[0]-crop[0]//up_scale if use_plugins_padding else 0, 
@@ -4392,12 +4393,12 @@ def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, blo
                 if not use_plugins_padding and (pad[0]-crop[0]//up_scale > 0 or pad[1]-crop[1]//up_scale > 0 or 
                     pad[2]-crop[2]//up_scale > 0 or pad[3]-crop[3]//up_scale > 0):
 
-                    yuv_list[i] = haf.Padding(yuv_list[i], pad[0]-crop[0]//up_scale, pad[1]-crop[1]//up_scale, 
-                        pad[2]-crop[2]//up_scale, pad[3]-crop[3]//up_scale)
+                    yuv_list[i] = haf.Padding(yuv_list[i], pad[2]-crop[2]//up_scale, pad[3]-crop[3]//up_scale, 
+                        pad[0]-crop[0]//up_scale, pad[1]-crop[1]//up_scale)
 
                 yuv_list[i] = core.mx.Predict(yuv_list[i], symbol=symbol_filename, param=param_filename, 
-                    patch_w=block_w+pad[0]+pad[1], patch_h=block_h+pad[2]+pad[3], scale=up_scale, 
-                    output_w=block_w*up_scale+crop[0]+crop[1], output_h=block_h*up_scale+crop[2]+crop[3], # crop[0] == crop[2] == 0
+                    patch_w=block_w+pad[2]+pad[3], patch_h=block_h+pad[0]+pad[1], scale=up_scale, 
+                    output_w=block_w*up_scale+crop[2]+crop[3], output_h=block_h*up_scale+crop[0]+crop[1], # crop[0] == crop[2] == 0
                     frame_w=w*up_scale, frame_h=h*up_scale, step_w=block_w, step_h=block_h, 
                     outstep_w=block_w*up_scale, outstep_h=block_h*up_scale, 
                     padding=pad[0]-crop[0]//up_scale if use_plugins_padding else 0, 
