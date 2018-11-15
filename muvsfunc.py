@@ -4166,8 +4166,9 @@ def RandomInterleave(clips, seed=None, rand_list=None):
             random.shuffle(tmp)
             rand_list += tmp
 
+    frames = [i for i in range(clips[0].num_frames) for j in range(length)]
     for i in range(length):
-        clips[i] = core.std.Interleave([clips[i]] * length)
+        clips[i] = core.std.DuplicateFrames(clips[i], frames=frames)
 
     def selector(n, f):
         return f[rand_list[n]]

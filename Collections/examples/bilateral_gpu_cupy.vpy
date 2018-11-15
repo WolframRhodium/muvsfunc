@@ -15,7 +15,7 @@ src = core.std.BlankClip(format=vs.GRAYS)
 sigmaS = 3.0
 sigmaR = 0.02
 # params of SNN (Statistical Nearest Neighbors) sampling strategiy
-# ref: I. Frosio, J. Kautz, Statistical Neareast Neighbors for Image Denoising, IEEE Trans. Image Processing, 2018.
+# ref: I. Frosio, J. Kautz, Statistical Nearest Neighbors for Image Denoising, IEEE Trans. Image Processing, 2019.
 sigma = 0 # 0.0003
 
 # other params
@@ -67,8 +67,8 @@ __global__ void bilateral(const float * __restrict__ src, float * __restrict__ d
     float sum1 = 0;
     float sum2 = 0;
 
-    for (int cy = MAX(y - HALF_KERNEL_SIZE, 0); cy <= MIN(y + HALF_KERNEL_SIZE, HEIGHT); ++cy)
-        for (int cx = MAX(x - HALF_KERNEL_SIZE, 0); cx <= MIN(x + HALF_KERNEL_SIZE, WIDTH); ++cx) {
+    for (int cy = MAX(y - HALF_KERNEL_SIZE, 0); cy <= MIN(y + HALF_KERNEL_SIZE, HEIGHT - 1); ++cy)
+        for (int cx = MAX(x - HALF_KERNEL_SIZE, 0); cx <= MIN(x + HALF_KERNEL_SIZE, WIDTH - 1); ++cx) {
             const float space = (x - cx) * (x - cx) + (y - cy) * (y - cy);
             
             const float value = src[cy * WIDTH + cx];
