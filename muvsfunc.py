@@ -3619,6 +3619,8 @@ def LocalStatisticsMatching(src, ref, radius=1, return_all=False, **depth_args):
 
     Match the local statistics (mean, variance) of "src" with "ref".
 
+    The idea is similar to "adaptive instance normalization" in deep learning literature.
+
     All the internal calculations are done at 32-bit float.
 
     Args:
@@ -4153,6 +4155,8 @@ def RandomInterleave(clips, seed=None, rand_list=None):
         raise TypeError(funcName + ': \"clips\" must be a list of clips!')
 
     length = len(clips)
+    if length == 1:
+        return cilps[0]
 
     if rand_list is None:
         import random
@@ -4166,14 +4170,16 @@ def RandomInterleave(clips, seed=None, rand_list=None):
             random.shuffle(tmp)
             rand_list += tmp
 
-    frames = [i for i in range(clips[0].num_frames) for j in range(length)]
+    frames = [i for i in range(clips[0].num_frames) for j in range(length - 1)]
     for i in range(length):
         clips[i] = core.std.DuplicateFrames(clips[i], frames=frames)
 
     def selector(n, f):
         return f[rand_list[n]]
 
-    return core.std.ModifyFrame(clips[0], clips=clips, selector=selector)
+    clip = core.std.ModifyFrame(clips[0], clips=clips, selector=selector)
+
+    return core.std.AssumeFPS(clip, fpsnum=clips[0].fps.numerator * length, fpsden=clips[0].fps.denominator)
 
 
 def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, block_h=None, is_rgb_model=True, pad=None, crop=None, 
