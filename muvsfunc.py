@@ -1648,14 +1648,14 @@ def firniture(clip, width, height, kernel='binomial7', taps=None, gamma=False, f
 
         fulld: (bool) Default is False.
             Same as fulls, but for output.
-        
+
         curve: (string) Default is '709'.
             Type of gamma mapping.
 
         sigmoid: (bool) Default is False.
             When True, applies a sigmoidal curve after the power-like curve (or before when converting from linear to gamma-corrected). 
             This helps reducing the dark halo artefacts around sharp edges caused by resizing in linear luminance.
-        
+
         resample_args: (dict) Additional parameters passed to core.fmtc.resample in the form of keyword arguments.
 
     Examples:
@@ -2064,7 +2064,7 @@ def SeeSaw(clp, denoised=None, NRlimit=2, NRlimit2=None, Sstr=1.5, Slimit=None, 
 
         diff: (bool) When True, limit the sharp-difference instead of the sharpened clip.
                      Relative limiting is more safe, less aliasing, but also less sharpening.
-                     
+
     Usage: (in Avisynth)
         a = TheNoisySource
         b = a.YourPreferredDenoising()
@@ -2144,10 +2144,10 @@ def SeeSaw(clp, denoised=None, NRlimit=2, NRlimit2=None, Sstr=1.5, Slimit=None, 
     else:
         last = core.rgvs.Repair(_SeeSaw_sharpen2(tame.resize.Lanczos(xss, yss), Sstr, Spower, Szp, SdampLo, SdampHi, Smode, diff), 
             head.resize.Bicubic(xss, yss, filter_param_a=-0.2, filter_param_b=0.6), [1]).resize.Lanczos(ox, oy)
-        
+
     if diff:
         last = core.std.MergeDiff(tame, last)
-        
+
     last = _SeeSaw_SootheSS(last, tame, sootheT, sootheS)
     sharpdiff = core.std.MakeDiff(tame, last)
 
@@ -2215,7 +2215,7 @@ def _SeeSaw_sharpen2(clp, strength, power, zp, lodmp, hidmp, rg, diff):
         method = clp.rgvs.RemoveGrain([rg] if isGray else [rg, 0])
 
     sharpdiff = core.std.MakeDiff(clp, method, [0]).std.Lut(function=get_lut1, planes=[0])
-    
+
     return sharpdiff if diff else core.std.MergeDiff(clp, sharpdiff, [0])
 
 
@@ -3548,7 +3548,7 @@ def SSIM_downsample(clip, w, h, smooth=1, kernel=None, use_fmtc=False, gamma=Fal
 
         fulld: (bool) Default is False.
             Same as fulls, but for output.
-        
+
         curve: (string) Default is '709'.
             Type of gamma mapping.
 
@@ -3588,7 +3588,7 @@ def SSIM_downsample(clip, w, h, smooth=1, kernel=None, use_fmtc=False, gamma=Fal
 
     if gamma:
         clip = nnrs.GammaToLinear(mvf.Depth(clip, 16), fulls=fulls, fulld=fulld, curve=curve, sigmoid=sigmoid, planes=[0])
-    
+
     clip = mvf.Depth(clip, depth=32, sample=vs.FLOAT, **depth_args)
 
     if use_fmtc:
@@ -4185,7 +4185,7 @@ def RandomInterleave(clips, seed=None, rand_list=None):
 def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, block_h=None, is_rgb_model=True, pad=None, crop=None, 
     pre_upscale=False, upscale_uv=False, merge_source=False, use_fmtc=False, resample_kernel=None, resample_args=None, pad_mode=None, 
     framework=None, data_format=None, device_id=0, use_plugins_padding=False):
-    ''' Use MXNet to accelerate Image-Processing in VapourSynth using C++ interface
+    '''Use MXNet to accelerate Image-Processing in VapourSynth using C++ interface
 
     Drop-in replacement of muvsfunc_numpy's counterpart using core.mx.Predict().
     The plugin can be downloaded from https://github.com/kice/vs_mxnet
@@ -4320,7 +4320,7 @@ def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, blo
         import mxnet as mx
 
         if not hasattr(core, 'mx'):
-            core.std.LoadPlugin(r'vs_mxnet.dll', altsearchpath=True)        
+            core.std.LoadPlugin(r'vs_mxnet.dll', altsearchpath=True)
 
     if data_format is None:
         data_format = 'NCHW'

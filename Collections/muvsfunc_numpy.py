@@ -1051,7 +1051,6 @@ def BNNMDenoise_core(input_2D, block_size=8, lamda=0.01, copy=False):
     return output_2D
 
 
-
 def FGS(clip, ref=None, sigma=0.03, lamda=100, solver_iteration=3, solver_attenuation=4, **depth_args):
     """Fast Global Smoothing in VapourSynth
 
@@ -1505,7 +1504,7 @@ def SigmaFilter_core(img_2D, radius=3, thr=0.01):
 def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, block_h=None, is_rgb_model=True, pad=None, crop=None, 
     pre_upscale=False, upscale_uv=False, merge_source=False, use_fmtc=False, resample_kernel=None, resample_args=None, pad_mode=None, 
     framework=None, data_format=None, device_id=0, use_plugins_padding=None):
-    """ Use MXNet to accelerated Image-Processing in VapourSynth using Python interface
+    """Use MXNet to accelerated Image-Processing in VapourSynth using Python interface
 
     Wrapper function for super resolution algorithms.
     See muvsfunc's counterpart for implementation using core.mx.Predict()
@@ -1681,7 +1680,7 @@ def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, blo
         # load MXNet model
         sym, arg_params, aux_params = mx.model.load_checkpoint(model_filename, epoch)
         ctx = mx.gpu(device_id) if device_id >= 0 else mx.cpu()
-        net = mx.mod.Module(symbol=sym, context=ctx)
+        net = mx.mod.Module(symbol=sym, data_names=['data'], label_names=None, context=ctx)
         if data_format == 'NCHW':
             data_shape = (1, 3 if is_rgb_model else 1, block_h + pad_h, block_w + pad_w)
         else: # data_format == 'NHWC':

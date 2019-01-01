@@ -11,6 +11,7 @@ Miscellaneous functions:
     BernsteinFilter
     GPA
     XDoG
+    sbr_detail
 """
 
 import functools
@@ -320,7 +321,7 @@ def GPA(clip, sigmaS=3, sigmaR=0.15, mode=0, iteration=0, eps=1e-3, **depth_args
     A small value of "sigmaR" may lead to presicion problem.
 
     All the internal calculations are done at 32-bit float.
-    
+
     Part of description of bilateral filter is copied from
     https://github.com/HomeOfVapourSynthEvolution/VapourSynth-Bilateral
 
@@ -375,7 +376,7 @@ def GPA(clip, sigmaS=3, sigmaR=0.15, mode=0, iteration=0, eps=1e-3, **depth_args
                     N -= (N * math.log(N) - p * N - q) / (math.log(N) + 1 - p)
 
             return math.ceil(N)
-    
+
     T = 0.5
     bits = clip.format.bits_per_sample
     sampleType = clip.format.sample_type
@@ -445,3 +446,65 @@ def XDoG(clip, sigma=1.0, k=1.6, p=20, epsilon=0.7, lamda=0.01):
     f2 = core.tcanny.TCanny(clip, sigma=sigma * k, mode=-1)
 
     return core.std.Expr([f1, f2], f'x y - {p} * x + {epsilon} >= 1 2 2 2 x y - {p} * x + {epsilon} - {lamda} * * exp 1 + / - ? {peak} *')
+
+
+def sbr_detail(clip, r=1, planes=None, mode=1):
+    """sbr() inspired detail detection algorithm
+
+    Code is modified from sbr() in https://github.com/HomeOfVapourSynthEvolution/havsfunc/blob/master/havsfunc.py.
+
+    args:
+        clip: RGB/YUV/Gray, 8..16 bit integer, 16..32 bit float.
+
+        r: (int) Radius in pixels of the smoothing filter.
+            Default is 1.
+
+        planes: (int []) Whether to process the corresponding plane.
+            By default, every plane will be processed.
+            The unprocessed planes will be copied from "input".
+
+        mode: (int, 0~2) Detail detection method, insensitive to sensitive.
+            The result of mode 2 is a combination os mode 1 and mode 2.
+            Default is 1.
+    """
+
+    funcName = 'sbr_detail'
+
+    if not isinstance(clip, vs.VideoNode):
+        raise TypeError(funcName + ': This is not a clip')
+
+    if planes is None:
+        planes = list(range(clip.format.num_planes))
+    elif isinstance(planes, int):
+        planes = [planes]
+
+    if clip.format.sample_type == vs.INTEGER:
+        neutral = 1 << (clip.format.bits_per_sample - 1)
+        peak = (1 << clip.format.bits_per_sample) - 1
+    else: # clip.format.sample_type == vs.FLOAT
+        neutral = 0.5
+        peak = 1.0
+
+    matrix1 = [1, 2, 1, 2, 4, 2, 1, 2, 1] # RemoveGrain(11)
+    matrix2 = [1, 1, 1, 1, 1, 1, 1, 1, 1] # RemoveGrain(20)
+
+    RG11 = core.std.Convolution(clip, matrix=matrix1, planes=planes)
+    for i in range(r - 1):
+        RG11 = core.std.Convolution(RG11, matrix=matrix2, planes=planes)
+
+    RG11D = core.std.MakeDiff(clip, RG11, planes=planes)
+
+    RG11DS = core.std.Convolution(RG11D, matrix=matrix1, planes=planes)
+    for i in range(r - 1):
+        RG11DS = core.std.Convolution(RG11DS, matrix=matrix2, planes=planes)
+
+    if mode == 0:
+        expr = f'x y - x {neutral} - * 0 < {peak} 0 ?'
+    elif mode == 1:
+        expr = f'x y - abs x {neutral} - abs < {peak} 0 ?'
+    elif mode == 2:
+        expr = f'x y - x {neutral} - * 0 < x y - abs x {neutral} - abs < or {peak} 0 ?'
+
+    detail_mask = core.std.Expr([RG11D, RG11DS], [expr if i in planes else '' for i in range(clip.format.num_planes)])
+
+    return detail_mask
