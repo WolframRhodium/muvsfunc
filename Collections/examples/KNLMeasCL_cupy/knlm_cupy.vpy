@@ -28,7 +28,7 @@ ocl_r = 3 # number of processed pixel for work-item
 
 # pre-processing
 if src.format.id != vs.GRAYS:
-    raise TypeError('Only 32-bit grayscale input is supported!')
+    raise TypeError('Only 32-bit float grayscale input is supported!')
 
 # CUDA kernel execution configuration
 dst_block = (32, 32, 1) # used by 'nlmDistance'
@@ -37,7 +37,7 @@ vrt_block = (ocl_x, ocl_y, 1) # used by 'nlmVertical'
 work_block = (32, 32, 1) # used by 'nlmAccumulation' and 'nlmFinish'
 
 # load CUDA kernel
-with open('kernel.cu', 'r') as f:
+with open('knlm.cu', 'r') as f:
     kernel_source_code = f.read()
 
 kernel_source_code = Template(kernel_source_code)
@@ -75,9 +75,9 @@ def nlm_core(h_img, a, nlmDistance, nlmHorizontal, nlmVertical, nlmAccumulation,
                 nlmAccumulation(((w + work_block[0] - 1) // work_block[0], (h + work_block[1] - 1) // work_block[1]), work_block, (U1a, U2a, U2b, U4a, U5, i, j))
 
     nlmFinish(((w + work_block[0] - 1) // work_block[0], (h + work_block[1] - 1) // work_block[1]), work_block, (U1a, U1z, U2a, U2b, U5))
-    
+
     h_out = cp.asnumpy(U1z)
-    
+
     return h_out
 
 
