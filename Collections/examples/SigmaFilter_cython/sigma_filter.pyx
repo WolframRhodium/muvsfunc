@@ -19,8 +19,8 @@ cpdef void sigma_filter(
     cdef float center, val, acc
     cdef int count, x, y, i, j
 
-    for y in range(src.shape[0]):
-        for x in range(src.shape[1]):
+    for y in range(height):
+        for x in range(width):
             center = src[y, x]
 
             acc = 0.
