@@ -42,7 +42,7 @@ def sigma_filter_core(h_img):
 
     d_out = cp.empty_like(d_img)
 
-    kernel((w//blksize[0], h//blksize[1]), blksize, (d_img, d_out))
+    kernel(((w + blksize[0] - 1)//blksize[0], (h + blksize[1] - 1)//blksize[1]), blksize, (d_img, d_out))
 
     h_out = cp.asnumpy(d_out)
 
