@@ -1,3 +1,14 @@
+# super resolution using OpenCV
+# note: the input image to the network is not cropped, which might triggers out-of-memory error.
+
+import os
+
+# Set OpenCL device in format `<Platform>:<CPU|GPU|ACCELERATOR|nothing=GPU/CPU>:<DeviceName or ID>`
+# examples: 'AMD:GPU:', ':GPU:1', 'Intel:CPU:', 
+# https://github.com/opencv/opencv/wiki/OpenCL-optimizations#opencv-opencl-configuration-options
+os.environ['OPENCV_OPENCL_DEVICE'] = 'NVIDIA:GPU:' # use GPU to accelerate processing
+
+
 import vapoursynth as vs
 import cv2
 import mvsfunc as mvf
@@ -5,15 +16,18 @@ import muvsfunc_numpy as mufnp
 
 core = vs.get_core()
 
-# super resolution using OpenCV
-
 
 # global params
-src = core.std.BlankClip(width=720, height=480, length=1000, format=vs.RGBS) # can be RGB/YUV/GRAY
+src = core.std.BlankClip(width=640, height=360, length=1000, format=vs.RGBS) # can be RGB/YUV/GRAY
 sr_algorithm = 0 # 0: waifu2x, 1: IDN, 2: TSCN, 3: VDSR, 4: DBPN (faster to slower)
-backend = cv2.dnn.DNN_BACKEND_DEFAULT
-target = cv2.dnn.DNN_TARGET_CPU
-# target = cv2.dnn.DNN_TARGET_OPENCL # only works on Intel GPU before OpenCV 3.4.2
+
+if 'GPU' in os.environ['OPENCV_OPENCL_DEVICE']:
+    if cv2.ocl.haveOpenCL() and cv2.ocl.useOpenCL():
+        backend = cv2.dnn.DNN_BACKEND_OPENCV
+        target = cv2.dnn.DNN_TARGET_OPENCL # available on NVIDIA GPU since OpenCV 4.0.1, but only works on Intel GPU before OpenCV 3.4.2
+    else:
+        backend = cv.dnn.DNN_BACKEND_DEFAULT
+        target = cv2.dnn.DNN_TARGET_CPU
 
 
 # params of the algos
