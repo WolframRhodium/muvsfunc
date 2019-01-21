@@ -25,7 +25,7 @@ if src.format.id != vs.GRAYS:
 blksize = (16, 8, 1)
 
 # load CUDA kernel
-with open("sigma_filter.cu", 'r') as f:
+with open('sigma_filter.cu', 'r') as f:
     kernel_source_code = f.read()
 
 kernel_source_code = Template(kernel_source_code)
