@@ -4124,6 +4124,17 @@ def YAHRmod(clp, blur=2, depth=32, **limit_filter_args):
     DD2 = core.std.MakeDiff(b1D, DD)
     last = core.std.MakeDiff(clp, DD2)
 
+    """
+    it's also possible to place the LimitFilter() here, e.g.
+
+    last = mvf.LimitFilter(clp, last, **limit_filter_args)
+
+    To achieve a similar amount of filtering, one should decrease "thr" in the later case.
+
+    The difference between the two is usually marginal, and the later case looks more versatile.
+    However, it seems to me that the former looks better in most cases.
+    """
+
     if clp_orig is not None:
         return core.std.ShufflePlanes([last, clp_orig], planes=[0, 1, 2], colorfamily=clp_orig.format.color_family)
     else:
