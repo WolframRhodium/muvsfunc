@@ -12,6 +12,7 @@ Miscellaneous functions:
     GPA
     XDoG
     sbr_detail
+    fade
 """
 
 import functools
@@ -508,3 +509,58 @@ def sbr_detail(clip, r=1, planes=None, mode=1):
     detail_mask = core.std.Expr([RG11D, RG11DS], [expr if i in planes else '' for i in range(clip.format.num_planes)])
 
     return detail_mask
+
+
+def fade(clip, start=0, end=None, mode='in', base=None):
+    """Fade-in/out effect implementation
+
+    args:
+        clip: RGB/YUV/Gray, 8..16 bit integer, 16..32 bit float.
+
+        start: (int) Frame number of started frame.
+            Default is 0.
+
+        end: (int) Frame number of ended frame.
+            Default points to the last frame.
+
+        mode: ("in" or "out") Fade mode.
+            Default is "in".
+
+        base: (clip) Base clip of fade effect.
+            Default is black picture.
+    """
+
+    funcName = 'fade'
+
+    if not isinstance(clip, vs.VideoNode):
+        raise TypeError(funcName + ': This is not a clip')
+
+    if end is None:
+        end = clip.num_frames - 1
+
+    def fade_core(n, clip, start=None, end=None, mode=None, base=None):
+        if n < start or n > end or end - start <= 0:
+            return clip
+        else:
+            length = end - start
+
+            if mode == 'in':
+                i = (n - start) / length
+            elif mode == 'out':
+                i = (end - n) / length
+            else:
+                raise ValueError('Unknown fading mode.')
+    
+            if base is None:
+                y_expr = 'x {} *'.format(i)
+
+                if clip.format.color_family != vs.YUV or clip.format.sample_type == vs.FLOAT:
+                    return core.std.Expr([clip], [y_expr])
+                else:
+                    neutral = 1 << (clip.format.bits_per_sample - 1)
+                    uv_expr = 'x {} * {} +'.format(i, (1 - i) * neutral)
+                    return core.std.Expr([clip], [y_expr, uv_expr])
+            else:
+                return core.std.Expr([clip, base], ['x {} * y {} * +'.format(i, 1 - i)])
+
+    return core.std.FrameEval(clip, functools.partial(fade_core, clip=clip, start=start, end=end, mode=mode, base=base))
