@@ -50,6 +50,7 @@ Functions:
     YAHRmod
     RandomInterleave
     super_resolution
+    MDSI
 '''
 
 import functools
@@ -4457,3 +4458,105 @@ def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, blo
         super_res = core.std.Expr([super_res, low_res], ['x y +'])
 
     return super_res
+
+
+def MDSI(clip1, clip2, down_scale=2):
+    """Mean Deviation Similarity Index
+    MDSI is a full reference IQA model that utilize gradient similarity (GS), chromaticity similarity (CS), and deviation pooling (DP). 
+
+    The lowerer the MDSI score, the higher the image perceptual quality.
+    Larger MDSI values indicate to the more severe distorted images, while an image with perfect quality is assessed by a quality score of zero.
+
+    The distortion degree of the distorted image will be stored as frame property 'FrameMDSI' in the output clip.
+
+    Note that bilinear downsampling is used in this implementation, as opposed to the original paper.
+    Matrix used by rgb2gray() from MATLAB (similar to BT.601 matrix) is used for computation of luma component.
+
+    Args:
+        clip1: The first clip to be evaluated, will be copied to output.
+
+        clip2: The second clip, to be compared with the first one.
+
+        down_scale: (int) Factor of downsampling before quality assessment.
+            Default is 2.
+
+    Ref: 
+        [1] Nafchi, H. Z., Shahkolaei, A., Hedjam, R., & Cheriet, M. (2016). 
+            Mean deviation similarity index: Efficient and reliable full-reference image quality evaluator. 
+            IEEE Access, 4, 5579-5590.
+    """
+
+    funcName = 'MDSI'
+
+    if not isinstance(clip1, vs.VideoNode) or clip1.format.color_family != vs.RGB:
+        raise TypeError(funcName + ': \"clip1\" must be an RGB clip!')
+    if not isinstance(clip2, vs.VideoNode) or clip2.format.color_family != vs.RGB:
+        raise TypeError(funcName + ': \"clip2\" must be an RGB clip!')
+
+    if clip1.width != clip2.width or clip1.height != clip2.height:
+        raise ValueError(funcName + ': \"clip1\" and \"clip2\" must be of the same width and height!')
+
+    c1 = 140 / 255
+    c2 = 55 / 255
+    c3 = 550 / 255
+
+    down1 = core.resize.Bilinear(clip1, clip1.width // down_scale, clip1.height // down_scale, format=vs.RGBS)
+    down2 = core.resize.Bilinear(clip2, clip2.width // down_scale, clip2.height // down_scale, format=vs.RGBS)
+
+    r1, g1, b1 = [mvf.GetPlane(down1, i) for i in range(3)]
+    r2, g2, b2 = [mvf.GetPlane(down2, i) for i in range(3)]
+
+    # luminance
+    l1 = core.std.Expr([r1, g1, b1], ['x 0.2989 * y 0.5870 * + z 0.1140 * +'])
+    l2 = core.std.Expr([r2, g2, b2], ['x 0.2989 * y 0.5870 * + z 0.1140 * +'])
+    f = core.std.Merge(l1, l2, 0.5) # fusion
+
+    # gradient magnitudes
+    ix_l1 = core.std.Convolution(l1, [1, 0, -1, 1, 0, -1, 1, 0, -1])
+    iy_l1 = core.std.Convolution(l1, [1, 1, 1, 0, 0, 0, -1, -1, -1])
+    g_r = core.std.Expr([ix_l1, iy_l1], ['x dup * y dup * + sqrt'])
+
+    ix_l2 = core.std.Convolution(l2, [1, 0, -1, 1, 0, -1, 1, 0, -1])
+    iy_l2 = core.std.Convolution(l2, [1, 1, 1, 0, 0, 0, -1, -1, -1])
+    g_d = core.std.Expr([ix_l2, iy_l2], ['x dup * y dup * + sqrt'])
+
+    ix_f = core.std.Convolution(f, [1, 0, -1, 1, 0, -1, 1, 0, -1])
+    iy_f = core.std.Convolution(f, [1, 1, 1, 0, 0, 0, -1, -1, -1])
+    g_f = core.std.Expr([ix_f, iy_f], ['x dup * y dup * + sqrt'])
+
+    # gradient similarity
+    gs12 = core.std.Expr([g_r, g_d], ['x y * 2 * {0} + x dup * y dup * + {0} + /'.format(c1)])
+    gs13 = core.std.Expr([g_r, g_f], ['x y * 2 * {0} + x dup * y dup * + {0} + /'.format(c2)])
+    gs23 = core.std.Expr([g_d, g_f], ['x y * 2 * {0} + x dup * y dup * + {0} + /'.format(c2)])
+    gs_hvs = core.std.Expr([gs12, gs13, gs23], ['x y + z -']) # HVS-based gradient similarity
+
+    # opponent color space
+    h1 = core.std.Expr([r1, g1, b1], ['x 0.30 * y 0.04 * + z 0.35 * -'])
+    h2 = core.std.Expr([r2, g2, b2], ['x 0.30 * y 0.04 * + z 0.35 * -'])
+    m1 = core.std.Expr([r1, g1, b1], ['x 0.34 * y 0.60 * - z 0.17 * +'])
+    m2 = core.std.Expr([r2, g2, b2], ['x 0.34 * y 0.60 * - z 0.17 * +'])
+
+    # chromaticity similrity
+    cs = core.std.Expr([h1, h2, m1, m2], ['x y * z a * + 2 * {0} + x dup * y dup * + z dup * + a dup * + {0} + /'.format(c3)])
+
+    # gradient-chromaticity
+    alpha = 0.6
+    gcs = core.std.Expr([gs_hvs, cs], ['x {} * y {} * + 0.25 pow'.format(alpha, 1-alpha)])
+
+    # The following code is modified from mvf.PlaneStatistics()
+    mean_gcs = mvf.PlaneAverage(gcs, 0, "PlaneMean")
+
+    def _PlaneADFrame(n, f, clip):
+        mean = f.props['PlaneMean']
+        expr = "x {mean} - abs".format(mean=mean)
+        return core.std.Expr(clip, expr)
+    ADclip = core.std.FrameEval(gcs, functools.partial(_PlaneADFrame, clip=gcs), mean_gcs)
+    ADclip = mvf.PlaneAverage(ADclip, 0, "PlaneMAD")
+
+    def _FrameMDSITransfer(n, f):
+        fout = f[0].copy()
+        fout.props.FrameMDSI = f[1].props.PlaneMAD ** 0.25
+        return fout
+    clip1 = core.std.ModifyFrame(clip1, [clip1, ADclip], selector=_FrameMDSITransfer)
+
+    return clip1
