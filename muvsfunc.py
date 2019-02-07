@@ -4496,9 +4496,9 @@ def MDSI(clip1, clip2, down_scale=2):
     if clip1.width != clip2.width or clip1.height != clip2.height:
         raise ValueError(funcName + ': \"clip1\" and \"clip2\" must be of the same width and height!')
 
-    c1 = 140 / 255
-    c2 = 55 / 255
-    c3 = 550 / 255
+    c1 = 140 / (255 ** 2)
+    c2 = 55 / (255 ** 2)
+    c3 = 550 / (255 ** 2)
 
     down1 = core.resize.Bilinear(clip1, clip1.width // down_scale, clip1.height // down_scale, format=vs.RGBS)
     down2 = core.resize.Bilinear(clip2, clip2.width // down_scale, clip2.height // down_scale, format=vs.RGBS)
@@ -4555,7 +4555,7 @@ def MDSI(clip1, clip2, down_scale=2):
 
     def _FrameMDSITransfer(n, f):
         fout = f[0].copy()
-        fout.props.FrameMDSI = f[1].props.PlaneMAD ** 0.25
+        fout.props['FrameMDSI'] = f[1].props['PlaneMAD'] ** 0.25
         return fout
     clip1 = core.std.ModifyFrame(clip1, [clip1, ADclip], selector=_FrameMDSITransfer)
 

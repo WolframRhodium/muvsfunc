@@ -72,7 +72,7 @@ __device__ __forceinline__ float lambda(const float dist)
     else if (LAMBDA == 1.0f)
         return dist;
 
-    return __powf(dist, LAMBDA);
+    return powf(dist, LAMBDA);
 }
 
 //-------------------------------------------------------------------

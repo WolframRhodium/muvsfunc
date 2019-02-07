@@ -29,14 +29,14 @@ __global__ void bilateral(const float * __restrict__ src, float * __restrict__ d
         return;
 
     const float center = src[y * WIDTH + x];
-    
+
     float sum1 = 0;
     float sum2 = 0;
 
     for (int cy = MAX(y - HALF_KERNEL_SIZE, 0); cy <= MIN(y + HALF_KERNEL_SIZE, HEIGHT - 1); ++cy)
         for (int cx = MAX(x - HALF_KERNEL_SIZE, 0); cx <= MIN(x + HALF_KERNEL_SIZE, WIDTH - 1); ++cx) {
             const float space = (x - cx) * (x - cx) + (y - cy) * (y - cy);
-            
+
             const float value = src[cy * WIDTH + cx];
 
 #if SNN

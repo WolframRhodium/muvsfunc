@@ -42,15 +42,18 @@ kernel_source_code = kernel_source_code.substitute(
 
 if fast:
     pass1 = cp.RawKernel(code=kernel_source_code, name='super_xbr_pass1', 
-        options=('--use_fast_math', ))
+        options=('--use_fast_math', '--std=c++11'))
     pass2 = cp.RawKernel(code=kernel_source_code, name='super_xbr_pass2', 
-        options=('--use_fast_math', ))
+        options=('--use_fast_math', '--std=c++11'))
     pass3 = cp.RawKernel(code=kernel_source_code, name='super_xbr_pass3', 
-        options=('--use_fast_math', ))
+        options=('--use_fast_math', '--std=c++11'))
 else:
-    pass1 = cp.RawKernel(code=kernel_source_code, name='super_xbr_pass1')
-    pass2 = cp.RawKernel(code=kernel_source_code, name='super_xbr_pass2')
-    pass3 = cp.RawKernel(code=kernel_source_code, name='super_xbr_pass3')
+    pass1 = cp.RawKernel(code=kernel_source_code, name='super_xbr_pass1', 
+        options=('--std=c++11', ))
+    pass2 = cp.RawKernel(code=kernel_source_code, name='super_xbr_pass2', 
+        options=('--std=c++11', ))
+    pass3 = cp.RawKernel(code=kernel_source_code, name='super_xbr_pass3', 
+        options=('--std=c++11', ))
 
 
 # create NumPy function

@@ -120,7 +120,7 @@ __global__ void super_xbr_pass1(const float3 * __restrict__ src, float3 * __rest
     dst[((y * 2 + 1) * OWIDTH) + (x * 2)] = src[y * IWIDTH + x];
 
     // init
-    const float wp[6] = { 2.0f, 1.0f, -1.0f, 4.0f, -1.0f, 1.0f };
+    constexpr float wp[6] = { 2.0f, 1.0f, -1.0f, 4.0f, -1.0f, 1.0f };
 
     float3 rgb_data[4][4];
     float y_data[4][4];
@@ -175,7 +175,7 @@ __global__ void super_xbr_pass2(const float3 * __restrict__ src, float3 * __rest
     dst[((y * 2 + 1) * OWIDTH) + (x * 2 + 1)] = src[((y * 2 + 1) * OWIDTH) + (x * 2 + 1)];
 
     // init
-    const float wp[6] = { 2.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
+    constexpr float wp[6] = { 2.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
 
     float3 rgb_data[4][4];
     float y_data[4][4];
@@ -263,7 +263,7 @@ __global__ void super_xbr_pass3(const float3 * __restrict__ src, float3 * __rest
         return;
 
     // init
-    const float wp[6] = { 2.0f, 1.0f, -1.0f, 4.0f, -1.0f, 1.0f };
+    constexpr float wp[6] = { 2.0f, 1.0f, -1.0f, 4.0f, -1.0f, 1.0f };
 
     float3 rgb_data[4][4];
     float y_data[4][4];

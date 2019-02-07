@@ -105,16 +105,16 @@ void nlmVertical(const float * __restrict__ U4b, float * __restrict__ U4a) {
 
 #if NLM_WMODE == 0
         // #if defined(NLM_WMODE_WELSCH)
-        const float val = __expf(-sum * NLM_H2_INV_NORM);
+        const float val = expf(-sum * NLM_H2_INV_NORM);
 #elif NLM_WMODE == 1
         // #if defined(NLM_WMODE_BISQUARE_A)
         const float val = fdimf(1.0f, sum * NLM_H2_INV_NORM);
 #elif NLM_WMODE == 2
         // #if defined(NLM_WMODE_BISQUARE_B)
-        const float val = __powf(fdimf(1.0f, sum * NLM_H2_INV_NORM), 2.0f);
+        const float val = powf(fdimf(1.0f, sum * NLM_H2_INV_NORM), 2.0f);
 #elif NLM_WMODE == 3
         // #if defined(NLM_WMODE_BISQUARE_C)
-        const float val = __powf(fdimf(1.0f, sum * NLM_H2_INV_NORM), 8.0f);
+        const float val = powf(fdimf(1.0f, sum * NLM_H2_INV_NORM), 8.0f);
 #endif
 
         U4a[(y + i * VRT_BLOCK_Y) * VI_DIM_X + x] = val; // (y + i * VRT_BLOCK_Y) >= 0

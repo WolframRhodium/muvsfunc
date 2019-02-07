@@ -16,6 +16,10 @@ src = core.std.BlankClip(format=vs.GRAYS)
 radius = 3
 thr = 0.01
 
+# whether to enable '--use_fast_math' in NVRTC runtime compilation
+# to make use of fast math operations
+fast = False
+
 
 # pre-processing
 if src.format.id != vs.GRAYS:
@@ -32,8 +36,11 @@ kernel_source_code = Template(kernel_source_code)
 kernel_source_code = kernel_source_code.substitute(
     width=src.width, height=src.height, radius=radius, threshold=thr)
 
-kernel = cp.RawKernel(kernel_source_code, 'sigmaFilter')
-
+if fast:
+    kernel = cp.RawKernel(kernel_source_code, 'sigmaFilter', 
+        options=('--use_fast_math', ))
+else:
+    kernel = cp.RawKernel(kernel_source_code, 'sigmaFilter')
 
 # create NumPy function
 def sigma_filter_core(h_img):

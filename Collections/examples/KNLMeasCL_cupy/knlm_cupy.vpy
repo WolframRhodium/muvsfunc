@@ -25,6 +25,10 @@ ocl_x = 16 # local work group width of the separable convolution kernel
 ocl_y = 8 # local work group height of the separable convolution kernel
 ocl_r = 3 # number of processed pixel for work-item
 
+# whether to enable '--use_fast_math' in NVRTC runtime compilation
+# to make use of fast math operations
+fast = False
+
 
 # pre-processing
 if src.format.id != vs.GRAYS:
@@ -46,11 +50,23 @@ kernel_source_code = kernel_source_code.substitute(
     hrz_block_x=ocl_x, hrz_block_y=ocl_y, hrz_result=ocl_r, 
     vrt_block_x=ocl_x, vrt_block_y=ocl_y, vrt_result=ocl_r)
 
-nlmDistance = cp.RawKernel(kernel_source_code, 'nlmDistance')
-nlmHorizontal = cp.RawKernel(kernel_source_code, 'nlmHorizontal')
-nlmVertical = cp.RawKernel(kernel_source_code, 'nlmVertical')
-nlmAccumulation = cp.RawKernel(kernel_source_code, 'nlmAccumulation')
-nlmFinish = cp.RawKernel(kernel_source_code, 'nlmFinish')
+if fast:
+    nlmDistance = cp.RawKernel(kernel_source_code, 'nlmDistance', 
+        options=('--use_fast_math', ))
+    nlmHorizontal = cp.RawKernel(kernel_source_code, 'nlmHorizontal', 
+        options=('--use_fast_math', ))
+    nlmVertical = cp.RawKernel(kernel_source_code, 'nlmVertical', 
+        options=('--use_fast_math', ))
+    nlmAccumulation = cp.RawKernel(kernel_source_code, 'nlmAccumulation', 
+        options=('--use_fast_math', ))
+    nlmFinish = cp.RawKernel(kernel_source_code, 'nlmFinish', 
+        options=('--use_fast_math', ))
+else:
+    nlmDistance = cp.RawKernel(kernel_source_code, 'nlmDistance')
+    nlmHorizontal = cp.RawKernel(kernel_source_code, 'nlmHorizontal')
+    nlmVertical = cp.RawKernel(kernel_source_code, 'nlmVertical')
+    nlmAccumulation = cp.RawKernel(kernel_source_code, 'nlmAccumulation')
+    nlmFinish = cp.RawKernel(kernel_source_code, 'nlmFinish')
 
 
 # create NumPy function

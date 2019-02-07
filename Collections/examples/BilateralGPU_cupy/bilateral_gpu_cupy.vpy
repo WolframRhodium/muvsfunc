@@ -22,6 +22,10 @@ sigma = 0 # 0.0003
 half_kernel_size = round(sigmaS * 2)
 blksize = (32, 8) # dimensions of the CUDA thread block
 
+# whether to enable '--use_fast_math' in NVRTC runtime compilation
+# to make use of fast math operations
+fast = False
+
 # pre-processing
 snn = int(sigma > 0) # whether to use SNN sampling strategy
 
@@ -39,7 +43,12 @@ kernel_source_code = kernel_source_code.substitute(
     width=w, height=h, sigma_s=-0.5/(sigmaS**2), sigma_r=-0.5/(sigmaR**2), 
     sigma=sigma, snn=snn, half_kernel_size=half_kernel_size)
 
-kernel = cp.RawKernel(kernel_source_code, 'bilateral')
+
+if fast:
+    kernel = cp.RawKernel(kernel_source_code, 'bilateral', 
+        options=('--use_fast_math', ))
+else:
+    kernel = cp.RawKernel(kernel_source_code, 'bilateral')
 
 # create NumPy function
 def bilateral_core(h_img, kernel):
@@ -47,7 +56,7 @@ def bilateral_core(h_img, kernel):
 
     d_img = cp.asarray(h_img)
     d_out = cp.empty_like(d_img)
-    
+
     kernel(((w + blksize[0] - 1)//blksize[0], (h + blksize[1] - 1)//blksize[1]), blksize, (d_img, d_out))
 
     h_out = cp.asnumpy(d_out)
