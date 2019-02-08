@@ -4500,8 +4500,10 @@ def MDSI(clip1, clip2, down_scale=2):
     c2 = 55 / (255 ** 2)
     c3 = 550 / (255 ** 2)
 
-    down1 = core.resize.Bilinear(clip1, clip1.width // down_scale, clip1.height // down_scale, format=vs.RGBS)
-    down2 = core.resize.Bilinear(clip2, clip2.width // down_scale, clip2.height // down_scale, format=vs.RGBS)
+    if down_scale > 1 or clip1.format.sample_type != vs.FLOAT:
+        down1 = core.resize.Bilinear(clip1, clip1.width // down_scale, clip1.height // down_scale, format=vs.RGBS)
+    if down_scale > 1 or clip2.format.sample_type != vs.FLOAT:
+        down2 = core.resize.Bilinear(clip2, clip2.width // down_scale, clip2.height // down_scale, format=vs.RGBS)
 
     r1, g1, b1 = [mvf.GetPlane(down1, i) for i in range(3)]
     r2, g2, b2 = [mvf.GetPlane(down2, i) for i in range(3)]
