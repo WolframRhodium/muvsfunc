@@ -4484,6 +4484,7 @@ def MDSI(clip1, clip2, down_scale=2):
         [1] Nafchi, H. Z., Shahkolaei, A., Hedjam, R., & Cheriet, M. (2016). 
             Mean deviation similarity index: Efficient and reliable full-reference image quality evaluator. 
             IEEE Access, 4, 5579-5590.
+        [2] https://ww2.mathworks.cn/matlabcentral/fileexchange/59809-mdsi-ref-dist-combmethod
     """
 
     funcName = 'MDSI'
@@ -4502,8 +4503,13 @@ def MDSI(clip1, clip2, down_scale=2):
 
     if down_scale > 1 or clip1.format.sample_type != vs.FLOAT:
         down1 = core.resize.Bilinear(clip1, clip1.width // down_scale, clip1.height // down_scale, format=vs.RGBS)
+    else:
+        down1 = clip1
+
     if down_scale > 1 or clip2.format.sample_type != vs.FLOAT:
         down2 = core.resize.Bilinear(clip2, clip2.width // down_scale, clip2.height // down_scale, format=vs.RGBS)
+    else:
+        down2 = clip2
 
     r1, g1, b1 = [mvf.GetPlane(down1, i) for i in range(3)]
     r2, g2, b2 = [mvf.GetPlane(down2, i) for i in range(3)]
