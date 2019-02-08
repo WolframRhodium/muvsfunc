@@ -66,13 +66,16 @@ void nlmHorizontal(const float * __restrict__ U4a, float * __restrict__ U4b) {
     const int x = (blockIdx.x * HRZ_RESULT - 1) * HRZ_BLOCK_X + threadIdx.x;
     const int y = blockIdx.y * blockDim.y + threadIdx.y;
 
+#if __CUDACC_VER_MAJOR__ >= 9 // CUDA 9.0 or later
+    // Handle to thread block group
+    cg::thread_block cta = cg::this_thread_block();
+#endif
+
     for (int i = 0; i <= 1 + HRZ_RESULT; i++)
         buffer[threadIdx.y][threadIdx.x + i * HRZ_BLOCK_X] = 
             U4a[y * VI_DIM_X + CLAMPX(x + i * HRZ_BLOCK_X)];
 
 #if __CUDACC_VER_MAJOR__ >= 9 // CUDA 9.0 or later
-        // Handle to thread block group
-        cg::thread_block cta = cg::this_thread_block();
         cta.sync();
 #else
         __syncthreads();
@@ -99,13 +102,16 @@ void nlmVertical(const float * __restrict__ U4b, float * __restrict__ U4a) {
     const int x = blockIdx.x * blockDim.x + threadIdx.x;
     const int y = (blockIdx.y * VRT_RESULT - 1) * VRT_BLOCK_Y + threadIdx.y;
 
+#if __CUDACC_VER_MAJOR__ >= 9 // CUDA 9.0 or later
+    // Handle to thread block group
+    cg::thread_block cta = cg::this_thread_block();
+#endif
+
     for (int i = 0; i <= 1 + VRT_RESULT; i++)
         buffer[threadIdx.x][threadIdx.y + i * VRT_BLOCK_Y] = 
             U4b[CLAMPY(y + i * VRT_BLOCK_Y) * VI_DIM_X + x];
 
 #if __CUDACC_VER_MAJOR__ >= 9 // CUDA 9.0 or later
-        // Handle to thread block group
-        cg::thread_block cta = cg::this_thread_block();
         cta.sync();
 #else
         __syncthreads();
