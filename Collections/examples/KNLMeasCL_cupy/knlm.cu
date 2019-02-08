@@ -31,6 +31,11 @@
 #define CLAMPX(x) (MIN(MAX(x, 0), VI_DIM_X - 1))
 #define CLAMPY(y) (MIN(MAX(y, 0), VI_DIM_Y - 1))
 
+#if __CUDACC_VER_MAJOR__ >= 9 // CUDA 9.0 or later
+    #include <cooperative_groups.h>
+    namespace cg = cooperative_groups;
+#endif
+
 extern "C" __global__
 void nlmDistance(const float * __restrict__ U1, float * __restrict__ U4a, 
     const int qx, const int qy) {
@@ -65,7 +70,13 @@ void nlmHorizontal(const float * __restrict__ U4a, float * __restrict__ U4b) {
         buffer[threadIdx.y][threadIdx.x + i * HRZ_BLOCK_X] = 
             U4a[y * VI_DIM_X + CLAMPX(x + i * HRZ_BLOCK_X)];
 
-    __syncthreads();
+#if __CUDACC_VER_MAJOR__ >= 9 // CUDA 9.0 or later
+        // Handle to thread block group
+        cg::thread_block cta = cg::this_thread_block();
+        cta.sync();
+#else
+        __syncthreads();
+#endif
 
     for (int i = 1; i <= HRZ_RESULT; i++) {
         if ((x + i * HRZ_BLOCK_X >= VI_DIM_X) || y >= VI_DIM_Y) 
@@ -92,7 +103,13 @@ void nlmVertical(const float * __restrict__ U4b, float * __restrict__ U4a) {
         buffer[threadIdx.x][threadIdx.y + i * VRT_BLOCK_Y] = 
             U4b[CLAMPY(y + i * VRT_BLOCK_Y) * VI_DIM_X + x];
 
-   __syncthreads();
+#if __CUDACC_VER_MAJOR__ >= 9 // CUDA 9.0 or later
+        // Handle to thread block group
+        cg::thread_block cta = cg::this_thread_block();
+        cta.sync();
+#else
+        __syncthreads();
+#endif
 
    for (int i = 1; i <= HRZ_RESULT; i++) {
        if (x >= VI_DIM_X || (y + i * VRT_BLOCK_Y) >= VI_DIM_Y) 
