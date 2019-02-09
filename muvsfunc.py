@@ -4460,8 +4460,9 @@ def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, blo
     return super_res
 
 
-def MDSI(clip1, clip2, down_scale=2):
-    """Mean Deviation Similarity Index
+def MDSI(clip1, clip2, down_scale=1):
+    """Mean Deviation Similarity Index Calculator
+
     MDSI is a full reference IQA model that utilize gradient similarity (GS), chromaticity similarity (CS), and deviation pooling (DP). 
 
     The lowerer the MDSI score, the higher the image perceptual quality.
@@ -4469,7 +4470,8 @@ def MDSI(clip1, clip2, down_scale=2):
 
     The distortion degree of the distorted image will be stored as frame property 'FrameMDSI' in the output clip.
 
-    Note that bilinear downsampling is used in this implementation, as opposed to the original paper.
+    Note that bilinear downsampling is used in this implementation (but disabled by default), as opposed to the original paper.
+    The gradient-chromaticity similarity map is saturated before deviation pooling, as described in II.D.
     Matrix used by rgb2gray() from MATLAB (similar to BT.601 matrix) is used for computation of luma component.
 
     Args:
@@ -4478,7 +4480,7 @@ def MDSI(clip1, clip2, down_scale=2):
         clip2: The second clip, to be compared with the first one.
 
         down_scale: (int) Factor of downsampling before quality assessment.
-            Default is 2.
+            Default is 1.
 
     Ref: 
         [1] Nafchi, H. Z., Shahkolaei, A., Hedjam, R., & Cheriet, M. (2016). 
@@ -4549,7 +4551,7 @@ def MDSI(clip1, clip2, down_scale=2):
 
     # gradient-chromaticity
     alpha = 0.6
-    gcs = core.std.Expr([gs_hvs, cs], ['x {} * y {} * + 0.25 pow'.format(alpha, 1-alpha)])
+    gcs = core.std.Expr([gs_hvs, cs], ['x {} * y {} * + 0 max 1 min 0.25 pow'.format(alpha, 1-alpha)]) # clamp to [0.0, 1.0] before deviation pooling
 
     # The following code is modified from mvf.PlaneStatistics()
     mean_gcs = mvf.PlaneAverage(gcs, 0, "PlaneMean")
