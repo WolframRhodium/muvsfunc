@@ -1928,7 +1928,7 @@ def gaussian_core(img, sigma_h=1.5, sigma_v=None):
     img = img.astype(np.float32)
 
     freq_img = dctn(img, type=2, norm='ortho')
-    
+
     freq_img *= freq_gaussian(h, sigma_v, w, sigma_h, freq_img.dtype) # dtype == float32
 
     dst = idctn(freq_img, type=2, norm='ortho')
@@ -1944,4 +1944,4 @@ def freq_gaussian(h, sigma_v, w, sigma_h, dtype=None):
     weight_v = ((-0.5 * np.pi**2 * sigma_v**2 / (h ** 2)) * np.square(np.arange(h, dtype='uint32'))).reshape((-1, 1)).astype(dtype)
     weight_h = ((-0.5 * np.pi**2 * sigma_h**2 / (w ** 2)) * np.square(np.arange(w, dtype='uint32'))).reshape((1, -1)).astype(dtype)
 
-    return np.exp(weight_v + weight_h)
+    return np.exp(weight_v) * np.exp(weight_h)
