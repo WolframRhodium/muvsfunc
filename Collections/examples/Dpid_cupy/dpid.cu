@@ -109,10 +109,10 @@ __device__ __forceinline__ float4 __shfl_down(const float4 var, const unsigned i
     float4 output;
 
 #if __CUDACC_VER_MAJOR__ >= 9 // CUDA 9.0 or later
-    output.x = __shfl_down_sync(0xFFFFFFFF, var.x, srcLane, width);
-    output.y = __shfl_down_sync(0xFFFFFFFF, var.y, srcLane, width);
-    output.z = __shfl_down_sync(0xFFFFFFFF, var.z, srcLane, width);
-    output.w = __shfl_down_sync(0xFFFFFFFF, var.w, srcLane, width);
+    output.x = __shfl_down_sync(0xFFFFFFFFU, var.x, srcLane, width);
+    output.y = __shfl_down_sync(0xFFFFFFFFU, var.y, srcLane, width);
+    output.z = __shfl_down_sync(0xFFFFFFFFU, var.z, srcLane, width);
+    output.w = __shfl_down_sync(0xFFFFFFFFU, var.w, srcLane, width);
 #else
     output.x = __shfl_down(var.x, srcLane, width);
     output.y = __shfl_down(var.y, srcLane, width);

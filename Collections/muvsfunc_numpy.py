@@ -12,6 +12,7 @@ VapourSynth functions:
     SSFDeband
     SigmaFilter
     super_resolution (backend: MXNet/TensorFlow)
+    gaussian
 
 NumPy functions:
     L0Smooth_core
@@ -25,6 +26,7 @@ NumPy functions:
     SSFDeband_core
     SigmaFilter_core
     super_resolution_core (backend: MXNet/TensorFlow)
+    gaussian_core
 """
 
 import functools
@@ -33,6 +35,7 @@ import vapoursynth as vs
 from vapoursynth import core
 import mvsfunc as mvf
 import numpy as np
+from scipy.fftpack import dctn, idctn
 
 def numpy_process(clips, numpy_function, input_per_plane=True, output_per_plane=True, lock_source_array=True, omit_first_clip=False, channels_last=True, **fun_args):
     """Helper function for filtering clip in NumPy
@@ -1872,3 +1875,73 @@ def super_resolution_core(img, runner, up_scale=2, block_h=None, block_w=None, p
         super_res = pred.squeeze(axis=0)
 
     return super_res
+
+
+def gaussian(clip, sigma=1.5, sigma_v=None, float64=False):
+    """DCT-based gaussian convolution
+
+    Args:
+        clip: Input clip.
+
+        sigma_h: (float) Standard deviation of horizontal gaussian blur.
+            Default is 1.5.
+
+        sigma_v: (float) Standard deviation of vertical gaussian blur.
+            Default is the same as "sigma_h".
+
+    """
+
+    funcName = 'gaussian'
+
+    if not isinstance(clip, vs.VideoNode):
+        raise TypeError(funcName + ': \"clip\" must be a clip!')
+
+    if sigma_v is None:
+        sigma_v = sigma
+
+    clip = numpy_process(clip, gaussian_core, sigma_h=sigma, sigma_v=sigma_v, 
+        input_per_plane=True, output_per_plane=True)
+
+    return clip
+
+
+def gaussian_core(img, sigma_h=1.5, sigma_v=None):
+    """DCT-based gaussian convolution
+
+    Args: 
+        img: 2-D NumPy array.
+
+        sigma_h: (float) Standard deviation of horizontal gaussian blur.
+            Default is 1.5.
+
+        sigma_v: (float) Standard deviation of vertical gaussian blur.
+            Default is the same as "sigma_h".
+
+    """
+
+    assert img.ndim == 2
+
+    if sigma_v is None:
+        sigma_v = sigma
+
+    h, w = img.shape
+    img = img.astype(np.float32)
+
+    freq_img = dctn(img, type=2, norm='ortho')
+    
+    freq_img *= freq_gaussian(h, sigma_v, w, sigma_h, freq_img.dtype) # dtype == float32
+
+    dst = idctn(freq_img, type=2, norm='ortho')
+
+    return dst
+
+
+@functools.lru_cache(maxsize=16)
+def freq_gaussian(h, sigma_v, w, sigma_h, dtype=None):
+    """Helper function for gaussian_core()
+    """
+
+    weight_v = ((-0.5 * np.pi**2 * sigma_v**2 / (h ** 2)) * np.square(np.arange(h, dtype='uint32'))).reshape((-1, 1)).astype(dtype)
+    weight_h = ((-0.5 * np.pi**2 * sigma_h**2 / (w ** 2)) * np.square(np.arange(w, dtype='uint32'))).reshape((1, -1)).astype(dtype)
+
+    return np.exp(weight_v + weight_h)

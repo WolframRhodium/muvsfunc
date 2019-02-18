@@ -40,10 +40,10 @@ __global__ void bilateral(const float * __restrict__ src, float * __restrict__ d
             const float value = src[cy * WIDTH + cx];
 
 #if SNN
-            const float weight = __expf(space * SIGMA_S + 
+            const float weight = expf(space * SIGMA_S + 
                 fabsf((value - center) * (value - center) - SIGMA) * SIGMA_R);
 #else
-            const float weight = __expf(space * SIGMA_S + (value - center) * (value - center) * SIGMA_R);
+            const float weight = expf(space * SIGMA_S + (value - center) * (value - center) * SIGMA_R);
 #endif
 
             sum1 += weight * value;
