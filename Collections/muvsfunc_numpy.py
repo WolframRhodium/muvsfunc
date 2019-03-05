@@ -1877,7 +1877,7 @@ def super_resolution_core(img, runner, up_scale=2, block_h=None, block_w=None, p
     return super_res
 
 
-def gaussian(clip, sigma=1.5, sigma_v=None, float64=False):
+def gaussian(clip, sigma=1.5, sigma_v=None):
     """DCT-based gaussian convolution
 
     Args:

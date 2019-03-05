@@ -75,7 +75,7 @@ def LDMerge(flt_h, flt_v, src, mrad=0, show=0, planes=None, convknl=1, conv_div=
         planes: (int []) Whether to process the corresponding plane. By default, every plane will be processed.
             The unprocessed planes will be copied from the first clip, "flt_h".
 
-        convknl: (0 or 1) Convolution kernel used to generate gradient direction map. 
+        convknl: (0 or 1) Convolution kernel used to generate gradient direction map.
             0: Seconde order center difference in one direction and average in perpendicular direction
             1: First order center difference in one direction and weighted average in perpendicular direction.
             Default is 1.
@@ -447,7 +447,7 @@ def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=
 
     Notes:
         1. In this function I try to keep the original look of GradFun3 in Avisynth.
-            It should be better to use Frechdachs's GradFun3 in his fvsfunc.py 
+            It should be better to use Frechdachs's GradFun3 in his fvsfunc.py
             (https://github.com/Irrational-Encoding-Wizardry/fvsfunc) which is more novel and powerful.
 
     Removed parameters list:
@@ -694,7 +694,7 @@ def AnimeMask(input, shift=0, expr=None, mode=1, **resample_args):
 
         expr: (string) Subsequent processing in std.Expr(). Default is "".
 
-        mode: (-1 or 1) Type of the kernel, which simply inverts the pixel values and "shift". 
+        mode: (-1 or 1) Type of the kernel, which simply inverts the pixel values and "shift".
             Typically, -1 is for edge, 1 is for ringing. Default is 1.
 
         resample_args: (dict) Additional parameters passed to core.resize in the form of dict.
@@ -1629,23 +1629,23 @@ def firniture(clip, width, height, kernel='binomial7', taps=None, gamma=False, f
         width, height: (int) New picture width and height in pixels.
 
         kernel: (string) Default is "binomial7".
-            "binomial5", "binomial7": A binomial windowed sinc filter with 5 or 7 taps. 
+            "binomial5", "binomial7": A binomial windowed sinc filter with 5 or 7 taps.
                 Should have the least ringing of any available interpolator, except perhaps "noaliasnoring4".
-            "maxflat5", "maxflat8": 5 or 8 tap interpolation that is maximally flat in the passband. 
+            "maxflat5", "maxflat8": 5 or 8 tap interpolation that is maximally flat in the passband.
                 In English, these filters have a sharp and relatively neutral look, but can have ringing and aliasing problems.
-            "noalias4": A 4 tap filter hand designed to be free of aliasing while having acceptable ringing and blurring characteristics. 
+            "noalias4": A 4 tap filter hand designed to be free of aliasing while having acceptable ringing and blurring characteristics.
                 Not always a good choice, but sometimes very useful.
             "noaliasnoring4": Derived from the "noalias4" kernel, but modified to have reduced ringing. Other attributes are slightly worse.
 
         taps: (int) Default is the last num in "kernel".
-            "taps" in fmtc.resample. This parameter is now mostly superfluous. 
+            "taps" in fmtc.resample. This parameter is now mostly superfluous.
             It has been retained so that you can truncate the kernels to shorter taps then they would normally use.
 
         gamma: (bool) Default is False.
             Set to true to turn on gamma correction for the y channel.
 
         fulls: (bool) Default is False.
-            Specifies if the luma is limited range (False) or full range (True) 
+            Specifies if the luma is limited range (False) or full range (True)
 
         fulld: (bool) Default is False.
             Same as fulls, but for output.
@@ -1654,7 +1654,7 @@ def firniture(clip, width, height, kernel='binomial7', taps=None, gamma=False, f
             Type of gamma mapping.
 
         sigmoid: (bool) Default is False.
-            When True, applies a sigmoidal curve after the power-like curve (or before when converting from linear to gamma-corrected). 
+            When True, applies a sigmoidal curve after the power-like curve (or before when converting from linear to gamma-corrected).
             This helps reducing the dark halo artefacts around sharp edges caused by resizing in linear luminance.
 
         resample_args: (dict) Additional parameters passed to core.fmtc.resample in the form of keyword arguments.
@@ -1712,7 +1712,7 @@ def BoxFilter(input, radius=16, radius_v=None, planes=None, fmtc_conv=0, radius_
     Args:
         input: Input clip to be filtered.
 
-        radius, radius_v: (int) Size of the averaged square. The size is (radius*2-1) * (radius*2-1). 
+        radius, radius_v: (int) Size of the averaged square. The size is (radius*2-1) * (radius*2-1).
             If "radius_v" is None, it will be set to "radius".
             Default is 16.
 
@@ -1721,7 +1721,7 @@ def BoxFilter(input, radius=16, radius_v=None, planes=None, fmtc_conv=0, radius_
 
         fmtc_conv: (0~2) Whether to use fmtc.resample for convolution.
             It's recommended to input clip without chroma subsampling when using fmtc.resample, otherwise the output may be incorrect.
-            0: False. 1: True (except both "radius" and "radius_v" is strictly smaller than 4). 
+            0: False. 1: True (except both "radius" and "radius_v" is strictly smaller than 4).
                 2: Auto, determined by radius_thr (exclusive).
             Default is 0.
 
@@ -1825,7 +1825,7 @@ def BoxFilter(input, radius=16, radius_v=None, planes=None, fmtc_conv=0, radius_
 def SmoothGrad(input, radius=9, thr=0.25, ref=None, elast=3.0, planes=None, **limit_filter_args):
     '''Avisynth's SmoothGrad
 
-    SmoothGrad smooths the low gradients or flat areas of a 16-bit clip. 
+    SmoothGrad smooths the low gradients or flat areas of a 16-bit clip.
     It proceeds by applying a huge blur filter and comparing the result with the input data for each pixel.
     If the difference is below the specified threshold, the filtered version is taken into account, 
         otherwise the input pixel remains unchanged.
@@ -1882,7 +1882,7 @@ def DeFilter(input, fun, iter=10, planes=None, **fun_args):
         fun_args: (dict) Additional arguments passed to "fun" in the form of keyword arguments. Alternative to functools.partial.
 
     Ref:
-        [1] Tao, X., Zhou, C., Shen, X., Wang, J., & Jia, J. (2017, October). Zero-Order Reverse Filtering. 
+        [1] Tao, X., Zhou, C., Shen, X., Wang, J., & Jia, J. (2017, October). Zero-Order Reverse Filtering.
             In Computer Vision (ICCV), 2017 IEEE International Conference on (pp. 222-230). IEEE.
         [2] https://github.com/jiangsutx/DeFilter
         [3] Milanfar, P. (2018). Rendition: Reclaiming what a black box takes away. arXiv preprint arXiv:1804.08651.
@@ -2953,13 +2953,13 @@ def GuidedFilter(input, guidance=None, radius=4, regulation=0.01, regulation_mod
             Default is {}.
 
     Ref:
-        [1] He, K., Sun, J., & Tang, X. (2013). Guided image filtering. 
+        [1] He, K., Sun, J., & Tang, X. (2013). Guided image filtering.
             IEEE transactions on pattern analysis and machine intelligence, 35(6), 1397-1409.
         [2] He, K., & Sun, J. (2015). Fast guided filter. arXiv preprint arXiv:1505.00996.
         [3] http://kaiminghe.com/eccv10/index.html
-        [4] Li, Z., Zheng, J., Zhu, Z., Yao, W., & Wu, S. (2015). Weighted guided image filtering. 
+        [4] Li, Z., Zheng, J., Zhu, Z., Yao, W., & Wu, S. (2015). Weighted guided image filtering.
             IEEE Transactions on Image Processing, 24(1), 120-129.
-        [5] Kou, F., Chen, W., Wen, C., & Li, Z. (2015). Gradient domain guided image filtering. 
+        [5] Kou, F., Chen, W., Wen, C., & Li, Z. (2015). Gradient domain guided image filtering.
             IEEE Transactions on Image Processing, 24(11), 4528-4539.
         [6] http://koufei.weebly.com/
 
@@ -3298,7 +3298,7 @@ def GMSD(clip1, clip2, plane=None, downsample=True, c=0.0026, show_map=False, **
             Default is {}.
 
     Ref:
-        [1] Xue, W., Zhang, L., Mou, X., & Bovik, A. C. (2014). Gradient magnitude similarity deviation: 
+        [1] Xue, W., Zhang, L., Mou, X., & Bovik, A. C. (2014). Gradient magnitude similarity deviation:
             A highly efficient perceptual image quality index. IEEE Transactions on Image Processing, 23(2), 684-695.
         [2] http://www4.comp.polyu.edu.hk/~cslzhang/IQA/GMSD/GMSD.htm.
 
@@ -3490,6 +3490,7 @@ def SSIM(clip1, clip2, plane=None, downsample=True, k1=0.01, k2=0.03, fun=None, 
         fout = f[0].copy()
         fout.props['PlaneSSIM'] = f[1].props['PlaneStatsAverage']
         return fout
+
     output_clip = ssim_map if show_map else clip1_src
     output_clip = core.std.ModifyFrame(output_clip, [output_clip, map_mean], selector=_PlaneSSIMTransfer)
 
@@ -3545,7 +3546,7 @@ def SSIM_downsample(clip, w, h, smooth=1, kernel=None, use_fmtc=False, gamma=Fal
             Set to true to turn on gamma correction for the y channel.
 
         fulls: (bool) Default is False.
-            Specifies if the luma is limited range (False) or full range (True) 
+            Specifies if the luma is limited range (False) or full range (True)
 
         fulld: (bool) Default is False.
             Same as fulls, but for output.
@@ -3554,7 +3555,7 @@ def SSIM_downsample(clip, w, h, smooth=1, kernel=None, use_fmtc=False, gamma=Fal
             Type of gamma mapping.
 
         sigmoid: (bool) Default is False.
-            When True, applies a sigmoidal curve after the power-like curve (or before when converting from linear to gamma-corrected). 
+            When True, applies a sigmoidal curve after the power-like curve (or before when converting from linear to gamma-corrected).
             This helps reducing the dark halo artefacts around sharp edges caused by resizing in linear luminance.
 
         resample_args: (dict) Additional arguments passed to vszimg/fmtconv in the form of keyword arguments.
@@ -4283,7 +4284,7 @@ def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, blo
 
         data_format: INVALID. Please switch to muvsfunc_numpy's implementation.
 
-        device_id: (int or list of ints) Which device(s) to use. 
+        device_id: (int or list of ints) Which device(s) to use.
             Starting with 0. If it is smaller than 0, CPU will be used.
             It can be a list of integers, indicating devices for multi-GPU data parallelism.
             Default is 0.
@@ -4460,10 +4461,10 @@ def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, blo
     return super_res
 
 
-def MDSI(clip1, clip2, down_scale=1):
+def MDSI(clip1, clip2, down_scale=1, alpha=0.6, show_maps=False):
     """Mean Deviation Similarity Index Calculator
 
-    MDSI is a full reference IQA model that utilize gradient similarity (GS), chromaticity similarity (CS), and deviation pooling (DP). 
+    MDSI is a full reference IQA model that utilize gradient similarity (GS), chromaticity similarity (CS), and deviation pooling (DP).
 
     The lowerer the MDSI score, the higher the image perceptual quality.
     Larger MDSI values indicate to the more severe distorted images, while an image with perfect quality is assessed by a quality score of zero.
@@ -4482,9 +4483,20 @@ def MDSI(clip1, clip2, down_scale=1):
         down_scale: (int) Factor of downsampling before quality assessment.
             Default is 1.
 
-    Ref: 
-        [1] Nafchi, H. Z., Shahkolaei, A., Hedjam, R., & Cheriet, M. (2016). 
-            Mean deviation similarity index: Efficient and reliable full-reference image quality evaluator. 
+        alpha: (float, 0~1) Weight used to merge gradient similarity (GS) map and chromaticity similarity (CS) map.
+            Default is 0.6.
+
+        show_maps: (bool) Whether to return gradient similarity (GS), chromaticity similarity (CS) and GCS (linear combination of CS and GCS) maps in GRAYS.
+            If it is true, a tuple containing (clip1, gs, cs, gcs) clips will be returned.
+            Example:
+                src, gs, cs, gcs = MDSI(clip1=src, clip2=ref, show_maps=True)
+
+            If not, only "clip1" will be returned.
+            Default is False.
+
+    Ref:
+        [1] Nafchi, H. Z., Shahkolaei, A., Hedjam, R., & Cheriet, M. (2016).
+            Mean deviation similarity index: Efficient and reliable full-reference image quality evaluator.
             IEEE Access, 4, 5579-5590.
         [2] https://ww2.mathworks.cn/matlabcentral/fileexchange/59809-mdsi-ref-dist-combmethod
     """
@@ -4546,11 +4558,10 @@ def MDSI(clip1, clip2, down_scale=1):
     m1 = core.std.Expr([r1, g1, b1], ['x 0.34 * y 0.60 * - z 0.17 * +'])
     m2 = core.std.Expr([r2, g2, b2], ['x 0.34 * y 0.60 * - z 0.17 * +'])
 
-    # chromaticity similrity
+    # chromaticity similarity
     cs = core.std.Expr([h1, h2, m1, m2], ['x y * z a * + 2 * {0} + x dup * y dup * + z dup * + a dup * + {0} + /'.format(c3)])
 
     # gradient-chromaticity
-    alpha = 0.6
     gcs = core.std.Expr([gs_hvs, cs], ['x {} * y {} * + 0 max 1 min 0.25 pow'.format(alpha, 1-alpha)]) # clamp to [0.0, 1.0] before deviation pooling
 
     # The following code is modified from mvf.PlaneStatistics()
@@ -4569,4 +4580,7 @@ def MDSI(clip1, clip2, down_scale=1):
         return fout
     clip1 = core.std.ModifyFrame(clip1, [clip1, ADclip], selector=_FrameMDSITransfer)
 
-    return clip1
+    if show_maps:
+        return clip1, gs_hvs, cs, gcs
+    else:
+        return clip1
