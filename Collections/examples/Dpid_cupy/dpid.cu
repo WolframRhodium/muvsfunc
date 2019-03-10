@@ -21,7 +21,6 @@
 #define OHEIGHT (${oheight})
 #define PWIDTH ((float) (${pwidth}))
 #define PHEIGHT ((float) (${pheight}))
-#define PIXEL_MAX ((float) ${pixel_max})
 
 #define SX (fmaxf(PX * PWIDTH, 0.0f))
 #define EX (fminf((PX + 1) * PWIDTH, IWIDTH))
@@ -140,7 +139,8 @@ __device__ __forceinline__ float distance(const float4& avg, const ${dtype}3& co
     const float y = avg.y - color.y;
     const float z = avg.z - color.z;
 
-    return sqrtf((x * x + y * y + z * z) / 3.0f) / PIXEL_MAX; // L2-Norm / sqrt(255^2 * 3)
+    return sqrtf(x * x + y * y + z * z);
+    // return sqrtf((x * x + y * y + z * z) / 3.0f) / PIXEL_MAX; // L2-Norm / sqrt(255^2 * 3)
 }
 
 //-------------------------------------------------------------------

@@ -30,15 +30,12 @@ if src.format.color_family != vs.RGB:
 
 if src.format.sample_type == vs.FLOAT:
     dtype = 'float'
-    pixel_max = 1
 
 elif src.format.bits_per_sample == 8:
     dtype = 'uchar'
-    pixel_max = 255 # (1 << 8) - 1
 
 else:
     dtype = 'ushort'
-    pixel_max = (1 << src.format.bits_per_sample) - 1
 
 
 # load CUDA kernel
@@ -49,7 +46,7 @@ kernel_source_code = Template(kernel_source_code)
 kernel_source_code = kernel_source_code.substitute(
     iwidth=src.width, iheight=src.height, owidth=width, oheight=height,
     pwidth=src.width / width, pheight=src.height / height, lamda=_lambda, 
-    pixel_max=pixel_max, dtype=dtype)
+    dtype=dtype)
 
 
 if fast:
