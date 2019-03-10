@@ -35,7 +35,6 @@ import vapoursynth as vs
 from vapoursynth import core
 import mvsfunc as mvf
 import numpy as np
-from scipy.fftpack import dctn, idctn
 
 def numpy_process(clips, numpy_function, input_per_plane=True, output_per_plane=True, lock_source_array=True, omit_first_clip=False, channels_last=True, **fun_args):
     """Helper function for filtering clip in NumPy
@@ -1920,6 +1919,8 @@ def gaussian_core(img, sigma_h=1.5, sigma_v=None):
     """
 
     assert img.ndim == 2
+
+    from scipy.fftpack import dctn, idctn
 
     if sigma_v is None:
         sigma_v = sigma
