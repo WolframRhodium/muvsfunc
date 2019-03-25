@@ -4612,7 +4612,7 @@ def MaskedLimitFilter(flt, src, ref=None, thr=1.0, elast=2.0, brighten_thr=None,
             If it is a clip, it must be of the same color space, subsampling and dimension as "flt". Its bit-depth can be different from that of "flt".
             Default is 1.0.
 
-        elast: {float or clip} Elasticity of the soft threshold.
+        elast: (float or clip) Elasticity of the soft threshold.
             If it is a clip, it must be of the same color space, subsampling and dimension as "flt". Its bit-depth can be different from that of "flt".
             Default is 2.0.
 
@@ -4635,7 +4635,7 @@ def MaskedLimitFilter(flt, src, ref=None, thr=1.0, elast=2.0, brighten_thr=None,
     """
 
     funcName = 'MaskedLimitFilter'
-    
+
     if not isinstance(flt, vs.VideoNode):
         raise TypeError(f'{funcName}: "flt" must be a clip!')
 
@@ -4652,6 +4652,7 @@ def MaskedLimitFilter(flt, src, ref=None, thr=1.0, elast=2.0, brighten_thr=None,
     else:
         ref = src
 
+    # parameters
     if not isinstance(thr, (int, float)):
         if not isinstance(thr, vs.VideoNode):
             raise TypeError(f'{funcName}: "thr" must be a clip, an int or a float!')
@@ -4680,7 +4681,8 @@ def MaskedLimitFilter(flt, src, ref=None, thr=1.0, elast=2.0, brighten_thr=None,
             raise ValueError(f'{funcName}: "flt" and "brighten_thr" must be of the same width, height, color space and subsampling!')
     elif brighten_thr < 0:
         raise ValueError(f'{funcName}: valid range of "brighten_thr" is [0, +inf)')
-    
+
+    # planes
     if planes is None:
         planes = list(range(flt.format.num_planes))
     elif isinstance(planes, int):
@@ -4688,13 +4690,14 @@ def MaskedLimitFilter(flt, src, ref=None, thr=1.0, elast=2.0, brighten_thr=None,
     elif isinstance(planes, list):
         for plane in planes:
             if not isinstance(plane, int):
-                raise TypeError(funcName + ': \"planes\" must be a (list of) int!')
+                raise TypeError(f'{funcName}: "planes" must be a (list of) int!')
 
             if plane < 0 or plane >= flt.format.num_planes:
                 raise ValueError(funcName + ': plane index out of range')
     else:
-        raise TypeError(funcName + ': \"planes\" must be a (list of) int!')
+        raise TypeError(f'{funcName}: "planes" must be a (list of) int!')
 
+    # process
     value_range = (1 << flt.format.bits_per_sample) - 1 if flt.format.sample_type == vs.INTEGER else 1
 
     var = (chr((i + ord('x') - ord('a')) % 26 + ord('a')) for i in range(26))
@@ -4724,7 +4727,7 @@ def MaskedLimitFilter(flt, src, ref=None, thr=1.0, elast=2.0, brighten_thr=None,
         else:
             thr_2_str = f"{thr_str} {elast_str} *"
 
-    else: # vvalue_range / 255 != 1
+    else: # value_range / 255 != 1
         thr_1_str = (f"{thr_str} {value_range / 255} *" if not foldable(thr_str) 
             else f"{float(thr_str) * (value_range / 255)}")
 
@@ -4742,6 +4745,7 @@ def MaskedLimitFilter(flt, src, ref=None, thr=1.0, elast=2.0, brighten_thr=None,
     thr_slope_str = (f"1 {thr_2_str} {thr_1_str} - /" if not foldable(thr_1_str) or not foldable(thr_2_str) 
         else f"{1 / (float(thr_2_str) - float(thr_1_str))}")
 
+    # final = src + dif * (thr_2 - dif_abs) / (thr_2 - thr_1)
     limitExpr = f"{src_str} {dif_str} {thr_2_str} {dif_abs_str} - * {thr_slope_str} * +"
     limitExpr = f"{dif_abs_str} {thr_1_str} <= {flt_str} {dif_abs_str} {thr_2_str} >= {src_str} {limitExpr} ? ?"
 
@@ -4750,7 +4754,7 @@ def MaskedLimitFilter(flt, src, ref=None, thr=1.0, elast=2.0, brighten_thr=None,
             clips = [clip for clip in [flt, src, thr, elast] if isinstance(clip, vs.VideoNode)]
         else:
             clips = [clip for clip in [flt, src, ref, thr, elast] if isinstance(clip, vs.VideoNode)]
-    
+
         return core.std.Expr(clips, [(limitExpr if i in planes else "") for i in range(flt.format.num_planes)])
 
     else:
@@ -4764,7 +4768,7 @@ def MaskedLimitFilter(flt, src, ref=None, thr=1.0, elast=2.0, brighten_thr=None,
             else:
                 brighten_thr_2_str = f"{brighten_thr_str} {elast_str} *"
 
-        else: # vvalue_range / 255 != 1
+        else: # value_range / 255 != 1
             brighten_thr_1_str = (f"{brighten_thr_str} {value_range / 255} *" if not foldable(brighten_thr_str) 
                 else f"{float(brighten_thr_str) * (value_range / 255)}")
 
@@ -4783,6 +4787,7 @@ def MaskedLimitFilter(flt, src, ref=None, thr=1.0, elast=2.0, brighten_thr=None,
             if not foldable(brighten_thr_1_str) or not foldable(brighten_thr_2_str) 
             else f"{1 / (float(brighten_thr_2_str) - float(brighten_thr_1_str))}")
 
+        # final = src + dif * (brighten_thr_2 - dif_abs) / (brighten_thr_2 - brighten_thr_1)
         brighten_limitExpr = f"{src_str} {dif_str} {brighten_thr_2_str} {dif_abs_str} - * {brighten_thr_slope_str} * +"
         brighten_limitExpr = f"{dif_abs_str} {brighten_thr_1_str} <= {flt_str} {dif_abs_str} {brighten_thr_2_str} >= {src_str} {brighten_limitExpr} ? ?"
 
@@ -4792,5 +4797,5 @@ def MaskedLimitFilter(flt, src, ref=None, thr=1.0, elast=2.0, brighten_thr=None,
             clips = [clip for clip in [flt, src, thr, elast, brighten_thr] if isinstance(clip, vs.VideoNode)]
         else:
             clips = [clip for clip in [flt, src, ref, thr, elast, brighten_thr] if isinstance(clip, vs.VideoNode)]
-    
+
         return core.std.Expr(clips, [(limitExpr if i in planes else "") for i in range(flt.format.num_planes)])
