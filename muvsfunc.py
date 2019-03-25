@@ -51,6 +51,7 @@ Functions:
     RandomInterleave
     super_resolution
     MDSI
+    MaskedLimitFilter
 '''
 
 import functools
@@ -4584,3 +4585,212 @@ def MDSI(clip1, clip2, down_scale=1, alpha=0.6, show_maps=False):
         return clip1, gs_hvs, cs, gcs
     else:
         return clip1
+
+
+def MaskedLimitFilter(flt, src, ref=None, thr=1.0, elast=2.0, brighten_thr=None, planes=None):
+    """Masked limit fIlter
+
+    It is an extension of mvsfunc.LimitFilter(), in the sense that 
+    each of "thr", "elast" and "brighten_thr" can be either a value as in mvsfunc.LimitFilter(), 
+    or a clip which stores values in corresponding location, which enables spatial varying filtering.
+
+    Similar to the AviSynth function Dither_limit_dif16() and HQDeringmod_limit_dif16(),
+    it acts as a post-processor, and is very useful to limit the difference of filtering while avoiding artifacts.
+
+    Args:
+        flt: Filtered clip, to compute the filtering difference.
+            Can be of YUV/RGB/Gray/YCoCg color family, can be of 8-16 bit integer or 16/32 bit float.
+
+        src: Source clip, to apply the filtering difference.
+            Must be of the same format and dimension as "flt"
+
+        ref: (clip) Reference clip, to compute the weight to be applied on filtering difference.
+            Must be of the same format and dimension as "flt".
+            Default is "src".
+
+        thr: (float or clip) Threshold (8-bit scale) to limit filtering difference.
+            If it is a clip, it must be of the same color space, subsampling and dimension as "flt". Its bit-depth can be different from that of "flt".
+            Default is 1.0.
+
+        elast: {float or clip} Elasticity of the soft threshold.
+            If it is a clip, it must be of the same color space, subsampling and dimension as "flt". Its bit-depth can be different from that of "flt".
+            Default is 2.0.
+
+        brighten_thr: (float or clip) Threshold (8-bit scale) for filtering difference that brightening the image (Y/R/G/B plane).
+            Set a value different from "thr" is useful to limit the overshoot/undershoot/blurring introduced in sharpening/de-ringing.
+            If it is a clip, it must be of the same color space, subsampling and dimension as "flt". Its bit-depth can be different from that of "flt".
+            Default is the same as "thr".
+
+        planes: (int []) Specify which planes to process.
+            Unprocessed planes will be copied from the first clip "flt".
+            By default, all planes will be processed.
+
+    Example:
+        "mvsfunc.LimitFilter(flt_gray8, src_gray8, thr=1.5, elast=2.0)" is equivalent to:
+            "MaskedLimitFilter(flt_gray8, src_gray8, thr=1.5, elast=2.0)", 
+            or "MaskedLimitFilter(flt_gray8, src_gray8, thr=core.std.BlankClip(flt_gray8, color=1.5, format=vs.GRAYS), elast=2.0)"
+            or "MaskedLimitFilter(flt_gray8, src_gray8, thr=1.5, elast=core.std.BlankClip(flt_gray8, color=2, format=vs.GRAY8))"
+            or "MaskedLimitFilter(flt_gray8, src_gray8, thr=1.5, elast=core.std.BlankClip(flt_gray8, color=2.0, format=vs.GRAYS))"
+
+    """
+
+    funcName = 'MaskedLimitFilter'
+    
+    if not isinstance(flt, vs.VideoNode):
+        raise TypeError(f'{funcName}: "flt" must be a clip!')
+
+    if not isinstance(src, vs.VideoNode):
+        raise TypeError(f'{funcName}: "src" must be a clip!')
+    elif flt.format.id != src.format.id or flt.width != src.width or flt.height != src.height:
+        raise ValueError(f'{funcName}: "flt" and "src" must be of the same format, width and height!')
+
+    if ref is not None:
+        if not isinstance(ref, vs.VideoNode):
+            raise TypeError(f'{funcName}: "ref" must be a clip!')
+        elif flt.format.id != ref.format.id or flt.width != ref.width or flt.height != ref.height:
+            raise ValueError(f'{funcName}: "flt" and "ref" must be of the same format, width and height!')
+    else:
+        ref = src
+
+    if not isinstance(thr, (int, float)):
+        if not isinstance(thr, vs.VideoNode):
+            raise TypeError(f'{funcName}: "thr" must be a clip, an int or a float!')
+        elif (flt.width != thr.width or flt.height != thr.height or flt.format.color_family != thr.format.color_family or 
+            flt.format.subsampling_w != thr.format.subsampling_w or flt.format.subsampling_h != thr.format.subsampling_h):
+            raise ValueError(f'{funcName}: "flt" and "thr" must be of the same width, height, color space and subsampling!')
+    elif thr < 0:
+        raise ValueError(f'{funcName}: valid range of "thr" is [0, +inf)')
+
+    if not isinstance(elast, (int, float)):
+        if not isinstance(elast, vs.VideoNode):
+            raise TypeError(f'{funcName}: "elast" must be a clip, an int or a float!')
+        elif (flt.width != elast.width or flt.height != elast.height or flt.format.color_family != elast.format.color_family or 
+            flt.format.subsampling_w != elast.format.subsampling_w or flt.format.subsampling_h != elast.format.subsampling_h):
+            raise ValueError(f'{funcName}: "flt" and "elast" must be of the same width, height, color space and subsampling!')
+    elif elast < 1:
+        raise ValueError(f'{funcName}: valid range of "elast" is [1, +inf)')
+
+    if brighten_thr is None:
+        brighten_thr = thr
+    elif not isinstance(brighten_thr, (int, float)):
+        if not isinstance(brighten_thr, vs.VideoNode):
+            raise TypeError(f'{funcName}: "brighten_thr" must be a clip, an int or a float!')
+        elif (flt.width != brighten_thr.width or flt.height != brighten_thr.height or flt.format.color_family != brighten_thr.format.color_family or 
+            flt.format.subsampling_w != brighten_thr.format.subsampling_w or flt.format.subsampling_h != brighten_thr.format.subsampling_h):
+            raise ValueError(f'{funcName}: "flt" and "brighten_thr" must be of the same width, height, color space and subsampling!')
+    elif brighten_thr < 0:
+        raise ValueError(f'{funcName}: valid range of "brighten_thr" is [0, +inf)')
+    
+    if planes is None:
+        planes = list(range(flt.format.num_planes))
+    elif isinstance(planes, int):
+        planes = [planes]
+    elif isinstance(planes, list):
+        for plane in planes:
+            if not isinstance(plane, int):
+                raise TypeError(funcName + ': \"planes\" must be a (list of) int!')
+
+            if plane < 0 or plane >= flt.format.num_planes:
+                raise ValueError(funcName + ': plane index out of range')
+    else:
+        raise TypeError(funcName + ': \"planes\" must be a (list of) int!')
+
+    value_range = (1 << flt.format.bits_per_sample) - 1 if flt.format.sample_type == vs.INTEGER else 1
+
+    var = (chr((i + ord('x') - ord('a')) % 26 + ord('a')) for i in range(26))
+
+    flt_str = next(var)
+    src_str = next(var)
+    ref_str = next(var) if ref != src else src_str
+    thr_str = next(var) if isinstance(thr, vs.VideoNode) else f"{thr}"
+    elast_str = next(var) if isinstance(elast, vs.VideoNode) else f"{elast}"
+
+    dif_str = f"{flt_str} {src_str} -"
+    dif_ref_str = f"{flt_str} {ref_str} -"
+    dif_abs_str = f"{dif_ref_str} abs"
+
+    def foldable(string):
+        for char in string:
+            if char.isalpha():
+                return False
+        else:
+            return True
+
+    if value_range == 255:
+        thr_1_str = thr_str
+
+        if foldable(thr_str) and foldable(elast_str):
+            thr_2_str = f"{float(thr_str) * float(elast_str)}"
+        else:
+            thr_2_str = f"{thr_str} {elast_str} *"
+
+    else: # vvalue_range / 255 != 1
+        thr_1_str = (f"{thr_str} {value_range / 255} *" if not foldable(thr_str) 
+            else f"{float(thr_str) * (value_range / 255)}")
+
+        if foldable(thr_str):
+            if foldable(elast_str):
+                thr_2_str = f"{float(thr_str) * (value_range / 255) * float(elast_str)}"
+            else:
+                thr_2_str = f"{float(thr_str) * (value_range / 255)} {elast_str} *"
+        else:
+            if foldable(elast_str):
+                thr_2_str = f"{thr_str} {(value_range / 255) * float(elast_str)} *"
+            else:
+                thr_2_str = f"{thr_str} {value_range / 255} * {elast_str} *"
+
+    thr_slope_str = (f"1 {thr_2_str} {thr_1_str} - /" if not foldable(thr_1_str) or not foldable(thr_2_str) 
+        else f"{1 / (float(thr_2_str) - float(thr_1_str))}")
+
+    limitExpr = f"{src_str} {dif_str} {thr_2_str} {dif_abs_str} - * {thr_slope_str} * +"
+    limitExpr = f"{dif_abs_str} {thr_1_str} <= {flt_str} {dif_abs_str} {thr_2_str} >= {src_str} {limitExpr} ? ?"
+
+    if brighten_thr == thr:
+        if ref == src:
+            clips = [clip for clip in [flt, src, thr, elast] if isinstance(clip, vs.VideoNode)]
+        else:
+            clips = [clip for clip in [flt, src, ref, thr, elast] if isinstance(clip, vs.VideoNode)]
+    
+        return core.std.Expr(clips, [(limitExpr if i in planes else "") for i in range(flt.format.num_planes)])
+
+    else:
+        brighten_thr_str = next(var) if isinstance(brighten_thr, vs.VideoNode) else f"{brighten_thr}"
+
+        if value_range == 255:
+            brighten_thr_1_str = brighten_thr_str
+
+            if foldable(brighten_thr_str) and foldable(elast_str):
+                brighten_thr_2_str = f"{float(brighten_thr_str) * float(elast_str)}"
+            else:
+                brighten_thr_2_str = f"{brighten_thr_str} {elast_str} *"
+
+        else: # vvalue_range / 255 != 1
+            brighten_thr_1_str = (f"{brighten_thr_str} {value_range / 255} *" if not foldable(brighten_thr_str) 
+                else f"{float(brighten_thr_str) * (value_range / 255)}")
+
+            if foldable(brighten_thr_str):
+                if foldable(elast_str):
+                    brighten_thr_2_str = f"{float(brighten_thr_str) * (value_range / 255) * float(elast_str)}"
+                else:
+                    brighten_thr_2_str = f"{float(brighten_thr_str) * (value_range / 255)} {elast_str} *"
+            else:
+                if foldable(elast_str):
+                    brighten_thr_2_str = f"{brighten_thr_str} {(value_range / 255) * float(elast_str)} *"
+                else:
+                    brighten_thr_2_str = f"{brighten_thr_str} {value_range / 255} * {elast_str} *"
+
+        brighten_thr_slope_str = (f"1 {brighten_thr_2_str} {brighten_thr_1_str} - /" 
+            if not foldable(brighten_thr_1_str) or not foldable(brighten_thr_2_str) 
+            else f"{1 / (float(brighten_thr_2_str) - float(brighten_thr_1_str))}")
+
+        brighten_limitExpr = f"{src_str} {dif_str} {brighten_thr_2_str} {dif_abs_str} - * {brighten_thr_slope_str} * +"
+        brighten_limitExpr = f"{dif_abs_str} {brighten_thr_1_str} <= {flt_str} {dif_abs_str} {brighten_thr_2_str} >= {src_str} {brighten_limitExpr} ? ?"
+
+        limitExpr = f"{flt_str} {ref_str} > {brighten_limitExpr} {limitExpr} ?"
+
+        if ref == src:
+            clips = [clip for clip in [flt, src, thr, elast, brighten_thr] if isinstance(clip, vs.VideoNode)]
+        else:
+            clips = [clip for clip in [flt, src, ref, thr, elast, brighten_thr] if isinstance(clip, vs.VideoNode)]
+    
+        return core.std.Expr(clips, [(limitExpr if i in planes else "") for i in range(flt.format.num_planes)])
