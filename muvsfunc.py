@@ -467,7 +467,7 @@ def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=
 
     if thr is None:
         thr = 0.35
-    else:
+    elif not isinstance(thr, (float, int)):
         raise TypeError(funcName + ': \"thr\" must be an int or a float!')
 
     if smode is None:
@@ -4590,6 +4590,8 @@ def MDSI(clip1, clip2, down_scale=1, alpha=0.6, show_maps=False):
 def MaskedLimitFilter(flt, src, ref=None, thr=1.0, elast=2.0, brighten_thr=None, planes=None):
     """Masked limit fIlter
 
+    Modified from mvsfunc.LimitFilter().
+
     It is an extension of mvsfunc.LimitFilter(), in the sense that 
     each of "thr", "elast" and "brighten_thr" can be either a value as in mvsfunc.LimitFilter(), 
     or a clip which stores values in corresponding location, which enables spatial varying filtering.
@@ -4728,8 +4730,8 @@ def MaskedLimitFilter(flt, src, ref=None, thr=1.0, elast=2.0, brighten_thr=None,
             thr_2_str = f"{thr_str} {elast_str} *"
 
     else: # value_range / 255 != 1
-        thr_1_str = (f"{thr_str} {value_range / 255} *" if not foldable(thr_str) 
-            else f"{float(thr_str) * (value_range / 255)}")
+        thr_1_str = (f"{float(thr_str) * (value_range / 255)}" if foldable(thr_str) 
+            else f"{thr_str} {value_range / 255} *")
 
         if foldable(thr_str):
             if foldable(elast_str):
@@ -4742,8 +4744,8 @@ def MaskedLimitFilter(flt, src, ref=None, thr=1.0, elast=2.0, brighten_thr=None,
             else:
                 thr_2_str = f"{thr_str} {value_range / 255} * {elast_str} *"
 
-    thr_slope_str = (f"1 {thr_2_str} {thr_1_str} - /" if not foldable(thr_1_str) or not foldable(thr_2_str) 
-        else f"{1 / (float(thr_2_str) - float(thr_1_str))}")
+    thr_slope_str = (f"{1 / (float(thr_2_str) - float(thr_1_str))}" if foldable(thr_1_str) and foldable(thr_2_str) 
+        else f"1 {thr_2_str} {thr_1_str} - /")
 
     # final = src + dif * (thr_2 - dif_abs) / (thr_2 - thr_1)
     limitExpr = f"{src_str} {dif_str} {thr_2_str} {dif_abs_str} - * {thr_slope_str} * +"
@@ -4769,8 +4771,8 @@ def MaskedLimitFilter(flt, src, ref=None, thr=1.0, elast=2.0, brighten_thr=None,
                 brighten_thr_2_str = f"{brighten_thr_str} {elast_str} *"
 
         else: # value_range / 255 != 1
-            brighten_thr_1_str = (f"{brighten_thr_str} {value_range / 255} *" if not foldable(brighten_thr_str) 
-                else f"{float(brighten_thr_str) * (value_range / 255)}")
+            brighten_thr_1_str = (f"{float(brighten_thr_str) * (value_range / 255)}" if foldable(brighten_thr_str) 
+                else f"{brighten_thr_str} {value_range / 255} *")
 
             if foldable(brighten_thr_str):
                 if foldable(elast_str):
@@ -4783,9 +4785,9 @@ def MaskedLimitFilter(flt, src, ref=None, thr=1.0, elast=2.0, brighten_thr=None,
                 else:
                     brighten_thr_2_str = f"{brighten_thr_str} {value_range / 255} * {elast_str} *"
 
-        brighten_thr_slope_str = (f"1 {brighten_thr_2_str} {brighten_thr_1_str} - /" 
-            if not foldable(brighten_thr_1_str) or not foldable(brighten_thr_2_str) 
-            else f"{1 / (float(brighten_thr_2_str) - float(brighten_thr_1_str))}")
+        brighten_thr_slope_str = (f"{1 / (float(brighten_thr_2_str) - float(brighten_thr_1_str))}" 
+            if foldable(brighten_thr_1_str) and foldable(brighten_thr_2_str) 
+            else f"1 {brighten_thr_2_str} {brighten_thr_1_str} - /")
 
         # final = src + dif * (brighten_thr_2 - dif_abs) / (brighten_thr_2 - brighten_thr_1)
         brighten_limitExpr = f"{src_str} {dif_str} {brighten_thr_2_str} {dif_abs_str} - * {brighten_thr_slope_str} * +"
