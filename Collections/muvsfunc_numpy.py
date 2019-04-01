@@ -13,6 +13,7 @@ VapourSynth functions:
     SigmaFilter
     super_resolution (backend: MXNet/TensorFlow)
     gaussian
+    PoissonMaskedMerge
 
 NumPy functions:
     L0Smooth_core
@@ -27,6 +28,7 @@ NumPy functions:
     SigmaFilter_core
     super_resolution_core (backend: MXNet/TensorFlow)
     gaussian_core
+    PoissonMaskedMerge_core
 """
 
 import functools
@@ -1745,7 +1747,7 @@ def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, blo
 
 
 def super_resolution_core(img, runner, up_scale=2, block_h=None, block_w=None, pad=None, crop=None, pad_mode=None, framework=None, data_format=None):
-    """ Super resolution in Numpy
+    """Super resolution in Numpy
     Wrapper for super resolution methods.
     Args:
         img: Image data.
@@ -1939,10 +1941,121 @@ def gaussian_core(img, sigma_h=1.5, sigma_v=None):
 
 @functools.lru_cache(maxsize=16)
 def freq_gaussian(h, sigma_v, w, sigma_h, dtype=None):
-    """Helper function for gaussian_core()
-    """
+    """Helper function for gaussian_core()"""
 
     weight_v = ((-0.5 * np.pi**2 * sigma_v**2 / (h ** 2)) * np.square(np.arange(h, dtype='uint32'))).reshape((-1, 1)).astype(dtype)
     weight_h = ((-0.5 * np.pi**2 * sigma_h**2 / (w ** 2)) * np.square(np.arange(w, dtype='uint32'))).reshape((1, -1)).astype(dtype)
 
     return np.exp(weight_v) * np.exp(weight_h)
+
+
+def PoissonMaskedMerge(background, obj, mask):
+    """Seamless cloning based on poisson editing
+
+    Poisson editing, a.k.a. gradient-based image processing, directly edits the gradient of images to perform useful operations.
+    Seamless cloning allows one to copy an object from an image, and paste it to another image that looks seamless and natural.
+    The object is specified by a region manually selected (mask).
+
+    Args:
+        background, obj, mask: Input clips.
+            They must be of the same format, width and height.
+            The mask must be a binary mask.
+
+    Ref:
+        [1] Di Martino, J. M., Facciolo, G., & Meinhardt-Llopis, E. (2016). Poisson Image Editing. Image Processing On Line, 300-325.
+
+    """
+
+    funcName = 'PoissonMaskedMerge'
+
+    if not isinstance(background, vs.VideoNode):
+        raise TypeError(funcName + ': "background" must be a clip!')
+
+    if not isinstance(obj, vs.VideoNode):
+        raise TypeError(funcName + ': "obj" must be a clip!')
+    elif background.format.id != obj.format.id or background.width != obj.width or background.height != obj.height:
+        raise ValueError(funcName + ': "background" and "obj" must be of the same format, width and height!')
+
+    if not isinstance(mask, vs.VideoNode):
+        raise TypeError(funcName + ': "mask" must be a clip!')
+    elif (background.width != mask.width or background.height != mask.height or background.format.color_family != mask.format.color_family or 
+            background.format.subsampling_w != mask.format.subsampling_w or background.format.subsampling_h != mask.format.subsampling_h):
+            raise ValueError(funcName + ': "background" and "mask" must be of the same width, height, color space and subsampling!')
+
+    bits = background.format.bits_per_sample
+    sample_type = background.format.sample_type
+
+    if sample_type != vs.FLOAT:
+        background = mvf.Depth(background, depth=32, sample=vs.FLOAT)
+        obj = mvf.Depth(obj, depth=32, sample=vs.FLOAT)
+
+    flt = numpy_process([background, obj, mask], PoissonMaskedMerge_core)
+
+    if sample_type != vs.FLOAT:
+        flt = mvf.Depth(flt, depth=bits, sample=sample_type)
+
+    return flt
+
+
+def PoissonMaskedMerge_core(img_b, img_o, mask):
+    """Seamless cloning based on poisson editing in NumPy"""
+
+    assert img_b.ndim == 2
+    assert img_o.ndim == 2
+    assert mask.ndim == 2
+
+    mask = mask.astype(np.bool)
+
+    img_b_dx = np.zeros_like(img_b)
+    img_b_dy = np.zeros_like(img_b)
+    img_o_dx = np.zeros_like(img_o)
+    img_o_dy = np.zeros_like(img_o)
+
+    # ComputeGradients
+    img_b_dx[:, 1:-1] = (img_b[:, 2:] - img_b[:, :-2]) * np.float32(0.5)
+    img_b_dy[1:-1, :] = (img_b[2:, :] - img_b[:-2, :]) * np.float32(0.5)
+    img_o_dx[:, 1:-1] = (img_o[:, 2:] - img_o[:, :-2]) * np.float32(0.5)
+    img_o_dy[1:-1, :] = (img_o[2:, :] - img_o[:-2, :]) * np.float32(0.5)
+
+    # CombineGradients
+    img_b_dx[:] = np.where(mask, img_o_dx, img_b_dx)
+    img_b_dy[:] = np.where(mask, img_o_dy, img_b_dy)
+
+    # SolvePoissonEq_I
+    h, w = img_b.shape
+    gx = np.zeros((h * 2, w * 2), dtype=np.float32)
+    gy = np.zeros((h * 2, w * 2), dtype=np.float32)
+
+    gx[:h, :w] = img_b_dx
+    gx[:h, w:] = -img_b_dx[:, ::-1]
+    gx[h:, :] = gx[h-1::-1, :]
+
+    gy[:h, :w] = img_b_dy
+    gy[h:, :w] = -img_b_dy[::-1, :]
+    gy[:, w:] = gy[:, w-1::-1]
+
+    wx, wy = np.r_[1:w*2+1], np.r_[1:h*2+1]
+    wx -= w + 1
+    wy -= h + 1
+    wx = np.fft.ifftshift(wx)[np.newaxis, :w+1]
+    wy = np.fft.ifftshift(wy)[:, np.newaxis]
+
+    coeff_x = np.complex64((np.pi / w) * wx * 1j)
+    coeff_y = np.complex64((np.pi / h) * wy * 1j)
+    denominator = np.square(coeff_x) + np.square(coeff_y)
+
+    ft_I = (coeff_x * np.fft.rfft2(gx) + coeff_y * np.fft.rfft2(gy)) / denominator
+    ft_I[0, 0] = 0
+
+    I = np.fft.irfft2(ft_I)[:h, :w]
+
+    input_outside = np.where(mask, 0, img_b)
+    output_outside = np.where(mask, 0, I)
+    num_outside = mask.size - mask.sum()
+
+    input_mean = np.sum(input_outside) / (num_outside + 1e-6)
+    output_mean = np.sum(output_outside) / (num_outside + 1e-6)
+
+    I += (input_mean - output_mean).astype(np.float32)
+
+    return I
