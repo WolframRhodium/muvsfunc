@@ -4805,7 +4805,7 @@ def MaskedLimitFilter(flt, src, ref=None, thr=1.0, elast=2.0, brighten_thr=None,
 
 
 def multi_scale(func=None, down_scale=1.5, up_scale_func=None, 
-    down_scale_func=None, multi_scale_mode=0, num_levels=2):
+    down_scale_func=None, multi_scale_mode=1, num_levels=2):
     """A decorator that "multi-scale" a given function
 
     Note that the resulting function may be significantly different from its single-scale counterpart.
@@ -4823,8 +4823,8 @@ def multi_scale(func=None, down_scale=1.5, up_scale_func=None,
             Examples include "core.resize.*", "core.fmtc.resample", "nnedi3_resample.nnedi3_resample".
             Default is core.resize.Spline36.
 
-        multi_scale_mode: (int, 0, 1 or 2) Controls how multi-scale filtering is done.
-            Default is 0.
+        multi_scale_mode: (int, -3~-1 or 1~3) Controls how multi-scale filtering is done.
+            Default is 1.
 
         num_levels: (int) Number of levels of the gaussian pyramid.
             Default is 2.
@@ -4889,17 +4889,15 @@ def multi_scale(func=None, down_scale=1.5, up_scale_func=None,
     if func is None:
         return lambda func: lambda clip, *args, **kwargs: _multi_scale_filtering(
             clip, func, down_scale, up_scale_func, down_scale_func, multi_scale_mode, num_levels, *args, **kwargs)
-
     elif callable(func):
         return lambda clip, *args, **kwargs: _multi_scale_filtering(
             clip, func, down_scale, up_scale_func, down_scale_func, multi_scale_mode, num_levels, *args, **kwargs)
-
     else:
         raise TypeError(f'{funcName}: Unknown type of "func"! (got {type(func)})')
 
 
 def _multi_scale_filtering(clip, func, down_scale, up_scale_func, down_scale_func, multi_scale_mode, num_levels, *args, **kwargs):
-    """"Wrapper function used by multi_scale()"""
+    """"Internal function used by multi_scale()"""
 
     if num_levels == 0:
         # In this implementation, the bottom-most level (0-level) is defined to be the coarsest level
@@ -4915,7 +4913,7 @@ def _multi_scale_filtering(clip, func, down_scale, up_scale_func, down_scale_fun
         # filtered result from lower levels
         lower_result = _multi_scale_filtering(low_res, func, down_scale, up_scale_func, down_scale_func, multi_scale_mode, num_levels-1, *args, **kwargs)
 
-        if multi_scale_mode == 0:
+        if abs(multi_scale_mode) == 1:
             # current level of filtered gaussian pyramid (low-res)
             filtered_lower_result = func(lower_result, *args, **kwargs)
 
@@ -4925,9 +4923,9 @@ def _multi_scale_filtering(clip, func, down_scale, up_scale_func, down_scale_fun
             # current level of unfiltered gaussian pyramid (high-res)
             low_res_upscaled = up_scale_func(low_res, clip.width, clip.height)
 
-            return core.std.Expr([clip, low_res_upscaled, filtered_low_result_upscaled], ['x y - z +'])
+            return core.std.Expr([clip, low_res_upscaled, filtered_low_result_upscaled], ['x y - z +' if multi_scale_mode > 0 else 'x y + z -'])
 
-        elif multi_scale_mode == 1:
+        elif abs(multi_scale_mode) == 2:
             # current level of filtered gaussian pyramid (low-res)
             filtered_lower_result = func(lower_result, *args, **kwargs)
 
@@ -4937,9 +4935,9 @@ def _multi_scale_filtering(clip, func, down_scale, up_scale_func, down_scale_fun
             # current level of unfiltered gaussian pyramid (high-res)
             lower_result_upscaled = up_scale_func(lower_result, clip.width, clip.height)
 
-            return core.std.Expr([clip, lower_result_upscaled, filtered_low_result_upscaled], ['x y - z +'])
+            return core.std.Expr([clip, lower_result_upscaled, filtered_low_result_upscaled], ['x y - z +' if multi_scale_mode > 0 else 'x y + z -'])
 
-        elif multi_scale_mode == 2:
+        elif abs(multi_scale_mode) == 3:
             # current level of filtered gaussian pyramid (low-res)
             filtered_low_res = func(low_res, *args, **kwargs)
 
@@ -4949,7 +4947,7 @@ def _multi_scale_filtering(clip, func, down_scale, up_scale_func, down_scale_fun
             # current level of unfiltered gaussian pyramid (high-res)
             lower_result_upscaled = up_scale_func(lower_result, clip.width, clip.height)
 
-            return core.std.Expr([clip, lower_result_upscaled, filtered_low_res_upscaled], ['x y - z +'])
+            return core.std.Expr([clip, lower_result_upscaled, filtered_low_res_upscaled], ['x y - z +' if multi_scale_mode > 0 else 'x y + z -'])
 
         else:
-            raise ValueError(f'multi_scale: Unknown value of "multi_scale_mode"! (0, 1 or 2, got {multi_scale_mode})')
+            raise ValueError(f'multi_scale: Unknown value of "multi_scale_mode"! (-3~-1 or 1~3, got {multi_scale_mode})')
