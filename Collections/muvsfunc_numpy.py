@@ -2034,11 +2034,8 @@ def PoissonMaskedMerge_core(img_b, img_o, mask):
     gy[h:, :w] = -img_b_dy[::-1, :]
     gy[:, w:] = gy[:, w-1::-1]
 
-    wx, wy = np.r_[1:w*2+1], np.r_[1:h*2+1]
-    wx -= w + 1
-    wy -= h + 1
-    wx = np.fft.ifftshift(wx)[np.newaxis, :w+1]
-    wy = np.fft.ifftshift(wy)[:, np.newaxis]
+    wx = np.fft.ifftshift(np.r_[-w:w])[np.newaxis, :w+1]
+    wy = np.fft.ifftshift(np.r_[-h:h])[:, np.newaxis]
 
     coeff_x = np.complex64((np.pi / w) * wx * 1j)
     coeff_y = np.complex64((np.pi / h) * wy * 1j)

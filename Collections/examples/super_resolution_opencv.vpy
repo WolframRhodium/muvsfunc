@@ -117,7 +117,7 @@ def run_super_resolution(clip, prototxt, caffe_model, up_scale=2, is_rgb_model=T
 
 def super_resolution(clip, prototxt, caffe_model, up_scale=2, is_rgb_model=True, pad=None, crop=None, backend=None, target=None, pre_upscale=False, upscale_uv=False, merge_residual=False):
     """ Super-Resolution with color family hadling
-    
+
     The color space of the output depends on the algorithm
     """
 
@@ -135,7 +135,7 @@ def super_resolution(clip, prototxt, caffe_model, up_scale=2, is_rgb_model=True,
             clip = mvf.GetPlane(clip)
 
     clip = mvf.Depth(clip, depth=32)
-    
+
     if pre_upscale:
         clip = core.resize.Bicubic(clip, clip.width*up_scale, clip.height*up_scale, filter_param_a=0, filter_param_b=0.5)
         up_scale = 1

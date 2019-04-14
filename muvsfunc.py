@@ -52,6 +52,7 @@ Functions:
     super_resolution
     MDSI
     MaskedLimitFilter
+    @multi_scale
 '''
 
 import functools
@@ -4801,3 +4802,154 @@ def MaskedLimitFilter(flt, src, ref=None, thr=1.0, elast=2.0, brighten_thr=None,
             clips = [clip for clip in [flt, src, ref, thr, elast, brighten_thr] if isinstance(clip, vs.VideoNode)]
 
         return core.std.Expr(clips, [(limitExpr if i in planes else "") for i in range(flt.format.num_planes)])
+
+
+def multi_scale(func=None, down_scale=1.5, up_scale_func=None, 
+    down_scale_func=None, multi_scale_mode=0, num_levels=2):
+    """A decorator that "multi-scale" a given function
+
+    Note that the resulting function may be significantly different from its single-scale counterpart.
+
+    Args:
+        func: Function to be decorated.
+            The function should not change properties (width, height, etc) of its input.
+
+        down_scale: (float) Down-scaling factor of succesive levels.
+            Default is 1.5.
+
+        up_scale_func, down_scale_func: (function) Functions used for up-scaling / down-scaling.
+            Each function should take a clip (vapoursynth.VideoNode) as the first argument, and the output image
+                dimensions (width and height) as the second and third arguments, respectively.
+            Examples include "core.resize.*", "core.fmtc.resample", "nnedi3_resample.nnedi3_resample".
+            Default is core.resize.Spline36.
+
+        multi_scale_mode: (int, 0, 1 or 2) Controls how multi-scale filtering is done.
+            Default is 0.
+
+        num_levels: (int) Number of levels of the gaussian pyramid.
+            Default is 2.
+
+    Examples:
+        # (reference) single-scale RemoveGrain
+
+        last = core.rgvs.RemoveGrain(gray8, mode=11)
+
+        ########################################################################
+        # (1) multi-scale RemoveGrain
+
+        last = multi_scale(core.rgvs.RemoveGrain)(gray8, mode=11)
+
+        ########################################################################
+        # (2) parameters of the decorator can be specified by
+
+        last = multi_scale(core.rgvs.RemoveGrain, up_scale_func=core.resize.Lanczos)(gray8, mode=11)
+
+        ########################################################################
+        # (3) @decorator syntax makes the decoration on custom functions easier
+        # this example is equivalent to the first example
+
+        @multi_scale
+        def rg(clip, mode):
+            return core.rgvs.RemoveGrain(clip, mode=mode)
+
+        last = rg(gray8, mode=11)
+
+        ########################################################################
+        # (4) the second example can also be written as
+
+        @multi_scale(up_scale_func=core.resize.Lanczos)
+        def rg(clip, mode):
+            return core.rgvs.RemoveGrain(clip, mode=mode)
+
+        last = rg(gray8, mode=11)
+
+        ########################################################################
+        # (5) multiple decorations are allowed
+
+        @multi_scale
+        @multi_scale() # this line is equivalent to the line above
+        def rg(clip, mode):
+            return core.rgvs.RemoveGrain(clip, mode=mode)
+
+        last = rg(gray8, mode=11)
+
+    """
+
+    funcName = "multi_scale"
+
+    if up_scale_func is None:
+        up_scale_func = core.resize.Spline36
+
+    if down_scale_func is None:
+        down_scale_func = core.resize.Spline36
+
+    if num_levels < 0:
+        raise ValueError(f'{funcName}: "num_levels" must be greater than 0! (got {num_levels})')
+
+    if func is None:
+        return lambda func: lambda clip, *args, **kwargs: _multi_scale_filtering(
+            clip, func, down_scale, up_scale_func, down_scale_func, multi_scale_mode, num_levels, *args, **kwargs)
+
+    elif callable(func):
+        return lambda clip, *args, **kwargs: _multi_scale_filtering(
+            clip, func, down_scale, up_scale_func, down_scale_func, multi_scale_mode, num_levels, *args, **kwargs)
+
+    else:
+        raise TypeError(f'{funcName}: Unknown type of "func"! (got {type(func)})')
+
+
+def _multi_scale_filtering(clip, func, down_scale, up_scale_func, down_scale_func, multi_scale_mode, num_levels, *args, **kwargs):
+    """"Wrapper function used by multi_scale()"""
+
+    if num_levels == 0:
+        # In this implementation, the bottom-most level (0-level) is defined to be the coarsest level
+        return clip
+
+    else:
+        down_w = haf.m4(clip.width / down_scale)
+        down_h = haf.m4(clip.height / down_scale)
+
+        # current level of unfiltered gaussian pyramid (low-res)
+        low_res = down_scale_func(clip, down_w, down_h)
+
+        # filtered result from lower levels
+        lower_result = _multi_scale_filtering(low_res, func, down_scale, up_scale_func, down_scale_func, multi_scale_mode, num_levels-1, *args, **kwargs)
+
+        if multi_scale_mode == 0:
+            # current level of filtered gaussian pyramid (low-res)
+            filtered_lower_result = func(lower_result, *args, **kwargs)
+
+            # current level of filtered gaussian pyramid (high-res)
+            filtered_low_result_upscaled = up_scale_func(filtered_lower_result, clip.width, clip.height)
+
+            # current level of unfiltered gaussian pyramid (high-res)
+            low_res_upscaled = up_scale_func(low_res, clip.width, clip.height)
+
+            return core.std.Expr([clip, low_res_upscaled, filtered_low_result_upscaled], ['x y - z +'])
+
+        elif multi_scale_mode == 1:
+            # current level of filtered gaussian pyramid (low-res)
+            filtered_lower_result = func(lower_result, *args, **kwargs)
+
+            # current level of filtered gaussian pyramid (high-res)
+            filtered_low_result_upscaled = up_scale_func(filtered_lower_result, clip.width, clip.height)
+
+            # current level of unfiltered gaussian pyramid (high-res)
+            lower_result_upscaled = up_scale_func(lower_result, clip.width, clip.height)
+
+            return core.std.Expr([clip, lower_result_upscaled, filtered_low_result_upscaled], ['x y - z +'])
+
+        elif multi_scale_mode == 2:
+            # current level of filtered gaussian pyramid (low-res)
+            filtered_low_res = func(low_res, *args, **kwargs)
+
+            # current level of filtered gaussian pyramid (high-res)
+            filtered_low_res_upscaled = up_scale_func(filtered_low_res, clip.width, clip.height)
+
+            # current level of unfiltered gaussian pyramid (high-res)
+            lower_result_upscaled = up_scale_func(lower_result, clip.width, clip.height)
+
+            return core.std.Expr([clip, lower_result_upscaled, filtered_low_res_upscaled], ['x y - z +'])
+
+        else:
+            raise ValueError(f'multi_scale: Unknown value of "multi_scale_mode"! (0, 1 or 2, got {multi_scale_mode})')

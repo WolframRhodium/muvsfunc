@@ -550,7 +550,7 @@ def fade(clip, start=0, end=None, mode='in', base=None):
                 i = (end - n) / length
             else:
                 raise ValueError('Unknown fading mode.')
-    
+
             if base is None:
                 y_expr = 'x {} *'.format(i)
 

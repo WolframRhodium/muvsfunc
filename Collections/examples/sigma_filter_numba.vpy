@@ -42,13 +42,13 @@ def clamp(val, low, high):
 def sigma_filter(src, dst, radius, threshold):
     height = src.shape[0]
     width = src.shape[1]
-    
+
     for y in prange(height):
         for x in range(width):
             center = src[y, x]
             acc = 0.
             count = 0
-            
+
             for j in range(-radius, radius + 1):
                 for i in range(-radius, radius + 1):
                     val = src[clamp(y + j, 0, height - 1), clamp(x + i, 0, width - 1)]
@@ -64,12 +64,12 @@ def sigma_filter(src, dst, radius, threshold):
 
 def executor(n, f, radius, thr):
     fout = f.copy()
-    
+
     src = np.asarray(f.get_read_array(0))
     dst = np.asarray(fout.get_write_array(0))
-    
+
     sigma_filter(src, dst, radius, thr)
-    
+
     return fout
 
 
