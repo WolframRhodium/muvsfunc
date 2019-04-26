@@ -4887,11 +4887,11 @@ def multi_scale(func=None, down_scale=1.5, up_scale_func=None,
         raise ValueError(f'{funcName}: "num_levels" must be greater than 0! (got {num_levels})')
 
     if func is None:
-        return lambda func: lambda clip, *args, **kwargs: _multi_scale_filtering(
-            clip, func, down_scale, up_scale_func, down_scale_func, multi_scale_mode, num_levels, *args, **kwargs)
+        return lambda func: functools.wraps(func)(lambda clip, *args, **kwargs: _multi_scale_filtering(
+            clip, func, down_scale, up_scale_func, down_scale_func, multi_scale_mode, num_levels, *args, **kwargs))
     elif callable(func):
-        return lambda clip, *args, **kwargs: _multi_scale_filtering(
-            clip, func, down_scale, up_scale_func, down_scale_func, multi_scale_mode, num_levels, *args, **kwargs)
+        return functools.wraps(func)(lambda clip, *args, **kwargs: _multi_scale_filtering(
+            clip, func, down_scale, up_scale_func, down_scale_func, multi_scale_mode, num_levels, *args, **kwargs))
     else:
         raise TypeError(f'{funcName}: Unknown type of "func"! (got {type(func)})')
 
