@@ -53,6 +53,7 @@ Functions:
     MDSI
     MaskedLimitFilter
     @multi_scale
+    avg_decimate
 '''
 
 import functools
@@ -4951,3 +4952,43 @@ def _multi_scale_filtering(clip, func, down_scale, up_scale_func, down_scale_fun
 
         else:
             raise ValueError(f'multi_scale: Unknown value of "multi_scale_mode"! (-3~-1 or 1~3, got {multi_scale_mode})')
+
+
+def avg_decimate(clip, clip2=None, weight=0.5, **vdecimate_kwargs):
+    """Averaging-based decimation filter
+
+    Proposed by feisty2.
+
+    It is a decimation filter, which averages duplicates frames before drops one in every cycle frames.
+
+    Args:
+        clip: Input clip. 
+            Must have constant format and dimensions, known length, integer sample type, and bit depth between 8 and 16 bits per sample.
+
+        clip2: (clip) Clip that will use to create the output frames. 
+            If clip2 is used, this filter will perform all calculations based on clip, but will copy the chosen fields from clip2. 
+            This can be used to work around VFM’s video format limitations.
+            Default is None.
+
+        weight: (float, 0~1) Weight used to merge duplicates frames.
+            Default is 0.5.
+
+        vdecimate_args: (dict) Additional parameters passed to core.vivtc.VDecimate in the form of dict.
+
+    """
+
+    assert clip.num_frames >= 2
+
+    def avg_func(n, f, clip):
+        if f.props["VDecimateDrop"] == 1:
+            return core.misc.AverageFrames(clip, weights=[0,1-weight,weight]) # backward averaging
+        else:
+            return clip
+
+    analysis = core.vivtc.VDecimate(clip, clip2=clip2, dryrun=True, **vdecimate_kwargs)
+
+    average = core.std.FrameEval(analysis, functools.partial(avg_func, clip=analysis), prop_src=analysis[1:])
+
+    decimate = core.vivtc.VDecimate(clip, clip2=average, dryrun=False, **vdecimate_kwargs)
+
+    return decimate
