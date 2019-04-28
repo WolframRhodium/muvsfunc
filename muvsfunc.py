@@ -5068,7 +5068,7 @@ def YAHRmask(clp, expand=5, warpdepth=32, blur=2, useawarp4=False, yahr=None):
             raise ValueError(f'{funcName}: "yahr" must be of the same size and format as "clp"!')
 
     # mt_lutxy(clp, mt_expand().mt_expand(),"x y - abs 8 - 7 <<")
-    vEdge = core.std.Expr([clp, clp.std.Maximum().std.Maximum()], ['x y - abs 8 - 128 *'])
+    vEdge = core.std.Expr([clp, clp.std.Maximum().std.Maximum()], ['x y - abs {i} - 128 *'.format(i=8 * ((1 << clp.format.bits_per_sample) - 1) / 255)])
 
     # vEdge.binomialblur(expand*2).mt_lut("x 4 <<")
     mask1 = core.tcanny.TCanny(vEdge, sigma=math.sqrt(expand*2), mode=-1).std.Expr(['x 16 *'])
