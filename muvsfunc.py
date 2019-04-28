@@ -4983,7 +4983,7 @@ def avg_decimate(clip, clip2=None, weight=0.5, **vdecimate_kwargs):
     if not isinstance(clip, vs.VideoNode):
         raise TypeError(f'{funcName}: "clip" must be a clip!')
 
-    assert clip.num_frames >= 1
+    assert clip.num_frames >= 2
 
     def avg_func(n, f, clip):
         if f.props["VDecimateDrop"] == 1:
@@ -5068,7 +5068,7 @@ def YAHRmask(clp, expand=5, warpdepth=32, blur=2, useawarp4=False, yahr=None):
             raise ValueError(f'{funcName}: "yahr" must be of the same size and format as "clp"!')
 
     # mt_lutxy(clp, mt_expand().mt_expand(),"x y - abs 8 - 7 <<")
-    vEdge = core.std.Expr([clp.std.Maximum(), clp.std.Minimum()], ['x y - abs 8 - 128 *'])
+    vEdge = core.std.Expr([clp, clp.std.Maximum().std.Maximum()], ['x y - abs 8 - 128 *'])
 
     # vEdge.binomialblur(expand*2).mt_lut("x 4 <<")
     mask1 = core.tcanny.TCanny(vEdge, sigma=math.sqrt(expand*2), mode=-1).std.Expr(['x 16 *'])
