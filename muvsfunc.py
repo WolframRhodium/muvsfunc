@@ -54,6 +54,7 @@ Functions:
     MaskedLimitFilter
     @multi_scale
     avg_decimate
+    YAHRmask
 '''
 
 import functools
@@ -4977,11 +4978,16 @@ def avg_decimate(clip, clip2=None, weight=0.5, **vdecimate_kwargs):
 
     """
 
-    assert clip.num_frames >= 2
+    funcName = 'avg_decimate'
+
+    if not isinstance(clip, vs.VideoNode):
+        raise TypeError(f'{funcName}: "clip" must be a clip!')
+
+    assert clip.num_frames >= 1
 
     def avg_func(n, f, clip):
         if f.props["VDecimateDrop"] == 1:
-            return core.misc.AverageFrames(clip, weights=[0,1-weight,weight]) # backward averaging
+            return core.misc.AverageFrames(clip, weights=[0,1-weight,weight]) # forward averaging
         else:
             return clip
 
@@ -4992,3 +4998,91 @@ def avg_decimate(clip, clip2=None, weight=0.5, **vdecimate_kwargs):
     decimate = core.vivtc.VDecimate(clip, clip2=average, dryrun=False, **vdecimate_kwargs)
 
     return decimate
+
+def YAHRmask(clp, expand=5, warpdepth=32, blur=2, useawarp4=False, yahr=None):
+    """YAHRmask
+
+    Author: Tophf
+
+    Source: https://pastebin.com/raw/LUErwWR8
+
+    Modified from Holy's havsfunc.YAHR()
+
+    binomialblur(variance=expand*2) in Avisynth is implemented by core.tcanny.TCanny(sigma=sqrt(expand*2), mode=-1)
+
+    Args:
+        clp: Input clip. Must have constant format and dimensions, 8..16 bit integer pixels, and it must not be RGB.
+
+        expand: (float) Expansion of edge mask.
+            Default is 5.
+
+        warpdepth: (int) AWarpSharp()'s "depth". Controls how far to warp.
+            Default is 32.
+
+        blur: (int) AWarpSharp()'s "blur". Controls the number of times to blur the edge mask for AWarp().
+            Default is 2.
+
+        useawarp4: (bool) Useful for better subpixel interpolation in warping.
+            Default is False.
+
+        yahr: (clip) User'defined YAHR result.
+            Must be of the same size and format as "clp".
+            Default is None.
+    """
+
+    funcName = 'YAHRmask'
+
+    if not isinstance(clp, vs.VideoNode):
+        raise TypeError(f'{funcName}: "clp" must be a clip!')
+
+    if clp.format.color_family != vs.GRAY:
+        clp_orig = clp
+        clp = mvf.GetPlane(clp, 0)
+    else:
+        clp_orig = None
+
+    if yahr is None:
+        # YAHR2(warpdepth, blur, useawarp4)
+        b1 = core.std.Convolution(haf.MinBlur(clp, 2), matrix=[1, 2, 1, 2, 4, 2, 1, 2, 1])
+        b1D = core.std.MakeDiff(clp, b1)
+
+        if not useawarp4:
+            w1 = haf.Padding(clp, 6, 6, 6, 6).warp.AWarpSharp2(blur=blur, depth=warpdepth).std.Crop(6, 6, 6, 6)
+        else:
+            awarp_mask = core.warp.ASobel(clp).warp.ABlur(blur=blur)
+            clp4 = clp.resize.Bilinear(clp.width*4, clp.height*4, src_left=0.375, src_top=0.375)
+            w1 = core.warp.AWarp(clp4, awarp_mask, depth=warpdepth)
+
+        w1b1 = core.std.Convolution(haf.MinBlur(w1, 2), matrix=[1, 2, 1, 2, 4, 2, 1, 2, 1])
+        w1b1D = core.std.MakeDiff(w1, w1b1)
+        DD = core.rgvs.Repair(b1D, w1b1D, 13)
+        DD2 = core.std.MakeDiff(b1D, DD)
+        yahr = core.std.MakeDiff(clp, DD2)
+    else:
+        if not isinstance(yahr, vs.VideoNode):
+            raise TypeError(f'{funcName}: "yahr" must be a clip!')
+
+        yahr = mvf.GetPlane(yahr, 0)
+
+        if yahr.format.id != clp.format.id or yahr.width != clp.width or yahr.height != clp.height:
+            raise ValueError(f'{funcName}: "yahr" must be of the same size and format as "clp"!')
+
+    # mt_lutxy(clp, mt_expand().mt_expand(),"x y - abs 8 - 7 <<")
+    vEdge = core.std.Expr([clp.std.Maximum(), clp.std.Minimum()], ['x y - abs 8 - 128 *'])
+
+    # vEdge.binomialblur(expand*2).mt_lut("x 4 <<")
+    mask1 = core.tcanny.TCanny(vEdge, sigma=math.sqrt(expand*2), mode=-1).std.Expr(['x 16 *'])
+
+    # vEdge.removegrain(12, -1).mt_invert()
+    mask2 = core.std.Convolution(vEdge, matrix=[1, 2, 1, 2, 4, 2, 1, 2, 1]).std.Invert()
+
+    # mt.logic(mask1, mask2, "min")
+    mask = core.std.Expr([mask1, mask2], ['x y min'])
+
+    # mt_merge(clp, yahr, mask)
+    last = core.std.MaskedMerge(clp, yahr, mask)
+
+    if clp_orig is not None:
+        return core.std.ShufflePlanes([last, clp_orig], planes=[0, 1, 2], colorfamily=clp_orig.format.color_family)
+    else:
+        return last
