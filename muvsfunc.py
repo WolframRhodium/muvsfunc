@@ -55,6 +55,7 @@ Functions:
     @multi_scale
     avg_decimate
     YAHRmask
+    Cdeblend
 '''
 
 import functools
@@ -444,6 +445,7 @@ def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=
     """GradFun3 by Firesledge v0.1.1
 
     Port by Muonium  2016/6/18
+
     Port from Dither_tools v1.27.2 (http://avisynth.nl/index.php/Dither_tools)
     Internal precision is always 16 bits.
 
@@ -551,7 +553,7 @@ def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=
     bits = src.format.bits_per_sample
     src_16 = core.fmtc.bitdepth(src, bits=16, planes=planes) if bits < 16 else src
     src_8 = core.fmtc.bitdepth(src, bits=8, dmode=1, planes=[0]) if bits != 8 else src
-    if src == ref:
+    if src is ref:
         ref_16 = src_16
     else:
         ref_16 = core.fmtc.bitdepth(ref, bits=16, planes=planes) if ref.format.bits_per_sample < 16 else ref
@@ -611,6 +613,8 @@ def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=
 
 
 def _GF3_smooth(src_16, ref_16, smode, radius, thr, elast, planes):
+    funcName = "_GF3_smooth"
+
     if smode == 0:
         return _GF3_smoothgrad_multistage(src_16, ref_16, radius, thr, elast, planes)
     elif smode == 1:
@@ -1265,7 +1269,7 @@ def Soothe_mod(input, source, keep=24, radius=1, scenechange=32, use_misc=True):
     if not isinstance(source, vs.VideoNode):
         raise TypeError(funcName + ': \"source\" must be a clip!')
 
-    if input == source:
+    if input is source:
         return input
 
     if input.format.id != source.format.id:
@@ -2710,7 +2714,7 @@ def BalanceBorders(c, cTop=0, cBottom=0, cLeft=0, cRight=0, thresh=128, blur=999
             There will not be anything very terrible if you specify values that are greater than the minimum required in your case,
             but to achieve a good result, "it is better not to" ...
             Range: 0 will skip the processing. For RGB input, the range is 2~inf.
-                For YUV or YCbCr input, the minimum accepted value depends on chroma subsampling.
+                For YUV or YCoCg input, the minimum accepted value depends on chroma subsampling.
                 Specifically, for YV24, the range is also 2~inf. For YV12, the range is 4~inf.
             Default is 0.
 
@@ -4173,7 +4177,7 @@ def RandomInterleave(clips, seed=None, rand_list=None):
 
     length = len(clips)
     if length == 1:
-        return cilps[0]
+        return clips[0]
 
     if rand_list is None:
         import random
@@ -4754,8 +4758,8 @@ def MaskedLimitFilter(flt, src, ref=None, thr=1.0, elast=2.0, brighten_thr=None,
     limitExpr = f"{src_str} {dif_str} {thr_2_str} {dif_abs_str} - * {thr_slope_str} * +"
     limitExpr = f"{dif_abs_str} {thr_1_str} <= {flt_str} {dif_abs_str} {thr_2_str} >= {src_str} {limitExpr} ? ?"
 
-    if brighten_thr == thr:
-        if ref == src:
+    if brighten_thr is thr:
+        if ref is src:
             clips = [clip for clip in [flt, src, thr, elast] if isinstance(clip, vs.VideoNode)]
         else:
             clips = [clip for clip in [flt, src, ref, thr, elast] if isinstance(clip, vs.VideoNode)]
@@ -4798,7 +4802,7 @@ def MaskedLimitFilter(flt, src, ref=None, thr=1.0, elast=2.0, brighten_thr=None,
 
         limitExpr = f"{flt_str} {ref_str} > {brighten_limitExpr} {limitExpr} ?"
 
-        if ref == src:
+        if ref is src:
             clips = [clip for clip in [flt, src, thr, elast, brighten_thr] if isinstance(clip, vs.VideoNode)]
         else:
             clips = [clip for clip in [flt, src, ref, thr, elast, brighten_thr] if isinstance(clip, vs.VideoNode)]
@@ -4968,7 +4972,7 @@ def avg_decimate(clip, clip2=None, weight=0.5, **vdecimate_kwargs):
 
         clip2: (clip) Clip that will use to create the output frames. 
             If clip2 is used, this filter will perform all calculations based on clip, but will copy the chosen fields from clip2. 
-            This can be used to work around VFM’s video format limitations.
+            This can be used to work around VDecimate’s video format limitations.
             Default is None.
 
         weight: (float, 0~1) Weight used to merge duplicates frames.
@@ -4987,7 +4991,7 @@ def avg_decimate(clip, clip2=None, weight=0.5, **vdecimate_kwargs):
 
     def avg_func(n, f, clip):
         if f.props["VDecimateDrop"] == 1:
-            return core.misc.AverageFrames(clip, weights=[0,1-weight,weight]) # forward averaging
+            return core.misc.AverageFrames(clip, weights=[0, 1-weight, weight]) # forward averaging
         else:
             return clip
 
@@ -4998,6 +5002,7 @@ def avg_decimate(clip, clip2=None, weight=0.5, **vdecimate_kwargs):
     decimate = core.vivtc.VDecimate(clip, clip2=average, dryrun=False, **vdecimate_kwargs)
 
     return decimate
+
 
 def YAHRmask(clp, expand=5, warpdepth=32, blur=2, useawarp4=False, yahr=None):
     """YAHRmask
@@ -5068,7 +5073,7 @@ def YAHRmask(clp, expand=5, warpdepth=32, blur=2, useawarp4=False, yahr=None):
             raise ValueError(f'{funcName}: "yahr" must be of the same size and format as "clp"!')
 
     # mt_lutxy(clp, mt_expand().mt_expand(),"x y - abs 8 - 7 <<")
-    vEdge = core.std.Expr([clp, clp.std.Maximum().std.Maximum()], ['x y - abs {i} - 128 *'.format(i=8 * ((1 << clp.format.bits_per_sample) - 1) / 255)])
+    vEdge = core.std.Expr([clp, clp.std.Maximum().std.Maximum()], ['y x - {i} - 128 *'.format(i=8 * ((1 << clp.format.bits_per_sample) - 1) / 255)])
 
     # vEdge.binomialblur(expand*2).mt_lut("x 4 <<")
     mask1 = core.tcanny.TCanny(vEdge, sigma=math.sqrt(expand*2), mode=-1).std.Expr(['x 16 *'])
@@ -5086,3 +5091,178 @@ def YAHRmask(clp, expand=5, warpdepth=32, blur=2, useawarp4=False, yahr=None):
         return core.std.ShufflePlanes([last, clp_orig], planes=[0, 1, 2], colorfamily=clp_orig.format.color_family)
     else:
         return last
+
+
+def Cdeblend(input, omode=0, bthresh=0.1, mthresh=0.6, xr=1.5, yr=2.0, fnr=False, dclip=None):
+    """A simple blend replacing function like unblend or removeblend
+
+    Port from Cdeblend v1.1b (http://avisynth.nl/images/Cdeblend.avs)
+
+    Args:
+        input: Input clip.
+            If "dclip" is None, input must be a YUV/YCoCg/Gray clip.
+
+        omode: (int, 0~4) Stands for the output mode. There are five different omodes: 
+            omode 0 -> The previous frame will be duplicated to avoid a blend. 
+            omode 1 -> The next frame is used instead of a blend. 
+            omode 2 -> Like omode 0 but with some double-blend detection (only without missing fields). 
+            omode 3 -> A special mode for 12fps sources. 
+            omode 4 -> Does nothing with the source. It just subtitles the blend factor. 
+            Default: 0
+
+        bthresh: (float, 0~2) For omode 0 and 1 bthresh will be just compared with the calculated blend factor. 
+            If the blend factor is higher a blend is detected. 
+            Omode 3 uses this threshold to detect clears. 
+            If blendfactor<-bthresh the frame will be output also if there is another frame with a smaller blendfactor. 
+            This can give a better motion. 
+            Default: 0.1
+
+        mthresh: (float, 0.3~1.6) Used for (m)otion (thresh)olding. 
+            It regulates the blend detection of frames with small pixel value differences. 
+            A better quality of the source allows lower values and a more accurate detection. 
+            Default: 0.1
+
+        xr, yr: (float, 1.0-4.0) The scaled detection radius (xr & yr) blurs the internal detection clip 
+            and can speed up the function a little bit.
+            Default: 1.5, 2.0
+
+        fnr: (bool) With fnr=True you enable a (f)ast (n)oise (r)eduction. 
+            It's sometimes useful for noisy sources and typical area motion (anime). 
+            Don't use a too big radius if you enable this feature and don't use it on very clean sources 
+            (speed decreasing is not the only negative effect). 
+            Default: False
+
+        dclip: (clip) The detectionclip can be set to improve the blend detection (cleaning the clip before). 
+            This clip is only used for the blend detection and not for output. 
+            Must be a YUV/YCoCg/Gray clip and must be of the same number of frames as "input".
+            Default: "input".
+    """
+
+    funcName = 'Cdeblend'
+
+    # check
+    if not isinstance(input, vs.VideoNode):
+        raise TypeError(f'{funcName}: "input" must be a clip!')
+
+    if dclip is None:
+        if input.format.color_family not in [vs.YUV, vs.YCOCG, vs.GRAY]:
+            raise TypeError(f'{funcName}: "input" must be a YUV/YCOCG/Gray clip if "dclip" is not provided!')
+    else:
+        if not isinstance(dclip, vs.VideoNode) or dclip.format.color_family not in [vs.YUV, vs.YCOCG, vs.GRAY]:
+            raise TypeError(f'{funcName}: "dclip" must be a YUV/YCoCg/Gray clip!')
+
+        if dclip.num_frames != input.num_frames:
+            raise TypeError(f'{funcName}: "dclip" must of the same number of frames as "input"!')
+
+    # coefficients
+    Cbp3 = 128.0 if bthresh > 0 else 2.0
+    Cbp2 = 128.0 if bthresh > 0 else 2.0
+    Cbp1 = 128.0 if bthresh > 0 else 2.0
+    Cbc0 = 128.0 if bthresh > 0 else 2.0
+    Cbn1 = 128.0 if bthresh > 0 else 2.0
+    Cbn2 = 128.0 if bthresh > 0 else 2.0
+
+    Cdp3 = mthresh * 0.5
+    Cdp2 = mthresh * 0.5
+    Cdp1 = mthresh * 0.5
+    Cdc0 = mthresh * 0.5
+    Cdn1 = mthresh * 0.5
+
+    current = 0
+
+    def evaluate(n, f, clip):
+        nonlocal Cdp3, Cdp2, Cdp1, Cdc0, Cdn1, Cbp3, Cbp2, Cbp1, Cbc0, Cbn1, Cbn2, current
+
+        Cdiff = f[0].props["PlaneMAE"] * 255
+        Cbval = f[1].props["PlaneMean"] * 255
+
+        Cdp3 = Cdp2
+        Cdp2 = Cdp1
+        Cdp1 = Cdc0
+        Cdc0 = Cdn1 if omode > 1 else Cdiff
+        Cdn1 = Cdiff
+
+        Cbp3 = Cbp2
+        Cbp2 = Cbp1
+        Cbp1 = Cbc0
+        Cbc0 = Cbn1 if omode > 1 else (0.0 if Cdc0 < mthresh else (Cbval - Cbn2) / ((max(Cdc0, Cdp1) + mthresh) ** 0.8))
+        Cbn1 = 0.0 if (Cdc0 < mthresh or Cdn1 < mthresh) else (Cbval - Cbn2) / ((max(Cdc0, Cdp1) + mthresh) ** 0.8)
+        Cbn2 = Cbval
+
+        current = (1 if ((Cbn1 < -bthresh and Cbc0 > bthresh) or (Cbn1 < 0 and Cbc0 > 0 and Cbc0 + Cbp1 > 0 and Cbc0 + Cbp1 + Cbp2 > 0)) else
+                   0 if ((Cbc0 < -bthresh and Cbp1 > bthresh) or (Cbc0 < 0 and Cbc0 + Cbn1 < 0 and Cbp1 > 0 and Cbp1 + Cbp2 > 0)) else 
+                   (2 if Cbn1 > 0 else 1) if current == -2 else 
+                   current - 1)
+
+        if omode == 2:
+            current = (-1 if min(-Cbp1, Cbc0 + Cbn1) > bthresh and abs(Cbn1) > abs(Cbc0) else
+                       1 if min(-Cbp2 - Cbp1, Cbc0) > bthresh and abs(Cbp2) > abs(Cbp1) else
+                       -1 if min(-Cbp1, Cbc0) > bthresh else
+                       0)
+
+        if omode <= 1:
+            current = (0 if min(-Cbp1, Cbc0) < bthresh else
+                       -1 if omode == 0 else
+                       1)
+
+        if omode != 4:
+            return clip[0:2] + clip[2+current:]
+        else:
+            text = f'{min(-Cbp1, Cbc0) if Cbc0 > 0 and Cbp1 < 0 else 0.0}{" -> BLEND!!" if min(-Cbp1, Cbc0) >= bthresh else " "}'
+            return core.sub.Subtitle(clip, text)
+
+    # process
+    blendclip = input if dclip is None else dclip
+    blendclip = mvf.GetPlane(blendclip, 0)
+    blendclip = core.median.TemporalMedian(blendclip, radius=1)
+    blendclip = core.resize.Bilinear(blendclip, int(blendclip.width * 0.125 / xr) * 8, int(blendclip.height * 0.125 / yr) * 8)
+
+    diff = core.std.MakeDiff(blendclip, blendclip[1:])
+
+    if input.format.sample_type == vs.INTEGER:
+        neutral = 1 << (input.format.bits_per_sample - 1)
+        neutral2 = 1 << input.format.bits_per_sample
+
+        peak = (1 << input.format.bits_per_sample) - 1
+        inv_scale = "" if input.format.bits_per_sample == 8 else f"{255 / peak} *"
+        scale = 1 if input.format.bits_per_sample == 8 else peak / 255
+
+    elif input.format.sample_type == vs.FLOAT:
+        neutral = 0.5
+        neutral2 = 1
+
+        peak = 1
+        inv_scale = f"{255 / peak} *"
+        scale = peak / 255
+
+    x_diff = f"x {neutral} - abs"
+    y_diff = f"y {neutral} - abs"
+    xy_diff = f"x y + {neutral2} - abs"
+
+    expr = (f"{x_diff} {y_diff} < {x_diff} {xy_diff} < and "                       # ((abs(x-128) < abs(y-128)) && (abs(x-128) < abs(x+y-256)) ? 
+            f"{x_diff} {inv_scale} dup sqrt - dup * "                              #  sqrt(abs(x-128) - sqrt(abs(x-128)))^2 :
+            f"{y_diff} {xy_diff} < "                                               #  abs(y-128) < abs(x+y-256) ?
+            f"{y_diff} {inv_scale} dup sqrt - dup * "                              #  sqrt(abs(y-128) - sqrt(abs(y-128)))^2 :
+            f"{xy_diff} {inv_scale} dup sqrt - dup * ? ? "                         #  sqrt(abs(x+y-256) - sqrt(abs(x+y-256)))^2
+            f"x {neutral} - y {neutral} - * 0 > {-scale} {scale} ? * {neutral} +") # ) * ((x-128) * (y-128) < 0 ? -1 : 1) + 128
+
+    mask = core.std.Expr([diff, diff[1:]], [expr])
+
+    if omode > 1:
+        # LumaDifference(blendclip.trim(1,0),blendclip.trim(3,0))
+        Cdiff = mvf.PlaneCompare(blendclip[1:], blendclip[3:], mae=True, rmse=False, psnr=False, cov=False, corr=False)
+
+        # AverageLuma(mask.trim(1,0))
+        Cbval = mvf.PlaneStatistics(mask[1:], mean=True, mad=False, var=False, std=False, rms=False)
+    else:
+        # LumaDifference(blendclip,blendclip.trim(2,0)
+        Cdiff = mvf.PlaneCompare(blendclip, blendclip[2:], mae=True, rmse=False, psnr=False, cov=False, corr=False)
+
+        # AverageLuma(mask)
+        Cbval = mvf.PlaneStatistics(mask, mean=True, mad=False, var=False, std=False, rms=False)
+
+    last = core.std.FrameEval(input, functools.partial(evaluate, clip=input), prop_src=[Cdiff, Cbval])
+
+    recl = haf.ChangeFPS(haf.ChangeFPS(last, last.fps_num * 2, last.fps_den * 2), last.fps_num, last.fps_den).std.Cache(make_linear=True)
+
+    return recl
