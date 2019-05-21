@@ -445,7 +445,6 @@ def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=
     """GradFun3 by Firesledge v0.1.1
 
     Port by Muonium  2016/6/18
-
     Port from Dither_tools v1.27.2 (http://avisynth.nl/index.php/Dither_tools)
     Internal precision is always 16 bits.
 
@@ -5120,7 +5119,7 @@ def Cdeblend(input, omode=0, bthresh=0.1, mthresh=0.6, xr=1.5, yr=2.0, fnr=False
         mthresh: (float, 0.3~1.6) Used for (m)otion (thresh)olding. 
             It regulates the blend detection of frames with small pixel value differences. 
             A better quality of the source allows lower values and a more accurate detection. 
-            Default: 0.1
+            Default: 0.6
 
         xr, yr: (float, 1.0-4.0) The scaled detection radius (xr & yr) blurs the internal detection clip 
             and can speed up the function a little bit.
@@ -5146,7 +5145,7 @@ def Cdeblend(input, omode=0, bthresh=0.1, mthresh=0.6, xr=1.5, yr=2.0, fnr=False
 
     if dclip is None:
         if input.format.color_family not in [vs.YUV, vs.YCOCG, vs.GRAY]:
-            raise TypeError(f'{funcName}: "input" must be a YUV/YCOCG/Gray clip if "dclip" is not provided!')
+            raise TypeError(f'{funcName}: "input" must be a YUV/YCoCg/Gray clip if "dclip" is not provided!')
     else:
         if not isinstance(dclip, vs.VideoNode) or dclip.format.color_family not in [vs.YUV, vs.YCOCG, vs.GRAY]:
             raise TypeError(f'{funcName}: "dclip" must be a YUV/YCoCg/Gray clip!')
@@ -5222,7 +5221,6 @@ def Cdeblend(input, omode=0, bthresh=0.1, mthresh=0.6, xr=1.5, yr=2.0, fnr=False
     if input.format.sample_type == vs.INTEGER:
         neutral = 1 << (input.format.bits_per_sample - 1)
         neutral2 = 1 << input.format.bits_per_sample
-
         peak = (1 << input.format.bits_per_sample) - 1
         inv_scale = "" if input.format.bits_per_sample == 8 else f"{255 / peak} *"
         scale = 1 if input.format.bits_per_sample == 8 else peak / 255
@@ -5230,7 +5228,6 @@ def Cdeblend(input, omode=0, bthresh=0.1, mthresh=0.6, xr=1.5, yr=2.0, fnr=False
     elif input.format.sample_type == vs.FLOAT:
         neutral = 0.5
         neutral2 = 1
-
         peak = 1
         inv_scale = f"{255 / peak} *"
         scale = peak / 255
@@ -5244,7 +5241,7 @@ def Cdeblend(input, omode=0, bthresh=0.1, mthresh=0.6, xr=1.5, yr=2.0, fnr=False
             f"{y_diff} {xy_diff} < "                                               #  abs(y-128) < abs(x+y-256) ?
             f"{y_diff} {inv_scale} dup sqrt - dup * "                              #  sqrt(abs(y-128) - sqrt(abs(y-128)))^2 :
             f"{xy_diff} {inv_scale} dup sqrt - dup * ? ? "                         #  sqrt(abs(x+y-256) - sqrt(abs(x+y-256)))^2
-            f"x {neutral} - y {neutral} - * 0 > {-scale} {scale} ? * {neutral} +") # ) * ((x-128) * (y-128) < 0 ? -1 : 1) + 128
+            f"x {neutral} - y {neutral} - * 0 > {-scale} {scale} ? * {neutral} +") # ) * ((x-128) * (y-128) > 0 ? -1 : 1) + 128
 
     mask = core.std.Expr([diff, diff[1:]], [expr])
 
