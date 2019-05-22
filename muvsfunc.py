@@ -56,6 +56,7 @@ Functions:
     avg_decimate
     YAHRmask
     Cdeblend
+    S_BoxFilter
 '''
 
 import functools
@@ -1892,7 +1893,7 @@ def DeFilter(input, fun, iter=10, planes=None, **fun_args):
         [1] Tao, X., Zhou, C., Shen, X., Wang, J., & Jia, J. (2017, October). Zero-Order Reverse Filtering.
             In Computer Vision (ICCV), 2017 IEEE International Conference on (pp. 222-230). IEEE.
         [2] https://github.com/jiangsutx/DeFilter
-        [3] Milanfar, P. (2018). Rendition: Reclaiming what a black box takes away. arXiv preprint arXiv:1804.08651.
+        [3] Milanfar, P. (2018). Rendition: Reclaiming what a black box takes away. SIAM Journal on Imaging Sciences, 11(4), 2722–2756.
 
     '''
 
@@ -5263,3 +5264,67 @@ def Cdeblend(input, omode=0, bthresh=0.1, mthresh=0.6, xr=1.5, yr=2.0, fnr=False
     recl = haf.ChangeFPS(haf.ChangeFPS(last, last.fps_num * 2, last.fps_den * 2), last.fps_num, last.fps_den).std.Cache(make_linear=True)
 
     return recl
+
+
+def S_BoxFilter(clip, radius=1, planes=None):
+    """Side window box filter
+
+    Side window box filter is a local edge-preserving filter that is derived from
+    conventional box filter and side window filtering technique.
+
+    Args:
+        clip: Input clip.
+
+        radius: (int) Radius of filtering.
+            The size is (radius*2+1) * (radius*2+1).
+            Default: 1
+
+        planes: (int []) Specify which planes to process.
+            Unprocessed planes will be copied from the first clip "flt".
+            By default, all planes will be processed.
+
+    Ref:
+        [1] Yin, H., Gong, Y., & Qiu, G. (2019) Side Window Filtering. arXiv preprint arXiv:1905.07177.
+        [2] https://github.com/YuanhaoGong/SideWindowFilter
+
+    """
+
+    funcName = 'S_BoxFilter'
+
+    # check
+    if not isinstance(clip, vs.VideoNode):
+        raise TypeError(f'{funcName}: "clip" must be a clip!')
+
+    if planes is None:
+        planes = list(range(flt_h.format.num_planes))
+    elif isinstance(planes, int):
+        planes = [planes]
+
+
+    half_kernel = [(1 if i <= 0 else 0) for i in range(-radius, radius+1)]
+
+    # set of side window filters
+    # the third filter of each set can be further optimized using results of the first two filters, but the code will look complicated
+    hrz_filters = [
+        functools.partial(core.std.Convolution, matrix=half_kernel, planes=planes, mode='h'), 
+        functools.partial(core.std.Convolution, matrix=half_kernel[::-1], planes=planes, mode='h'), 
+        functools.partial(core.std.BoxBlur, planes=planes, hradius=radius, hpasses=1, vpasses=0)
+        ]
+
+    vrt_filters = [
+        functools.partial(core.std.Convolution, matrix=half_kernel, planes=planes, mode='v'), 
+        functools.partial(core.std.Convolution, matrix=half_kernel[::-1], planes=planes, mode='v'), 
+        functools.partial(core.std.BoxBlur, planes=planes, hpasses=0, vradius=radius, vpasses=1)
+        ]
+
+    # process
+    hrz_intermediates = (hrz_flt(clip) for hrz_flt in hrz_filters)
+    intermediates = (vrt_flt(hrz_intermediate) 
+        for i, hrz_intermediate in enumerate(hrz_intermediates) 
+        for j, vrt_flt in enumerate(vrt_filters) 
+        if not i==j==2)
+
+    expr = [("x z - abs y z - abs < x y ?" if i in planes else "") for i in range(clip.format.num_planes)]
+    res = functools.reduce(lambda x, y: core.std.Expr([x, y, clip], expr), intermediates)
+
+    return res
