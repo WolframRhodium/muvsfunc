@@ -5300,28 +5300,27 @@ def S_BoxFilter(clip, radius=1, planes=None):
     elif isinstance(planes, int):
         planes = [planes]
 
-
     half_kernel = [(1 if i <= 0 else 0) for i in range(-radius, radius+1)]
 
     # set of side window filters
     # the third filter of each set can be further optimized using results of the first two filters, but the code will look complicated
-    hrz_filters = [
-        functools.partial(core.std.Convolution, matrix=half_kernel, planes=planes, mode='h'), 
-        functools.partial(core.std.Convolution, matrix=half_kernel[::-1], planes=planes, mode='h'), 
-        functools.partial(core.std.BoxBlur, planes=planes, hradius=radius, hpasses=1, vpasses=0)
-        ]
-
     vrt_filters = [
         functools.partial(core.std.Convolution, matrix=half_kernel, planes=planes, mode='v'), 
         functools.partial(core.std.Convolution, matrix=half_kernel[::-1], planes=planes, mode='v'), 
         functools.partial(core.std.BoxBlur, planes=planes, hpasses=0, vradius=radius, vpasses=1)
-        ]
+    ]
+
+    hrz_filters = [
+        functools.partial(core.std.Convolution, matrix=half_kernel, planes=planes, mode='h'), 
+        functools.partial(core.std.Convolution, matrix=half_kernel[::-1], planes=planes, mode='h'), 
+        functools.partial(core.std.BoxBlur, planes=planes, hradius=radius, hpasses=1, vpasses=0)
+    ]
 
     # process
-    hrz_intermediates = (hrz_flt(clip) for hrz_flt in hrz_filters)
-    intermediates = (vrt_flt(hrz_intermediate) 
-        for i, hrz_intermediate in enumerate(hrz_intermediates) 
-        for j, vrt_flt in enumerate(vrt_filters) 
+    vrt_intermediates = (vrt_flt(clip) for vrt_flt in vrt_filters)
+    intermediates = (hrz_flt(vrt_intermediate) 
+        for i, vrt_intermediate in enumerate(vrt_intermediates) 
+        for j, hrz_flt in enumerate(hrz_filters) 
         if not i==j==2)
 
     expr = [("x z - abs y z - abs < x y ?" if i in planes else "") for i in range(clip.format.num_planes)]
