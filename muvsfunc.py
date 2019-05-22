@@ -5296,7 +5296,7 @@ def S_BoxFilter(clip, radius=1, planes=None):
         raise TypeError(f'{funcName}: "clip" must be a clip!')
 
     if planes is None:
-        planes = list(range(flt_h.format.num_planes))
+        planes = list(range(clip.format.num_planes))
     elif isinstance(planes, int):
         planes = [planes]
 
