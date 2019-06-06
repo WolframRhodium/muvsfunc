@@ -57,6 +57,7 @@ Functions:
     YAHRmask
     Cdeblend
     S_BoxFilter
+    VFRSplice
 '''
 
 import functools
@@ -5327,3 +5328,87 @@ def S_BoxFilter(clip, radius=1, planes=None):
     res = functools.reduce(lambda x, y: core.std.Expr([x, y, clip], expr), intermediates)
 
     return res
+
+
+def VFRSplice(clips, tcfile=None, v2=True, precision=6):
+    """fractions-based VFRSplice()
+
+    This function is modified from mvsfunc.VFRSplice().
+
+    Same as mvsfunc.VFRSplice(), with possibly higher precision for timecode v2 output
+    since it is implemented based on rational number arithmetic
+    rather than floating-point arithmetic.
+
+    Args: 
+        clips: List of clips to be spliced.
+            Each clip should be CRF(constant frame rate).
+
+        tcfile: (str) Timecode file output.
+            Default: None.
+
+        v2: (bool) Timecode format.
+            True for v2 output and False for v1 output.
+            Default: True.
+
+        precision: (int) Precision of time and frame rate,
+            indicating how many digits should be displayed after the decimal point for a fixed-point value.
+            Default: 6.
+
+    """
+
+    funcName = "VFRSplice"
+
+    from fractions import Fraction
+
+    # Arguments
+    if isinstance(clips, vs.VideoNode):
+        clips = [clips]
+    elif isinstance(clips, list):
+        for clip in clips:
+            if not isinstance(clip, vs.VideoNode):
+                raise TypeError(f'{funcName}: each element in "clips" must be a clip!')
+            if clip.fps == Fraction(0, 1):
+                raise ValueError(f'{funcName}: each clip in "clips" must be CFR!')
+    else:
+        raise TypeError(f'{funcName}: "clips" must be a clip or a list of clips!')
+
+    # Timecode file
+    if tcfile is not None:
+        from collections import namedtuple
+
+        tc_record = namedtuple("tc_record", "start, end, fps")
+
+        # Get timecode v1 list
+        cur_frame = 0
+        tc_list = []
+        for clip in clips:
+            if len(tc_list) > 0 and clip.fps == tc_list[-1].fps:
+                tc_list[-1] = tc_list[-1]._replace(end=cur_frame + clip.num_frames - 1)
+            else:
+                tc_list.append(tc_record(cur_frame, cur_frame + clip.num_frames - 1, clip.fps))
+            cur_frame += clip.num_frames
+
+        # Fraction to str function
+        frac2str = lambda frac, precision: "{:<.{precision}F}".format(float(frac), precision=precision)
+
+        # Write to timecode file
+        if v2: # timecode v2
+            olines = ["# timecode format v2\n"]
+            acc_time = Fraction(0)
+            for tc in tc_list:
+                frame_duration = 1000 / tc.fps # ms
+                for frame in range(tc.start, tc.end + 1):
+                    olines.append("{time}\n".format(time=frac2str(acc_time, precision)))
+                    acc_time += frame_duration
+        else: # timecode v1
+            olines = ["# timecode format v1\n"]
+            olines.append("Assume {fps}\n".format(fps=frac2str(tc_list[0].fps, precision)))
+
+            tc2str = lambda tc: "{start},{end},{fps}\n".format(start=tc.start, end=tc.end, fps=frac2str(tc.fps, precision))
+            olines += [tc2str(tc) for tc in tc_list]
+
+        with open(tcfile, 'w') as ofile:
+            ofile.writelines(olines)
+
+    # Output spliced clip
+    return core.std.Splice(clips, mismatch=True)
