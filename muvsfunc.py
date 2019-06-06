@@ -61,7 +61,9 @@ Functions:
 '''
 
 import functools
+import itertools
 import math
+import operator
 import vapoursynth as vs
 from vapoursynth import core
 import havsfunc as haf
@@ -5372,40 +5374,95 @@ def VFRSplice(clips, tcfile=None, v2=True, precision=6):
     else:
         raise TypeError(f'{funcName}: "clips" must be a clip or a list of clips!')
 
+
+    def exclusive_accumulate(iterable, func=operator.add, initializer=None):
+        """Exclusive scan
+
+        Make an iterator that returns accumulated results of binary functions, 
+        specified via the func argument.
+
+        Examples:
+            exclusive_accumulate([1,2,3,4,5], operator.add) --> 1 3 6 10
+            exclusive_accumulate([1,2,3,4,5], operator.add, 0) --> 0 1 3 6 10
+        """
+
+        it = iter(iterable)
+
+        if initializer is None:
+            try:
+                total = next(it)
+            except StopIteration:
+                return
+        else:
+            total = initializer
+
+        while True:
+            try:
+                element = next(it)
+            except StopIteration:
+                return
+
+            yield total
+
+            total = func(total, element)
+
+
     # Timecode file
     if tcfile is not None:
         from collections import namedtuple
 
-        tc_record = namedtuple("tc_record", "start, end, fps")
-
         # Get timecode v1 list
-        cur_frame = 0
-        tc_list = []
-        for clip in clips:
-            if len(tc_list) > 0 and clip.fps == tc_list[-1].fps:
-                tc_list[-1] = tc_list[-1]._replace(end=cur_frame + clip.num_frames - 1)
-            else:
-                tc_list.append(tc_record(cur_frame, cur_frame + clip.num_frames - 1, clip.fps))
-            cur_frame += clip.num_frames
 
-        # Fraction to str function
-        frac2str = lambda frac, precision: "{:<.{precision}F}".format(float(frac), precision=precision)
+        # record of clip properties in clips
+        prop_record = namedtuple("raw_record", "num_frames, fps")
+        prop_record_gen = (prop_record(clip.num_frames, clip.fps) for clip in clips)
+
+        # simplified property records (merges successive properrty records with same fps)
+        prop_records_add = lambda x, y: prop_record(x.num_frames + y.num_frames, x.fps) # requires x.fps == y.fps
+        simplified_record_gen = (functools.reduce(prop_records_add, g_records) for (key, g_records) in itertools.groupby(prop_record_gen, lambda x: x.fps))
+
+        # timecode of each of the clip in clips
+        tc_record = namedtuple("tc_record", "start, end, fps")
+        separated_tc_gen = (tc_record(0, record.num_frames - 1, record.fps) for record in simplified_record_gen)
+
+        # timecode v1 list for spliced clip
+        tc_gen = itertools.accumulate(separated_tc_gen, lambda x, y: tc_record(x.end + 1, x.end + y.end + 1, y.fps))
+        # tc_list = list(tc_gen) # result is equal to mvsfunc's counterpart
+
 
         # Write to timecode file
-        if v2: # timecode v2
-            olines = ["# timecode format v2\n"]
-            acc_time = Fraction(0)
-            for tc in tc_list:
-                frame_duration = 1000 / tc.fps # ms
-                for frame in range(tc.start, tc.end + 1):
-                    olines.append("{time}\n".format(time=frac2str(acc_time, precision)))
-                    acc_time += frame_duration
-        else: # timecode v1
-            olines = ["# timecode format v1\n"]
-            olines.append("Assume {fps}\n".format(fps=frac2str(tc_list[0].fps, precision)))
 
-            tc2str = lambda tc: "{start},{end},{fps}\n".format(start=tc.start, end=tc.end, fps=frac2str(tc.fps, precision))
-            olines += [tc2str(tc) for tc in tc_list]
+        # fraction to str function
+        frac2str = lambda frac, precision: "{:<.{precision}F}".format(float(frac), precision=precision)
+
+        # write
+        if v2: # timecode v2
+            # fps to milesecond function
+            fps2ms = lambda fps: 1000 / fps
+
+            # time to string function
+            time2strln = lambda time, precision: "{time}\n".format(time=frac2str(time, precision))
+
+            # exclusive scan to calculate time stamps
+            ms_gen = (fps2ms(tc.fps) for tc in tc_gen for _ in range(tc.start, tc.end + 1))
+            time_gen = exclusive_accumulate(ms_gen, initializer=0)
+
+            olines = itertools.chain(
+                ["# timecode format v2\n"], 
+                (time2strln(time, precision) for time in time_gen)
+            )
+        else: # timecode v1
+            # timecode to string function
+            tc2strln = lambda tc, precision: "{start},{end},{fps}\n".format(start=tc.start, end=tc.end, fps=frac2str(tc.fps, precision))
+
+            first_tc = next(tc_gen)
+
+            olines = itertools.chain(
+                ["# timecode format v1\n"], 
+                ["Assume {fps}\n".format(fps=frac2str(first_tc.fps, precision))], 
+                [tc2strln(first_tc, precision)], 
+                (tc2strln(tc, precision) for tc in tc_gen)
+            )
 
         with open(tcfile, 'w') as ofile:
             ofile.writelines(olines)
