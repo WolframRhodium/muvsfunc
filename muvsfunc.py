@@ -5411,22 +5411,21 @@ def VFRSplice(clips, tcfile=None, v2=True, precision=6):
     if tcfile is not None:
         from collections import namedtuple
 
-        # Get timecode v1 list
+        # Get timecode v1 generator
 
-        # record of clip properties in clips
-        prop_record = namedtuple("raw_record", "num_frames, fps")
-        prop_record_gen = (prop_record(clip.num_frames, clip.fps) for clip in clips)
-
-        # simplified property records (merges successive properrty records with same fps)
-        prop_records_add = lambda x, y: prop_record(x.num_frames + y.num_frames, x.fps) # requires x.fps == y.fps
-        simplified_record_gen = (functools.reduce(prop_records_add, g_records) for (key, g_records) in itertools.groupby(prop_record_gen, lambda x: x.fps))
-
-        # timecode of each of the clip in clips
+        # record of timecodes of each of the clip in clips
         tc_record = namedtuple("tc_record", "start, end, fps")
-        separated_tc_gen = (tc_record(0, record.num_frames - 1, record.fps) for record in simplified_record_gen)
+        raw_tc_gen = (tc_record(0, clip.num_frames - 1, clip.fps) for clip in clips)
 
-        # timecode v1 list for spliced clip
-        tc_gen = itertools.accumulate(separated_tc_gen, lambda x, y: tc_record(x.end + 1, x.end + y.end + 1, y.fps))
+        # simplified timecode records (merges successive records with equal fps)
+        record_concat = lambda x, y: tc_record(x.start, x.end + y.end + 1, y.fps) # requires x.fps == y.fps and y.start == 0
+        simplified_raw_tc_gen = (
+            functools.reduce(record_concat, g_records) 
+            for (key, g_records) in itertools.groupby(raw_tc_gen, lambda x: x.fps))
+
+        # timecode v1 generator for spliced clip
+        record_scan = lambda x, y: tc_record(x.end + 1, x.end + y.end + 1, y.fps) # requires y.start == 0
+        tc_gen = itertools.accumulate(simplified_raw_tc_gen, record_scan)
         # tc_list = list(tc_gen) # result is equal to mvsfunc's counterpart
 
 
@@ -5453,7 +5452,7 @@ def VFRSplice(clips, tcfile=None, v2=True, precision=6):
             )
         else: # timecode v1
             # timecode to string function
-            tc2strln = lambda tc, precision: "{start},{end},{fps}\n".format(start=tc.start, end=tc.end, fps=frac2str(tc.fps, precision))
+            tc2strln = lambda tc, precision: f"{tc.start},{tc.end},{frac2str(tc.fps, precision)}\n"
 
             first_tc = next(tc_gen)
 
