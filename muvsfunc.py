@@ -5416,11 +5416,11 @@ def VFRSplice(clips, tcfile=None, v2=True, precision=6):
 
         # record of timecodes of each clip in clips
         tc_record = namedtuple("tc_record", ["start", "end", "fps"])
-        raw_tc_gen = (tc_record(0, clip.num_frames - 1, clip.fps) for clip in clips)
+        raw_record_gen = (tc_record(0, clip.num_frames - 1, clip.fps) for clip in clips)
 
         # raw timecode v1 generator for spliced clip
         record_push = lambda x, y: tc_record(x.end + 1, x.end + y.end + 1, y.fps) # requires y.start == 0
-        raw_tc_gen = itertools.accumulate(raw_tc_gen, record_push)
+        raw_tc_gen = itertools.accumulate(raw_record_gen, record_push)
 
         # simplified timecode v1 generator for spliced clip (merges successive records with equal fps)
         record_concat = lambda x, y: tc_record(x.start, y.end, y.fps) # requires x.fps == y.fps
