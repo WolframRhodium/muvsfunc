@@ -5410,22 +5410,22 @@ def VFRSplice(clips, tcfile=None, v2=True, precision=6):
     # Timecode file
     if tcfile is not None:
         from collections import namedtuple
+        from functools import reduce
 
         # Get timecode v1 generator
 
-        # record of timecodes of each of the clip in clips
-        tc_record = namedtuple("tc_record", "start, end, fps")
+        # record of timecodes of each clip in clips
+        tc_record = namedtuple("tc_record", ["start", "end", "fps"])
         raw_tc_gen = (tc_record(0, clip.num_frames - 1, clip.fps) for clip in clips)
 
-        # simplified timecode records (merges successive records with equal fps)
-        record_concat = lambda x, y: tc_record(x.start, x.end + y.end + 1, y.fps) # requires x.fps == y.fps and y.start == 0
-        simplified_raw_tc_gen = (
-            functools.reduce(record_concat, g_records) 
-            for (key, g_records) in itertools.groupby(raw_tc_gen, lambda x: x.fps))
+        # raw timecode v1 generator for spliced clip
+        record_push = lambda x, y: tc_record(x.end + 1, x.end + y.end + 1, y.fps) # requires y.start == 0
+        raw_tc_gen = itertools.accumulate(raw_tc_gen, record_push)
 
-        # timecode v1 generator for spliced clip
-        record_scan = lambda x, y: tc_record(x.end + 1, x.end + y.end + 1, y.fps) # requires y.start == 0
-        tc_gen = itertools.accumulate(simplified_raw_tc_gen, record_scan)
+        # simplified timecode v1 generator for spliced clip (merges successive records with equal fps)
+        record_concat = lambda x, y: tc_record(x.start, y.end, y.fps) # requires x.fps == y.fps
+        tc_gen = (reduce(record_concat, g) for (_, g) in itertools.groupby(raw_tc_gen, lambda x: x.fps))
+
         # tc_list = list(tc_gen) # result is equal to mvsfunc's counterpart
 
 
@@ -5439,12 +5439,12 @@ def VFRSplice(clips, tcfile=None, v2=True, precision=6):
             # fps to milesecond function
             fps2ms = lambda fps: 1000 / fps
 
-            # time to string function
-            time2strln = lambda time, precision: "{time}\n".format(time=frac2str(time, precision))
-
             # exclusive scan to calculate time stamps
             ms_gen = (fps2ms(tc.fps) for tc in tc_gen for _ in range(tc.start, tc.end + 1))
             time_gen = exclusive_accumulate(ms_gen, initializer=0)
+
+            # time to string function
+            time2strln = lambda time, precision: "{time}\n".format(time=frac2str(time, precision))
 
             olines = itertools.chain(
                 ["# timecode format v2\n"], 
