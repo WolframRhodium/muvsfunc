@@ -64,12 +64,27 @@ import functools
 import itertools
 import math
 import operator
+from collections import abc
+import numbers
+from typing import Any, Callable, Dict, Generator, Iterable
+from typing import Optional, Sequence, Tuple, TypeVar, Union
+
 import vapoursynth as vs
 from vapoursynth import core
 import havsfunc as haf
 import mvsfunc as mvf
 
-def LDMerge(flt_h, flt_v, src, mrad=0, show=0, planes=None, convknl=1, conv_div=None, calc_mode=0, power=1.0):
+
+# Type aliases
+PlanesType = Optional[Union[int, Sequence[int]]]
+VSFuncType = Union[vs.Func, Callable[..., vs.VideoNode]]
+
+
+def LDMerge(flt_h: vs.VideoNode, flt_v: vs.VideoNode, src: vs.VideoNode, mrad: int = 0, 
+            show: bool = False, planes: PlanesType = None, 
+            convknl: int = 1, conv_div: Optional[int] = None, calc_mode: int = 0, 
+            power: float = 1.0
+            ) -> vs.VideoNode:
     """Merges two filtered clips based on the gradient direction map from a source clip.
 
     Args:
@@ -79,7 +94,7 @@ def LDMerge(flt_h, flt_v, src, mrad=0, show=0, planes=None, convknl=1, conv_div=
 
         mrad: (int) Expanding of gradient direction map. Default is 0.
 
-        show: (bint) Whether to output gradient direction map. Default is False.
+        show: (bool) Whether to output gradient direction map. Default is False.
 
         planes: (int []) Whether to process the corresponding plane. By default, every plane will be processed.
             The unprocessed planes will be copied from the first clip, "flt_h".
@@ -174,7 +189,9 @@ def LDMerge(flt_h, flt_v, src, mrad=0, show=0, planes=None, convknl=1, conv_div=
         return vmap
 
 
-def Compare(src, flt, power=1.5, chroma=False, mode=2):
+def Compare(src: vs.VideoNode, flt: vs.VideoNode, power: float = 1.5, 
+            chroma: bool = False, mode: int = 2
+            ) -> vs.VideoNode:
     """Visualizes the difference between the source clip and filtered clip.
 
     Args:
@@ -184,7 +201,7 @@ def Compare(src, flt, power=1.5, chroma=False, mode=2):
 
         power: (float) The variable in the processing function which controls the "strength" to increase difference. Default is 1.5.
 
-        chroma: (bint) Whether to process chroma. Default is False.
+        chroma: (bool) Whether to process chroma. Default is False.
 
         mode: (1 or 2) Different processing function. 1: non-linear; 2: linear.
 
@@ -224,7 +241,9 @@ def Compare(src, flt, power=1.5, chroma=False, mode=2):
     return diff
 
 
-def Compare2(clip1, clip2, props_list=None):
+def Compare2(clip1: vs.VideoNode, clip2: vs.VideoNode, 
+             props_list: Optional[Sequence[str]] = None
+             ) -> None:
     """Compares the formats of two clips.
 
     TypeError will be raised when one of the format of two clips are not identical.
@@ -233,7 +252,8 @@ def Compare2(clip1, clip2, props_list=None):
     Args:
         clip1, clip2: Input.
 
-        props_list: (list) A list containing the format to be compared. If it is none, all the formats will be compared.
+        props_list: (list of strings) A list containing the format to be compared. 
+            If it is none, all the formats will be compared.
             Default is None.
 
     """
@@ -263,10 +283,11 @@ def Compare2(clip1, clip2, props_list=None):
 
         raise TypeError(info)
 
-    return
 
-
-def ExInpand(input, mrad=0, mode='rectangle', planes=None):
+def ExInpand(input: vs.VideoNode, mrad: Union[int, Sequence[int], Sequence[Sequence[int]]] = 0, 
+             mode: Union[int, str, Sequence[Union[int, str]]] = 'rectangle', 
+             planes: PlanesType = None
+             ) -> vs.VideoNode:
     """A filter to simplify the calls of std.Maximum()/std.Minimum() and their concatenation.
 
     Args:
@@ -282,7 +303,7 @@ def ExInpand(input, mrad=0, mode='rectangle', planes=None):
                 mrad=[[2, 1], [2, -1]] is equivalant to
                     haf.mt_expand_multi(clip, sw=2, sh=1).std.Maximum().std.Maximum().std.Minimum()
 
-        mode: (0:"rectangle", 1:"losange" or 2:"ellipse", int or string). Default is "rectangle"
+        mode: (0:"rectangle", 1:"losange" or 2:"ellipse", int [] or str []). Default is "rectangle"
             The shape of the kernel.
 
         planes: (int []) Whether to process the corresponding plane. By default, every plane will be processed.
@@ -302,17 +323,21 @@ def ExInpand(input, mrad=0, mode='rectangle', planes=None):
 
     if isinstance(mrad, int):
         mrad = [mrad]
+    elif not isinstance(mrad, abc.Sequence):
+        raise TypeError(funcName + ': \"mrad\" must be an int, a list of ints or lists of two ints!')
+
     if isinstance(mode, (str, int)):
         mode = [mode]
-
-    if not isinstance(mode, list):
-        raise TypeError(funcName + ': \"mode\" must be an int, a string, a list of ints, a list of strings or a list of mixing ints and strings!')
+    elif not isinstance(mode, abc.Sequence):
+        raise TypeError(funcName + ': \"mode\" must be an int, a string, a list of ints, strings or unions of ints and strings!')
 
     # internel function
-    def ExInpand_process(input, mode=None, planes=None, mrad=None):
+    def ExInpand_process(input: vs.VideoNode, mode: Union[int, str], 
+                         planes: Union[int, Sequence[int]], 
+                         mrad: Union[int, Tuple[int, int]]) -> vs.VideoNode:
         if isinstance(mode, int):
             mode = ['rectangle', 'losange', 'ellipse'][mode]
-        if isinstance(mode, str):
+        elif isinstance(mode, str):
             mode = mode.lower()
             if mode not in ['rectangle', 'losange', 'ellipse']:
                 raise ValueError(funcName + ': \"mode\" must be an int in [0, 2] or a specific string in [\"rectangle\", \"losange\", \"ellipse\"]!')
@@ -333,31 +358,31 @@ def ExInpand(input, mrad=0, mode='rectangle', planes=None):
             return haf.mt_inpand_multi(input, mode=mode, planes=planes, sw=-sw, sh=-sh)
 
     # process
-    if isinstance(mrad, list):
-        if len(mode) < len(mrad):
-            mode_length = len(mode)
-            for i in range(mode_length, len(mrad)):
-                mode.append(mode[mode_length - 1])
+    for i in range(len(mrad)):
+        if isinstance(mrad[i], abc.Sequence):
+            for n in mrad[i]: # type: ignore
+                if not isinstance(n, int):
+                    raise TypeError(funcName + ': \"mrad\" must be an int, a list of ints or lists of two ints!')
 
-        for i in range(len(mrad)):
-            if isinstance(mrad[i], list):
-                if len(mrad[i]) != 1 and len(mrad[i]) != 2:
-                    raise TypeError(funcName + ': \"mrad\" must be an int, a list of ints or a list of a list of two ints!')
-                for n in mrad[i]:
-                    if not isinstance(n, int):
-                        raise TypeError(funcName + ': \"mrad\" must be an int, a list of ints or a list of a list of two ints!')
-                if len(mrad[i]) == 1:
-                    mrad[i].append(mrad[i][0])
-            elif not isinstance(mrad[i], int):
-                raise TypeError(funcName + ': \"mrad\" must be an int, a list of ints or a list of a list of two ints!')
-            clip = ExInpand_process(input, mode=mode[i], planes=planes, mrad=mrad[i])
-    else:
-        raise TypeError(funcName + ': \"mrad\" must be an int, a list of ints or a list of a list of two ints!')
+            if len(mrad[i]) == 1: # type: ignore
+                _mrad = (mrad[i][0], mrad[i][0]) # type: ignore
+            elif len(mrad[i]) == 2: # type: ignore
+                _mrad = tuple(mrad[i]) # type: ignore
+            else:
+                raise TypeError(funcName + ': \"mrad\" must be an int, a list of ints or lists of two ints!')
+        elif isinstance(mrad[i], int):
+            _mrad = mrad[i] # type: ignore
+        else:
+            raise TypeError(funcName + ': \"mrad\" must be an int, a list of ints or lists of two ints!')
+
+        clip = ExInpand_process(input, mode=mode[min(i, len(mode) - 1)], mrad=_mrad, planes=planes)
 
     return clip
 
 
-def InDeflate(input, msmooth=0, planes=None):
+def InDeflate(input: vs.VideoNode, msmooth: Union[int, Sequence[int]] = 0, 
+              planes: PlanesType = None
+              ) -> vs.VideoNode:
     """A filter to simplify the calls of std.Inflate()/std.Deflate() and their concatenation.
 
     Args:
@@ -385,7 +410,9 @@ def InDeflate(input, msmooth=0, planes=None):
         msmoooth = [msmooth]
 
     # internel function
-    def InDeflate_process(input, planes=None, radius=None):
+    def InDeflate_process(input: vs.VideoNode, radius: int, 
+                          planes: PlanesType = None
+                          ) -> vs.VideoNode:
         if radius > 0:
             return haf.mt_inflate_multi(input, planes=planes, radius=radius)
         else:
@@ -397,14 +424,16 @@ def InDeflate(input, msmooth=0, planes=None):
             if not isinstance(m, int):
                 raise TypeError(funcName + ': \"msmooth\" must be an int or a list of ints!')
             else:
-                clip = InDeflate_process(input, planes=planes, radius=m)
+                clip = InDeflate_process(input, radius=m, planes=planes)
     else:
         raise TypeError(funcName + ': \"msmooth\" must be an int or a list of ints!')
 
     return clip
 
 
-def MultiRemoveGrain(input, mode=0, loop=1):
+def MultiRemoveGrain(input: vs.VideoNode, mode: Union[int, Sequence[int]] = 0, 
+                     loop: int = 1
+                     ) -> vs.VideoNode:
     """A filter to simplify the calls of rgvs.RemoveGrain().
 
     Args:
@@ -443,9 +472,16 @@ def MultiRemoveGrain(input, mode=0, loop=1):
     return clip
 
 
-def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=None, ampn=None,
-             pat=None, dyn=None, lsb=None, staticnoise=None, smode=None, thr_det=None,
-             debug=None, thrc=None, radiusc=None, elastc=None, planes=None, ref=None):
+def GradFun3(src: vs.VideoNode, thr: float = 0.35, radius: Optional[int] = None, 
+             elast: float = 3.0, mask: int = 2, mode: Optional[int] = None, 
+             ampo: Optional[float] = None, ampn: Optional[float] = None,
+             pat: Optional[int] = None, dyn: Optional[int] = None, lsb: bool = False, 
+             staticnoise: Optional[int] = None, smode: int = 1, 
+             thr_det: Optional[float] = None, debug: bool = False, 
+             thrc: Optional[float] = None, radiusc: Optional[int] = None, 
+             elastc: Optional[float] = None, planes: PlanesType = None, 
+             ref: Optional[vs.VideoNode] = None
+             ) -> vs.VideoNode:
     """GradFun3 by Firesledge v0.1.1
 
     Port by Muonium  2016/6/18
@@ -459,7 +495,7 @@ def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=
             It should be better to use Frechdachs's GradFun3 in his fvsfunc.py
             (https://github.com/Irrational-Encoding-Wizardry/fvsfunc) which is more novel and powerful.
 
-    Removed parameters list:
+    Removed parameters:
         "dthr", "wmin", "thr_edg", "subspl", "lsb_in"
 
     Parameters "y", "u", "v" are changed into "planes"
@@ -473,14 +509,10 @@ def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=
     if src.format.color_family not in [vs.YUV, vs.GRAY, vs.YCOCG]:
         raise TypeError(funcName + ': \"src\" must be YUV, GRAY or YCOCG color family!')
 
-    if thr is None:
-        thr = 0.35
-    elif not isinstance(thr, (float, int)):
+    if not isinstance(thr, (float, int)):
         raise TypeError(funcName + ': \"thr\" must be an int or a float!')
 
-    if smode is None:
-        smode = 1
-    elif smode not in [0, 1, 2, 3]:
+    if smode not in [0, 1, 2, 3]:
         raise ValueError(funcName + ': \"smode\" must be in [0, 1, 2, 3]!')
 
     if radius is None:
@@ -491,21 +523,14 @@ def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=
     else:
         raise TypeError(funcName + ': \"radius\" must be an int!')
 
-    if elast is None:
-        elast = 3.0
-    elif isinstance(elast, (int, float)):
+    if isinstance(elast, (int, float)):
         if elast < 1:
             raise ValueError(funcName + ': Valid range of \"elast\" is [1, +inf)!')
     else:
         raise TypeError(funcName + ': \"elast\" must be an int or a float!')
 
-    if mask is None:
-        mask = 2
-    elif not isinstance(mask, int):
+    if not isinstance(mask, int):
         raise TypeError(funcName + ': \"mask\" must be an int!')
-
-    if lsb is None:
-        lsb = False
 
     if thr_det is None:
         thr_det = 2 + round(max(thr - 0.35, 0) / 0.3)
@@ -515,9 +540,7 @@ def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=
     else:
         raise TypeError(funcName + ': \"mask\" must be an int or a float!')
 
-    if debug is None:
-        debug = False
-    elif not isinstance(debug, bool) and debug not in [0, 1]:
+    if not isinstance(debug, bool) and debug not in [0, 1]:
         raise TypeError(funcName + ': \"debug\" must be a bool!')
 
     if thrc is None:
@@ -548,9 +571,9 @@ def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=
         ref = src
     elif not isinstance(ref, vs.VideoNode):
         raise TypeError(funcName + ': \"ref\" must be a clip!')
-    if ref.format.color_family not in [vs.YUV, vs.GRAY, vs.YCOCG]:
+    elif ref.format.color_family not in [vs.YUV, vs.GRAY, vs.YCOCG]:
         raise TypeError(funcName + ': \"ref\" must be YUV, GRAY or YCOCG color family!')
-    if src.width != ref.width or src.height != ref.height:
+    elif src.width != ref.width or src.height != ref.height:
         raise TypeError(funcName + ': \"ref\" must be of the same size as \"src\"!')
 
     bits = src.format.bits_per_sample
@@ -565,10 +588,10 @@ def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=
     chroma_flag = (thrc != thr or radiusc != radius or
                    elastc != elast) and 0 in planes and (1 in planes or 2 in planes)
 
-    if chroma_flag:
-        planes2 = [0] if 0 in planes else []
+    if not chroma_flag:
+        planes2 = list(planes)
     else:
-        planes2 = planes
+        planes2 = [0] if 0 in planes else []
 
     if not planes2:
         raise ValueError(funcName + ': no plane is processed!')
@@ -615,7 +638,9 @@ def GradFun3(src, thr=None, radius=None, elast=None, mask=None, mode=None, ampo=
     return last
 
 
-def _GF3_smooth(src_16, ref_16, smode, radius, thr, elast, planes):
+def _GF3_smooth(src_16: vs.VideoNode, ref_16: vs.VideoNode, smode: int, radius: int, 
+                thr: float, elast: float, planes: PlanesType
+                ) -> vs.VideoNode:
     funcName = "_GF3_smooth"
 
     if smode == 0:
@@ -630,7 +655,9 @@ def _GF3_smooth(src_16, ref_16, smode, radius, thr, elast, planes):
         raise ValueError(funcName + ': wrong smode value!')
 
 
-def _GF3_smoothgrad_multistage(src, ref, radius, thr, elast, planes):
+def _GF3_smoothgrad_multistage(src: vs.VideoNode, ref: vs.VideoNode, radius: vs.VideoNode, 
+                               thr: float, elast: float, planes: PlanesType
+                               ) -> vs.VideoNode:
     ela_2 = max(elast * 0.83, 1.0)
     ela_3 = max(elast * 0.67, 1.0)
     r2 = radius * 2 // 3
@@ -643,7 +670,9 @@ def _GF3_smoothgrad_multistage(src, ref, radius, thr, elast, planes):
     return last
 
 
-def _GF3_smoothgrad_multistage_3(src, radius, thr, elast, planes):
+def _GF3_smoothgrad_multistage_3(src: vs.VideoNode, radius: int, thr: float, 
+                                 elast: float, planes: PlanesType
+                                 ) -> vs.VideoNode:
 
     ref = SmoothGrad(src, radius=radius // 3, thr=thr * 0.8, elast=elast)
     last = BoxFilter(src, radius=radius, planes=planes)
@@ -652,7 +681,9 @@ def _GF3_smoothgrad_multistage_3(src, radius, thr, elast, planes):
     return last
 
 
-def _GF3_dfttest(src, ref, radius, thr, elast, planes):
+def _GF3_dfttest(src: vs.VideoNode, ref: vs.VideoNode, radius: int, 
+                 thr: float, elast: float, planes: PlanesType
+                 ) -> vs.VideoNode:
 
     hrad = max(radius * 3 // 4, 1)
     last = core.dfttest.DFTTest(src, sigma=hrad * thr * thr * 32, sbsize=hrad * 4,
@@ -662,7 +693,9 @@ def _GF3_dfttest(src, ref, radius, thr, elast, planes):
     return last
 
 
-def _GF3_bilateral_multistage(src, ref, radius, thr, elast, planes):
+def _GF3_bilateral_multistage(src: vs.VideoNode, ref: vs.VideoNode, radius: int, 
+                              thr: float, elast: float, planes: PlanesType
+                              ) -> vs.VideoNode:
 
     last = core.bilateral.Bilateral(src, ref=ref, sigmaS=radius / 2, sigmaR=thr / 255, planes=planes, algorithm=0)
 
@@ -671,7 +704,7 @@ def _GF3_bilateral_multistage(src, ref, radius, thr, elast, planes):
     return last
 
 
-def _Build_gf3_range_mask(src, radius=1):
+def _Build_gf3_range_mask(src: vs.VideoNode, radius: int = 1) -> vs.VideoNode:
 
     last = src
 
@@ -693,7 +726,9 @@ def _Build_gf3_range_mask(src, radius=1):
     return last
 
 
-def AnimeMask(input, shift=0, expr=None, mode=1, **resample_args):
+def AnimeMask(input: vs.VideoNode, shift: float = 0, expr: Optional[str] = None, 
+              mode: int = 1, **resample_args: Any
+              ) -> vs.VideoNode:
     """Generates edge/ringing mask for anime based on gradient operator.
 
     For Anime's ringing mask, it's recommended to set "shift" between 0.5 and 1.0.
@@ -747,7 +782,9 @@ def AnimeMask(input, shift=0, expr=None, mode=1, **resample_args):
     return mask
 
 
-def AnimeMask2(input, r=1.2, expr=None, mode=1):
+def AnimeMask2(input: vs.VideoNode, r: float = 1.2, expr: Optional[str] = None, 
+               mode: int = 1
+               ) -> vs.VideoNode:
     """Yet another filter to generate edge/ringing mask for anime.
 
     More specifically, it's an approximatation of the difference of gaussians filter based on resampling.
@@ -790,7 +827,10 @@ def AnimeMask2(input, r=1.2, expr=None, mode=1):
     return mask
 
 
-def PolygonExInpand(input, shift=0, shape=0, mixmode=0, noncentral=False, step=1, amp=1, **resample_args):
+def PolygonExInpand(input: vs.VideoNode, shift: float = 0, shape: int = 0, mixmode: int = 0, 
+                    noncentral: bool = False, step: float = 1, amp: float = 1, 
+                    **resample_args: Any
+                    ) -> vs.VideoNode:
     """Processes mask based on resampling.
 
     Args:
@@ -803,7 +843,7 @@ def PolygonExInpand(input, shift=0, shape=0, mixmode=0, noncentral=False, step=1
         mixmode: (int, 0:max, 1:arithmetic mean, 2:quadratic mean)
             Method used to calculate the mix of different mask. Default is 0.
 
-        noncentral: (bint) Whether to calculate the center pixel in mix process.
+        noncentral: (bool) Whether to calculate the center pixel in mix process.
 
         step: (float) Step of expanding/inpanding. Default is 1.
 
@@ -832,7 +872,7 @@ def PolygonExInpand(input, shift=0, shape=0, mixmode=0, noncentral=False, step=1
         invert = True
         input = core.std.Invert(input)
         shift = -shift
-    elif shift == 0:
+    elif shift == 0.:
         return input
 
     mask5 = input
@@ -897,7 +937,7 @@ def PolygonExInpand(input, shift=0, shape=0, mixmode=0, noncentral=False, step=1
     return core.std.Invert(mask5) if invert else mask5
 
 
-def Luma(input, plane=0, power=4):
+def Luma(input: vs.VideoNode, plane: int = 0, power: int = 4) -> vs.VideoNode:
     """std.Lut() implementation of Luma() in Histogram() filter.
 
     Args:
@@ -923,14 +963,14 @@ def Luma(input, plane=0, power=4):
     clip = mvf.GetPlane(input, plane)
 
 
-    def calc_luma(x):
+    def calc_luma(x: int) -> int:
         p = x << power
-        return (peak - (p & peak)) if (p & (peak + 1)) else (p & peak)
+        return (peak - (p & peak)) if (p & (peak + 1)) else (p & peak) # type: ignore
 
     return core.std.Lut(clip, function=calc_luma)
 
 
-def ediaa(a):
+def ediaa(a: vs.VideoNode) -> vs.VideoNode:
     """Suggested by Mystery Keeper in "Denoise of tv-anime" thread
 
     Read the document of Avisynth version for more details.
@@ -949,7 +989,7 @@ def ediaa(a):
     return last
 
 
-def nnedi3aa(a):
+def nnedi3aa(a: vs.VideoNode) -> vs.VideoNode:
     """Using nnedi3 (Emulgator):
 
     Read the document of Avisynth version for more details.
@@ -968,7 +1008,7 @@ def nnedi3aa(a):
     return last
 
 
-def maa(input):
+def maa(input: vs.VideoNode) -> vs.VideoNode:
     """Anti-aliasing with edge masking by martino, 
     mask using "sobel" taken from Kintaro's useless filterscripts and modded by thetoof for spline36
 
@@ -1005,8 +1045,10 @@ def maa(input):
             colorfamily=input_src.format.color_family)
 
 
-def SharpAAMcmod(orig, dark=0.2, thin=10, sharp=150, smooth=-1, stabilize=False, tradius=2, aapel=1, aaov=None, 
-    aablk=None, aatype='nnedi3'):
+def SharpAAMcmod(orig: vs.VideoNode, dark: float = 0.2, thin: int = 10, sharp: int = 150, 
+                 smooth: int = -1, stabilize: bool = False, tradius: int = 2, aapel: int = 1, 
+                 aaov: Optional[int] = None, aablk: Optional[int] = None, aatype: str = 'nnedi3'
+                 ) -> vs.VideoNode:
     """High quality MoComped AntiAliasing script.
 
     Also a line darkener since it uses edge masking to apply tweakable warp-sharpening,
@@ -1028,7 +1070,7 @@ def SharpAAMcmod(orig, dark=0.2, thin=10, sharp=150, smooth=-1, stabilize=False,
 
         smooth: (int) Postsmoothing. Default is -1.
 
-        stabilize: (bint) Use post stabilization with Motion Compensation. Default is False.
+        stabilize: (bool) Use post stabilization with Motion Compensation. Default is False.
 
         tradius: (1~3) 1 = Degrain1 / 2 = Degrain2 / 3 = Degrain3. Default is 2.
 
@@ -1075,11 +1117,11 @@ def SharpAAMcmod(orig, dark=0.2, thin=10, sharp=150, smooth=-1, stabilize=False,
         core.std.Convolution(orig, [5, 0, -5, 10, 0, -10, 5, 0, -5], divisor=4, saturate=False)], 
         ['x y max {neutral} / 0.86 pow {peak} *'.format(neutral=1 << (bits-1), peak=(1 << bits)-1)])
 
-    if thin == 0 and dark == 0:
+    if thin == 0 and dark == 0.:
         preaa = orig
     elif thin == 0:
         preaa = haf.Toon(orig, str=dark)
-    elif dark == 0:
+    elif dark == 0.:
         preaa = core.warp.AWarpSharp2(orig, depth=thin)
     else:
         preaa = haf.Toon(orig, str=dark).warp.AWarpSharp2(depth=thin)
@@ -1139,7 +1181,9 @@ def SharpAAMcmod(orig, dark=0.2, thin=10, sharp=150, smooth=-1, stabilize=False,
             colorfamily=orig_src.format.color_family)
 
 
-def TEdge(input, min=0, max=65535, planes=None, rshift=0):
+def TEdge(input: vs.VideoNode, min: int = 0, max: int = 65535, planes: PlanesType = None, 
+          rshift: int = 0
+          ) -> vs.VideoNode:
     """Detects edge using TEdgeMask(type=2).
 
     Port from https://github.com/chikuzen/GenericFilters/blob/2044dc6c25a1b402aae443754d7a46217a2fddbf/src/convolution/tedge.c
@@ -1182,7 +1226,9 @@ def TEdge(input, min=0, max=65535, planes=None, rshift=0):
     return core.std.Expr([gx, gy], [(expr if i in planes else '') for i in range(input.format.num_planes)])
 
 
-def Sort(input, order=1, planes=None, mode='max'):
+def Sort(input: vs.VideoNode, order: int = 1, planes: PlanesType = None, 
+         mode: str = 'max'
+         ) -> vs.VideoNode:
     """Simple filter to get nth largeest value in 3x3 neighbourhood.
 
     Args:
@@ -1233,7 +1279,9 @@ def Sort(input, order=1, planes=None, mode='max'):
     return sort
 
 
-def Soothe_mod(input, source, keep=24, radius=1, scenechange=32, use_misc=True):
+def Soothe_mod(input: vs.VideoNode, source: vs.VideoNode, keep: float = 24, radius: int = 1, 
+               scenechange: int = 32, use_misc: bool = True
+               ) -> vs.VideoNode:
     """Modified Soothe().
 
     Basd on Didée, 6th September 2005, http://forum.doom9.org/showthread.php?p=708217#post708217
@@ -1325,7 +1373,7 @@ def Soothe_mod(input, source, keep=24, radius=1, scenechange=32, use_misc=True):
             colorfamily=source_src.format.color_family)
 
 
-def TemporalSoften(input, radius=4, scenechange=15):
+def TemporalSoften(input: vs.VideoNode, radius: int = 4, scenechange: int = 15) -> vs.VideoNode:
     """TemporalSoften filter without thresholding using Miscellaneous filters.
 
     There will be slight difference in result compare to havsfunc.TemporalSoften().
@@ -1351,7 +1399,10 @@ def TemporalSoften(input, radius=4, scenechange=15):
     return core.misc.AverageFrames(input, [1] * (2 * radius + 1), scenechange=scenechange)
 
 
-def FixTelecinedFades(input, mode=0, threshold=[0.0], color=[0.0], full=None, planes=None):
+def FixTelecinedFades(input: vs.VideoNode, mode: Union[int, Sequence[int]] = 0, 
+                      threshold: Sequence[float] = [0.0], color: Sequence[float] = [0.0], 
+                      full: Optional[bool] = None, planes: PlanesType = None
+                      ) -> vs.VideoNode:
     """Fix Telecined Fades filter
 
     The main algorithm was proposed by feisty2 (http://forum.doom9.org/showthread.php?t=174151).
@@ -1400,51 +1451,32 @@ def FixTelecinedFades(input, mode=0, threshold=[0.0], color=[0.0], full=None, pl
 
     if isinstance(mode, int):
         mode = [mode]
-    elif not isinstance(mode, list):
-        raise TypeError(funcName + ': \"mode\" must be an int!')
-    if len(mode) < input.format.num_planes:
-        if len(mode) == 0:
-            mode = [0]
-        modeLength = len(mode)
-        for i in range(input.format.num_planes - modeLength):
-            mode.append(mode[modeLength - 1])
+    elif not isinstance(mode, abc.Sequence) or len(mode) == 0:
+        raise TypeError(funcName + ': \"mode\" must be an int or a list of ints!')
+
     for i in mode:
         if i not in [0, 1, 2]:
             raise ValueError(funcName + ': valid values of \"mode\" are 0, 1 or 2!')
 
     if isinstance(threshold, (int, float)):
         threshold = [threshold]
-    if not isinstance(threshold, list):
-        raise TypeError(funcName + ': \"threshold\" must be a list!')
-    if len(threshold) < input.format.num_planes:
-        if len(threshold) == 0:
-            threshold = [0.0]
-        thresholdLength = len(threshold)
-        for i in range(input.format.num_planes - thresholdLength):
-            threshold.append(threshold[thresholdLength - 1])
+    if not isinstance(threshold, abc.Sequence) or len(threshold) == 0:
+        raise TypeError(funcName + ': \"threshold\" must be a list of floats!')
+    
     if isFloat:
-        for i in range(len(threshold)):
-            threshold[i] = abs(threshold[i]) / 255
+        _threshold = [(abs(thr) / 255) for thr in threshold]
     else:
-        for i in range(len(threshold)):
-            threshold[i] = abs(threshold[i]) * ((1 << bits) - 1) / 255
+        _threshold = [(abs(thr) * ((1 << bits) - 1) / 255) for thr in threshold]
 
     if isinstance(color, (int, float)):
         color = [color]
-    if not isinstance(color, list):
-        raise TypeError(funcName + ': \"color\" must be a list!')
-    if len(color) < input.format.num_planes:
-        if len(color) == 0:
-            color = [0.0]
-        colorLength = len(color)
-        for i in range(input.format.num_planes - colorLength):
-            color.append(color[colorLength - 1])
+    if not isinstance(color, abc.Sequence) or len(color) == 0:
+        raise TypeError(funcName + ': \"color\" must be a list of floats!')
+
     if isFloat:
-        for i in range(len(color)):
-            color[i] = color[i] / 255
+        _color = [(c / 255) for c in color]
     else:
-        for i in range(len(color)):
-            color[i] = abs(color[i]) * ((1 << bits) - 1) / 255
+        _color = [(abs(c) * ((1 << bits) - 1) / 255) for c in color]
 
     if full is None:
         if input.format.color_family in [vs.GRAY, vs.YUV]:
@@ -1458,15 +1490,17 @@ def FixTelecinedFades(input, mode=0, threshold=[0.0], color=[0.0], full=None, pl
         planes = [planes]
 
     # internal function
-    def GetExpr(scale, color, threshold):
-        if color != 0:
+    def GetExpr(scale: float, color: float, threshold: float) -> str:
+        if color != 0.:
             flt = 'x {color} - {scale} * {color} +'.format(scale=scale, color=color)
         else:
             flt = 'x {scale} *'.format(scale=scale)
-        return flt if threshold == 0 else '{flt} x - abs {threshold} > {flt} x ?'.format(flt=flt, threshold=threshold)
+        return flt if threshold == 0. else '{flt} x - abs {threshold} > {flt} x ?'.format(flt=flt, threshold=threshold)
 
 
-    def Adjust(n, f, clip, core, mode, threshold, color):
+    def Adjust(n: int, f: vs.VideoFrame, clip: vs.VideoNode, core: vs.Core, mode: int, 
+               threshold: float, color: float
+               ) -> vs.VideoNode:
         separated = core.std.SeparateFields(clip, tff=True)
         topField = core.std.SelectEvery(separated, 2, [0])
         bottomField = core.std.SelectEvery(separated, 2, [1])
@@ -1474,7 +1508,7 @@ def FixTelecinedFades(input, mode=0, threshold=[0.0], color=[0.0], full=None, pl
         topAvg = f[0].props['PlaneStatsAverage']
         bottomAvg = f[1].props['PlaneStatsAverage']
 
-        if color != 0:
+        if color != 0.:
             if isFloat:
                 topAvg -= color
                 bottomAvg -= color
@@ -1521,8 +1555,9 @@ def FixTelecinedFades(input, mode=0, threshold=[0.0], color=[0.0], full=None, pl
             inputPlane = mvf.GetPlane(input, i)
             topFieldPlanes[i] = mvf.GetPlane(topField, i).std.PlaneStats()
             bottomFieldPlanes[i] = mvf.GetPlane(bottomField, i).std.PlaneStats()
-            adjustedPlanes[i] = core.std.FrameEval(inputPlane, functools.partial(Adjust, clip=inputPlane, core=core, mode=mode[i], 
-                threshold=threshold[i], color=color[i]), prop_src=[topFieldPlanes[i], bottomFieldPlanes[i]])
+            adjustedPlanes[i] = core.std.FrameEval(inputPlane, functools.partial(Adjust, clip=inputPlane, core=core, 
+                mode=mode[min(i, len(mode) - 1)], threshold=_threshold[min(i, len(_threshold) - 1)], color=_color[min(i, len(_color) - 1)]), 
+                prop_src=[topFieldPlanes[i], bottomFieldPlanes[i]])
         else:
             adjustedPlanes[i] = None
 
@@ -1535,7 +1570,9 @@ def FixTelecinedFades(input, mode=0, threshold=[0.0], color=[0.0], full=None, pl
     return adjusted
 
 
-def TCannyHelper(input, t_h=8.0, t_l=1.0, plane=0, returnAll=False, **canny_args):
+def TCannyHelper(input: vs.VideoNode, t_h: float = 8.0, t_l: float = 1.0, plane: int = 0, 
+                 returnAll: bool = False, **canny_args: Any
+                 ) -> vs.VideoNode:
     """A helper function for tcanny.TCanny(mode=0)
 
     Strong edge detected by "t_h" will be highlighted in white, and weak edge detected by "t_l" will be highlighted in gray.
@@ -1584,7 +1621,7 @@ def TCannyHelper(input, t_h=8.0, t_l=1.0, plane=0, returnAll=False, **canny_args
         return view
 
 
-def MergeChroma(clip1, clip2, weight=1.0):
+def MergeChroma(clip1: vs.VideoNode, clip2: vs.VideoNode, weight: float = 1.0) -> vs.VideoNode:
     """Merges the chroma from one videoclip into another. Port from Avisynth's equivalent.
 
     There is an optional weighting, so a percentage between the two clips can be specified.
@@ -1629,7 +1666,11 @@ def MergeChroma(clip1, clip2, weight=1.0):
         return output
 
 
-def firniture(clip, width, height, kernel='binomial7', taps=None, gamma=False, fulls=False, fulld=False, curve='709', sigmoid=False, **resample_args):
+def firniture(clip: vs.VideoNode, width: int, height: int, kernel: str = 'binomial7', 
+              taps: Optional[int] = None, gamma: bool = False, fulls: bool = False, 
+              fulld: bool = False, curve: str = '709', sigmoid: bool = False, 
+              **resample_args: Any
+              ) -> vs.VideoNode:
     '''5 new interpolation kernels (via fmtconv)
 
     Proposed by *.mp4 guy (https://forum.doom9.org/showthread.php?t=166080)
@@ -1712,8 +1753,11 @@ def firniture(clip, width, height, kernel='binomial7', taps=None, gamma=False, f
     return clip
 
 
-def BoxFilter(input, radius=16, radius_v=None, planes=None, fmtc_conv=0, radius_thr=None, resample_args=None, keep_bits=True, 
-    depth_args=None):
+def BoxFilter(input: vs.VideoNode, radius: int = 16, radius_v: Optional[int] = None, planes: PlanesType = None, 
+              fmtc_conv: int = 0, radius_thr: Optional[int] = None, 
+              resample_args: Optional[Dict[str, Any]] = None, keep_bits: bool = True, 
+              depth_args: Optional[Dict[str, Any]] = None
+              ) -> vs.VideoNode:
     '''Box filter
 
     Performs a box filtering on the input clip.
@@ -1833,7 +1877,9 @@ def BoxFilter(input, radius=16, radius_v=None, planes=None, fmtc_conv=0, radius_
                 return input
 
 
-def SmoothGrad(input, radius=9, thr=0.25, ref=None, elast=3.0, planes=None, **limit_filter_args):
+def SmoothGrad(input: vs.VideoNode, radius: int = 9, thr: float = 0.25, 
+               ref: Optional[vs.VideoNode] = None, elast: vs.VideoNode = 3.0, 
+               planes: vs.VideoNode = None, **limit_filter_args: Any) -> vs.VideoNode:
     '''Avisynth's SmoothGrad
 
     SmoothGrad smooths the low gradients or flat areas of a 16-bit clip.
@@ -1877,7 +1923,8 @@ def SmoothGrad(input, radius=9, thr=0.25, ref=None, elast=3.0, planes=None, **li
     return mvf.LimitFilter(smooth, input, ref, thr, elast, planes=planes, **limit_filter_args)
 
 
-def DeFilter(input, fun, iter=10, planes=None, **fun_args):
+def DeFilter(input: vs.VideoNode, fun: VSFuncType, iter: int = 10, planes: PlanesType = None, 
+             **fun_args: Any) -> vs.VideoNode:
     '''Zero-order reverse filter
 
     Args:
@@ -1921,7 +1968,7 @@ def DeFilter(input, fun, iter=10, planes=None, **fun_args):
     return flt
 
 
-def scale(val, bits):
+def scale(val: float, bits: int) -> float:
     '''The old scale function in havsfunc.
 
     '''
@@ -1929,7 +1976,7 @@ def scale(val, bits):
     return val * ((1 << bits) - 1) // 255
 
 
-def ColorBarsHD(clip=None, width=1288, height=720):
+def ColorBarsHD(clip: Optional[vs.VideoNode] = None, width: int = 1288, height: int = 720) -> vs.VideoNode:
     '''Avisynth's ColorBarsHD()
 
     It produces a video clip containing SMPTE color bars (Rec. ITU-R BT.709 / arib std b28 v1.0) scaled to any image size.
@@ -2016,8 +2063,11 @@ def ColorBarsHD(clip=None, width=1288, height=720):
     return pattern
 
 
-def SeeSaw(clp, denoised=None, NRlimit=2, NRlimit2=None, Sstr=1.5, Slimit=None, Spower=4, SdampLo=None, SdampHi=24, Szp=18, bias=49, 
-    Smode=None, sootheT=49, sootheS=0, ssx=1.0, ssy=None, diff=False):
+def SeeSaw(clp: vs.VideoNode, denoised: Optional[vs.VideoNode] = None, NRlimit: int = 2, 
+           NRlimit2: Optional[int] = None, Sstr: float = 1.5, Slimit: Optional[int] = None, 
+           Spower: float = 4, SdampLo: Optional[float] = None, SdampHi: float = 24, Szp: float = 18, 
+           bias: float = 49, Smode: Optional[int] = None, sootheT: int = 49, sootheS: int = 0, 
+           ssx: float = 1.0, ssy: Optional[float] = None, diff: bool = False) -> vs.VideoNode:
     """Avisynth's SeeSaw v0.3e
 
     Author: Didée (http://avisynth.nl/images/SeeSaw.avs)
@@ -2151,7 +2201,7 @@ def SeeSaw(clp, denoised=None, NRlimit=2, NRlimit2=None, Sstr=1.5, Slimit=None, 
 
     head = _SeeSaw_sharpen2(tame, Sstr, Spower, Szp, SdampLo, SdampHi, 4, diff)
 
-    if ssx == 1 and ssy == 1:
+    if ssx == 1. and ssy == 1.:
         last = core.rgvs.Repair(_SeeSaw_sharpen2(tame, Sstr, Spower, Szp, SdampLo, SdampHi, Smode, diff), head, [1])
     else:
         last = core.rgvs.Repair(_SeeSaw_sharpen2(tame.resize.Lanczos(xss, yss), Sstr, Spower, Szp, SdampLo, SdampHi, Smode, diff), 
@@ -2182,7 +2232,9 @@ def SeeSaw(clp, denoised=None, NRlimit=2, NRlimit2=None, Sstr=1.5, Slimit=None, 
     return last if isGray else core.std.ShufflePlanes([last, clp_src], list(range(clp_src.format.num_planes)), clp_src.format.color_family)
 
 
-def _SeeSaw_sharpen2(clp, strength, power, zp, lodmp, hidmp, rg, diff):
+def _SeeSaw_sharpen2(clp: vs.VideoNode, strength: float, power: float, zp: float, lodmp: float, 
+                     hidmp: float, rg: int, diff: bool
+                     ) -> vs.VideoNode:
     """Modified sharpening function from SeeSaw()
 
     Only the first plane (luma) will be processed.
@@ -2204,16 +2256,16 @@ def _SeeSaw_sharpen2(clp, strength, power, zp, lodmp, hidmp, rg, diff):
     power = 1 / power
 
     # copied from havsfunc
-    def get_lut1(x):
+    def get_lut1(x: int) -> int:
         if x == neutral:
             return x
         else:
             tmp1 = abs(x - neutral) / multiple
             tmp2 = tmp1 ** 2
             tmp3 = zp ** 2
-            return min(max(math.floor(neutral + (tmp1 / zp) ** power * zp * (strength * multiple) * (1 if x > neutral else -1) * 
-                (tmp2 * (tmp3 + lodmp) / ((tmp2 + lodmp) * tmp3)) * ((1 + (0 if hidmp == 0 else (zp / hidmp) ** 4)) / 
-                    (1 + (0 if hidmp == 0 else (tmp1 / hidmp) ** 4))) + 0.5), 0), peak)
+            return min(max(math.floor(neutral + (tmp1 / zp) ** power * zp * (strength * multiple) * (1 if x > neutral else -1) * # type: ignore
+                (tmp2 * (tmp3 + lodmp) / ((tmp2 + lodmp) * tmp3)) * ((1 + (0 if hidmp == 0. else (zp / hidmp) ** 4)) / 
+                    (1 + (0 if hidmp == 0. else (tmp1 / hidmp) ** 4))) + 0.5), 0), peak)
 
     if rg == 4:
         method = clp.std.Median(planes=[0])
@@ -2231,7 +2283,7 @@ def _SeeSaw_sharpen2(clp, strength, power, zp, lodmp, hidmp, rg, diff):
     return sharpdiff if diff else core.std.MergeDiff(clp, sharpdiff, [0])
 
 
-def _SeeSaw_SootheSS(sharp, orig, sootheT=25, sootheS=0):
+def _SeeSaw_SootheSS(sharp: vs.VideoNode, orig: vs.VideoNode, sootheT: float = 25, sootheS: float = 0) -> vs.VideoNode:
     """Soothe() function to stabilze sharpening from SeeSaw()
 
     Only the first plane (luma) will be processed.
@@ -2270,9 +2322,9 @@ def _SeeSaw_SootheSS(sharp, orig, sootheT=25, sootheS=0):
     expr2 = ('x {neutral} < y {neutral} < xor x {neutral} - 100 / {ST} * {neutral} + x {neutral} - ' 
         'abs y {neutral} - abs > x {ST} * y {i} * + 100 / x ? ?'.format(neutral=neutral, ST=ST, i=100-ST))
 
-    if sootheS != 0:
+    if sootheS != 0.:
         last = core.std.Expr([last, core.std.Convolution(last, [1]*9)], [expr1])
-    if sootheT != 0:
+    if sootheT != 0.:
         last = core.std.Expr([last, TemporalSoften(last, 1, 0)], [expr2])
     if sootheT <= -1:
         last = core.std.Expr([last, TemporalSoften(last, 1, 0)], [expr2])
@@ -2281,7 +2333,7 @@ def _SeeSaw_SootheSS(sharp, orig, sootheT=25, sootheS=0):
     return last if isGray else core.std.ShufflePlanes([last, orig_src], list(range(orig_src.format.num_planes)), orig_src.format.color_family)
 
 
-def abcxyz(clp, rad=3.0, ss=1.5):
+def abcxyz(clp: vs.VideoNode, rad: float = 3.0, ss: float = 1.5) -> vs.VideoNode:
     """Avisynth's abcxyz()
 
     Reduces halo artifacts that can occur when sharpening.
@@ -2320,7 +2372,7 @@ def abcxyz(clp, rad=3.0, ss=1.5):
 
     z1 = core.rgvs.Repair(clp, y, [1])
 
-    if ss != 1:
+    if ss != 1.:
         maxbig = core.std.Maximum(y).resize.Bicubic(haf.m4(ox*ss), haf.m4(oy*ss))
         minbig = core.std.Minimum(y).resize.Bicubic(haf.m4(ox*ss), haf.m4(oy*ss))
         z2 = core.resize.Lanczos(clp, haf.m4(ox*ss), haf.m4(oy*ss))
@@ -2333,7 +2385,9 @@ def abcxyz(clp, rad=3.0, ss=1.5):
     return z1
 
 
-def Sharpen(clip, amountH=1.0, amountV=None, planes=None):
+def Sharpen(clip: vs.VideoNode, amountH: float = 1.0, amountV: Optional[float] = None, 
+            planes: PlanesType = None
+            ) -> vs.VideoNode:
     """Avisynth's internel filter Sharpen()
 
     Simple 3x3-kernel sharpening filter.
@@ -2387,7 +2441,9 @@ def Sharpen(clip, amountH=1.0, amountV=None, planes=None):
     return clip
 
 
-def Blur(clip, amountH=1.0, amountV=None, planes=None):
+def Blur(clip: vs.VideoNode, amountH: float = 1.0, amountV: Optional[float] = None, 
+         planes: PlanesType = None
+         ) -> vs.VideoNode:
     """Avisynth's internel filter Blur()
 
     Simple 3x3-kernel blurring filter.
@@ -2426,7 +2482,10 @@ def Blur(clip, amountH=1.0, amountV=None, planes=None):
     return Sharpen(clip, -amountH, -amountV, planes)
 
 
-def BlindDeHalo3(clp, rx=3.0, ry=3.0, strength=125, lodamp=0, hidamp=0, sharpness=0, tweaker=0, PPmode=0, PPlimit=None, interlaced=False):
+def BlindDeHalo3(clp: vs.VideoNode, rx: float = 3.0, ry: float = 3.0, strength: float = 125, 
+                 lodamp: float = 0, hidamp: float = 0, sharpness: float = 0, tweaker: float = 0, 
+                 PPmode: int = 0, PPlimit: Optional[int] = None, interlaced: bool = False
+                 ) -> vs.VideoNode:
     """Avisynth's BlindDeHalo3() version: 3_MT2
 
     This script removes the light & dark halos from too strong "Edge Enhancement".
@@ -2521,7 +2580,7 @@ def BlindDeHalo3(clp, rx=3.0, ry=3.0, strength=125, lodamp=0, hidamp=0, sharpnes
     mm = mm.std.Inflate().resize.Bicubic(oxi, oyi, filter_param_a=1, filter_param_b=0).std.Inflate()
     sm = core.resize.Bicubic(sm, oxi, oyi, filter_param_a=1, filter_param_b=0)
     smd = core.std.Expr([Sharpen(i, tweaker), sm], [TWK_HLIGHT])
-    if sharpness != 0:
+    if sharpness != 0.:
         smd = Blur(smd, sharpness)
     clean = core.std.Expr([i, smd], ['x y {neutral} - -'.format(neutral=neutral)])
     clean = core.std.MaskedMerge(i, clean, mm)
@@ -2560,8 +2619,14 @@ def BlindDeHalo3(clp, rx=3.0, ry=3.0, strength=125, lodamp=0, hidamp=0, sharpnes
     return last
 
 
-def dfttestMC(input, pp=None, mc=2, mdg=False, planes=None, sigma=None, sbsize=None, sosize=None, tbsize=None, mdgSAD=None, 
-    thSAD=None, thSCD1=None, thSCD2=None, pel=None, blksize=None, search=None, searchparam=None, overlap=2, dct=None, **dfttest_params):
+def dfttestMC(input: vs.VideoNode, pp: Optional[vs.VideoNode] = None, mc: int = 2, mdg: bool = False, 
+              planes: PlanesType = None, sigma: Optional[float] = None, sbsize: Optional[int] = None, 
+              sosize: Optional[int] = None, tbsize: Optional[int] = None, mdgSAD: Optional[int] = None, 
+              thSAD: Optional[int] = None, thSCD1: Optional[int] = None, thSCD2: Optional[int] = None, 
+              pel: Optional[int] = None, blksize: Optional[int] = None, search: Optional[int] = None, 
+              searchparam: Optional[int] = None, overlap: int = 2, dct: Optional[int] = None, 
+              **dfttest_params: Any
+              ) -> vs.VideoNode:
     """Avisynth's dfttestMC
 
     Motion-compensated dfttest
@@ -2618,7 +2683,7 @@ def dfttestMC(input, pp=None, mc=2, mdg=False, planes=None, sigma=None, sbsize=N
     # Set chroma parameters.
     if planes is None:
         planes = list(range(input.format.num_planes))
-    elif not isinstance(planes, dict):
+    elif isinstance(planes, int):
         planes = [planes]
 
     Y = 0 in planes
@@ -2685,19 +2750,20 @@ def dfttestMC(input, pp=None, mc=2, mdg=False, planes=None, sigma=None, sbsize=N
     return core.std.SelectEvery(filtered, mc * 2 + 1, mc) if mc > 1 else filtered
 
 
-def TurnLeft(clip):
+def TurnLeft(clip: vs.VideoNode) -> vs.VideoNode:
     """Avisynth's internel function TurnLeft()"""
 
     return core.std.Transpose(clip).std.FlipVertical()
 
 
-def TurnRight(clip):
+def TurnRight(clip: vs.VideoNode) -> vs.VideoNode:
     """Avisynth's internel function TurnRight()"""
 
     return core.std.FlipVertical(clip).std.Transpose()
 
 
-def BalanceBorders(c, cTop=0, cBottom=0, cLeft=0, cRight=0, thresh=128, blur=999):
+def BalanceBorders(c: vs.VideoNode, cTop: int = 0, cBottom: int = 0, cLeft: int = 0, cRight: int = 0, 
+                   thresh: int = 128, blur: int = 999) -> vs.VideoNode:
     """Avisynth's BalanceBorders() Version: v0.2
 
     Author: PL (https://www.dropbox.com/s/v8fm6om7hm1dz0b/BalanceBorders.avs)
@@ -2790,7 +2856,7 @@ def BalanceBorders(c, cTop=0, cBottom=0, cLeft=0, cRight=0, thresh=128, blur=999
     return last
 
 
-def _BalanceTopBorder(c, cTop, thresh, blur):
+def _BalanceTopBorder(c: vs.VideoNode, cTop: int, thresh: int, blur: int) -> vs.VideoNode:
     """BalanceBorders()'s helper function"""
 
     cWidth = c.width
@@ -2832,7 +2898,7 @@ def _BalanceTopBorder(c, cTop, thresh, blur):
     return core.std.StackVertical([last, core.std.Crop(c2, 0, 0, cTop * 2, 0)]).resize.Point(cWidth, cHeight)
 
 
-def DisplayHistogram(clip, factor=None):
+def DisplayHistogram(clip: vs.VideoNode, factor: float = 100) -> vs.VideoNode:
     """A simple function to display the histogram of an image.
 
     The right and bottom of the output is the histogram along the horizontal/vertical axis,
@@ -2873,8 +2939,13 @@ def DisplayHistogram(clip, factor=None):
     return core.std.StackVertical([histogram_v, bottom])
 
 
-def GuidedFilter(input, guidance=None, radius=4, regulation=0.01, regulation_mode=0, use_gauss=False, fast=None, subsampling_ratio=4, 
-    use_fmtc1=False, kernel1='point', kernel1_args=None, use_fmtc2=False, kernel2='bilinear', kernel2_args=None, **depth_args):
+def GuidedFilter(input: vs.VideoNode, guidance: Optional[vs.VideoNode] = None, radius: int = 4, 
+                 regulation: float = 0.01, regulation_mode: int = 0, use_gauss: bool = False, 
+                 fast: Optional[bool] = None, subsampling_ratio: float = 4, use_fmtc1: bool = False, 
+                 kernel1: str = 'point', kernel1_args: Optional[Dict[str, Any]] = None, use_fmtc2: bool = False,
+                 kernel2: str = 'bilinear', kernel2_args: Optional[Dict[str, Any]] = None,
+                 **depth_args: Any
+                 ) -> vs.VideoNode:
     """Guided Filter - fast edge-preserving smoothing algorithm
 
     Author: Kaiming He et al. (http://kaiminghe.com/eccv10/)
@@ -3034,14 +3105,16 @@ def GuidedFilter(input, guidance=None, radius=4, regulation=0.01, regulation_mod
 
 
     # Edge-Aware Weighting, equation (5) in [3], or equation (9) in [4].
-    def FLT(n, f, clip, core, eps0):
+    def FLT(n: int, f: vs.VideoFrame, clip: vs.VideoNode, core: vs.Core, eps0: float) -> vs.VideoNode:
         frameMean = f.props['PlaneStatsAverage']
 
         return core.std.Expr(clip, ['x {eps0} + {avg} *'.format(avg=frameMean, eps0=eps0)])
 
 
     # Compute the optimal value of a of Gradient Domain Guided Image Filter, equation (12) in [4]
-    def FLT2(n, f, cov_Ip, weight_in, weight, var_I, core, eps):
+    def FLT2(n: int, f: vs.VideoFrame, cov_Ip: vs.VideoNode, weight_in: vs.VideoNode, weight: vs.VideoNode, 
+             var_I: vs.VideoNode, core: vs.Core, eps: float
+             ) -> vs.VideoNode:
         frameMean = f.props['PlaneStatsAverage']
         frameMin = f.props['PlaneStatsMin']
 
@@ -3111,8 +3184,13 @@ def GuidedFilter(input, guidance=None, radius=4, regulation=0.01, regulation_mod
     return mvf.Depth(q, depth=bits, sample=sampleType, **depth_args)
 
 
-def GuidedFilterColor(input, guidance, radius=4, regulation=0.01, use_gauss=False, fast=None, subsampling_ratio=4, use_fmtc1=False, kernel1='point', 
-    kernel1_args=None, use_fmtc2=False, kernel2='bilinear', kernel2_args=None, **depth_args):
+def GuidedFilterColor(input: vs.VideoNode, guidance: vs.VideoNode, radius: int = 4, 
+                      regulation: float = 0.01, use_gauss: bool = False, fast: Optional[bool] = None, 
+                      subsampling_ratio: float = 4, use_fmtc1: bool = False, kernel1: str = 'point', 
+                      kernel1_args: Optional[Dict[str, Any]] = None, use_fmtc2: bool = False,
+                      kernel2: str = 'bilinear', kernel2_args: Optional[Dict[str, Any]] = None,
+                      **depth_args: Any
+                      ) -> vs.VideoNode:
     """Guided Filter Color - fast edge-preserving smoothing algorithm using a color image as the guidance
 
     Author: Kaiming He et al. (http://kaiminghe.com/eccv10/)
@@ -3275,7 +3353,10 @@ def GuidedFilterColor(input, guidance, radius=4, regulation=0.01, use_gauss=Fals
     return mvf.Depth(q, depth=bits, sample=sampleType, **depth_args)
 
 
-def GMSD(clip1, clip2, plane=None, downsample=True, c=0.0026, show_map=False, **depth_args):
+def GMSD(clip1: vs.VideoNode, clip2: vs.VideoNode, plane: Optional[int] = None, 
+         downsample: bool = True, c: float = 0.0026, show_map: bool = False, 
+         **depth_args: Any
+         ) -> vs.VideoNode:
     """Gradient Magnitude Similarity Deviation Calculator
 
     GMSD is a new effective and efficient image quality assessment (IQA) model, which utilizes the pixel-wise gradient magnitude similarity (GMS)
@@ -3359,18 +3440,18 @@ def GMSD(clip1, clip2, plane=None, downsample=True, c=0.0026, show_map=False, **
     else:
         map_mean = core.std.PlaneAverage(quality_map, plane=[0], prop='PlaneStatsAverage')
 
-    def _PlaneSDFrame(n, f, clip):
+    def _PlaneSDFrame(n: int, f: vs.VideoFrame, clip: vs.VideoNode, core: vs.Core) -> vs.VideoNode:
         mean = f.props['PlaneStatsAverage']
         expr = "x {mean} - dup *".format(mean=mean)
         return core.std.Expr(clip, expr)
-    SDclip = core.std.FrameEval(quality_map, functools.partial(_PlaneSDFrame, clip=quality_map), map_mean)
+    SDclip = core.std.FrameEval(quality_map, functools.partial(_PlaneSDFrame, clip=quality_map, core=core), map_mean)
 
     if core.std.get_functions().__contains__('PlaneStats'):
         SDclip = core.std.PlaneStats(SDclip, plane=[0], prop='PlaneStats')
     else:
         SDclip = core.std.PlaneAverage(SDclip, plane=[0], prop='PlaneStatsAverage')
 
-    def _PlaneGMSDTransfer(n, f):
+    def _PlaneGMSDTransfer(n: int, f: vs.VideoFrame) -> vs.VideoFrame:
         fout = f[0].copy()
         fout.props['PlaneGMSD'] = math.sqrt(f[1].props['PlaneStatsAverage'])
         return fout
@@ -3380,7 +3461,11 @@ def GMSD(clip1, clip2, plane=None, downsample=True, c=0.0026, show_map=False, **
     return output_clip
 
 
-def SSIM(clip1, clip2, plane=None, downsample=True, k1=0.01, k2=0.03, fun=None, dynamic_range=1, show_map=False, **depth_args):
+def SSIM(clip1: vs.VideoNode, clip2: vs.VideoNode, plane: Optional[int] = None, 
+         downsample: bool = True, k1: float = 0.01, k2: float = 0.03, 
+         fun: Optional[VSFuncType] = None, dynamic_range: int = 1,
+         show_map: bool = False, **depth_args: Any
+         ) -> vs.VideoNode:
     """Structural SIMilarity Index Calculator
 
     The Structural SIMilarity (SSIM) index is a method for measuring the similarity between two images.
@@ -3497,7 +3582,7 @@ def SSIM(clip1, clip2, plane=None, downsample=True, k1=0.01, k2=0.03, fun=None, 
     else:
         map_mean = core.std.PlaneAverage(ssim_map, plane=[0], prop='PlaneStatsAverage')
 
-    def _PlaneSSIMTransfer(n, f):
+    def _PlaneSSIMTransfer(n: int, f: vs.VideoFrame) -> vs.VideoFrame:
         fout = f[0].copy()
         fout.props['PlaneSSIM'] = f[1].props['PlaneStatsAverage']
         return fout
@@ -3508,7 +3593,7 @@ def SSIM(clip1, clip2, plane=None, downsample=True, k1=0.01, k2=0.03, fun=None, 
     return output_clip
 
 
-def _IQA_downsample(clip):
+def _IQA_downsample(clip: vs.VideoNode) -> vs.VideoNode:
     """Downsampler for image quality assessment model.
 
     The “clip” is first filtered by a 2x2 average filter, and then down-sampled by a factor of 2.
@@ -3517,8 +3602,11 @@ def _IQA_downsample(clip):
     return core.std.Convolution(clip, [1, 1, 0, 1, 1, 0, 0, 0, 0]).resize.Point(clip.width // 2, clip.height // 2, src_left=-1, src_top=-1)
 
 
-def SSIM_downsample(clip, w, h, smooth=1, kernel=None, use_fmtc=False, gamma=False, fulls=False, fulld=False, curve='709', sigmoid=False, 
-    epsilon=1e-6, depth_args=None, **resample_args):
+def SSIM_downsample(clip: vs.VideoNode, w: int, h: int, smooth: Union[float, VSFuncType] = 1,
+                    kernel: Optional[str] = None, use_fmtc: bool = False, gamma: bool = False, 
+                    fulls: bool = False, fulld: bool = False, curve: str = '709', sigmoid: bool = False, 
+                    epsilon: float = 1e-6, depth_args: Optional[Dict[str, Any]] = None,
+                    **resample_args: Any) -> vs.VideoNode:
     """SSIM downsampler
 
     SSIM downsampler is an image downscaling technique that aims to optimize for the perceptual quality of the downscaled results.
@@ -3587,12 +3675,12 @@ def SSIM_downsample(clip, w, h, smooth=1, kernel=None, use_fmtc=False, gamma=Fal
     if depth_args is None:
         depth_args = {}
 
-    if isinstance(smooth, int):
+    if callable(smooth): 
+        Filter = smooth
+    elif isinstance(smooth, int):
         Filter = functools.partial(BoxFilter, radius=smooth+1)
     elif isinstance(smooth, float):
         Filter = functools.partial(core.tcanny.TCanny, sigma=smooth, mode=-1)
-    elif callable(smooth):
-        Filter = smooth
     else:
         raise TypeError(funcName + ': \"smooth\" must be a int, float or a function!')
 
@@ -3627,7 +3715,9 @@ def SSIM_downsample(clip, w, h, smooth=1, kernel=None, use_fmtc=False, gamma=Fal
     return d
 
 
-def LocalStatisticsMatching(src, ref, radius=1, return_all=False, **depth_args):
+def LocalStatisticsMatching(src: vs.VideoNode, ref: vs.VideoNode, radius: Union[int, VSFuncType] = 1,
+                            return_all: bool = False, **depth_args: Any
+                            ) -> vs.VideoNode:
     """Local statistics matcher
 
     Match the local statistics (mean, variance) of "src" with "ref".
@@ -3672,7 +3762,9 @@ def LocalStatisticsMatching(src, ref, radius=1, return_all=False, **depth_args):
         return flt
 
 
-def LocalStatistics(clip, radius=1, **depth_args):
+def LocalStatistics(clip: vs.VideoNode, radius: Union[int, VSFuncType] = 1,
+                    **depth_args: Any
+                    ) -> vs.VideoNode:
     """Local statistics calculator
 
     The local mean and variance will be returned.
@@ -3710,7 +3802,10 @@ def LocalStatistics(clip, radius=1, **depth_args):
     return clip, mean, var
 
 
-def TextSub16(src, file, mod=False, tv_range=True, matrix=None, dither=None, **vsfilter_args):
+def TextSub16(src: vs.VideoNode, file: str, mod: bool = False, tv_range: bool = True, 
+              matrix: Optional[Union[int, str]] = None, dither: Optional[str] = None, 
+              **vsfilter_args: Any
+              ) -> vs.VideoNode:
     """TextSub16 for VapourSynth
 
     Author: mawen1250 (http://nmm.me/109)
@@ -3799,7 +3894,7 @@ def TextSub16(src, file, mod=False, tv_range=True, matrix=None, dither=None, **v
     return core.std.MaskedMerge(src16, sub16, submask, planes=[0, 1, 2])
 
 
-def TMinBlur(clip, r=1, thr=2):
+def TMinBlur(clip: vs.VideoNode, r: int = 1, thr: float = 2) -> vs.VideoNode:
     """Thresholded MinBlur
 
     Use another MinBlur with larger radius to guide the smoothing effect of current MinBlur.
@@ -3832,7 +3927,7 @@ def TMinBlur(clip, r=1, thr=2):
     return core.std.Expr([clip, pre1, pre2], ['y z - abs {thr} <= y x ?'.format(thr=thr)])
 
 
-def mdering(clip, thr=2):
+def mdering(clip: vs.VideoNode, thr: float = 2) -> vs.VideoNode:
     """A simple light and bright DCT ringing remover
 
     It is a special instance of TMinBlur (r=1 and only filter the bright part) for higher performance.
@@ -3871,7 +3966,10 @@ def mdering(clip, thr=2):
     return dering
 
 
-def BMAFilter(clip, guidance=None, radius=1, lamda=1e-2, epsilon=1e-5, mode=3, **depth_args):
+def BMAFilter(clip: vs.VideoNode, guidance: Optional[vs.VideoNode] = None, radius: int = 1, 
+              lamda: float = 1e-2, epsilon: float = 1e-5, mode: int = 3, 
+              **depth_args: Any
+              ) -> vs.VideoNode:
     """Edge-Aware BMA Filter
 
     Edge-aware BMA filter is a family of edge-aware filters proposed based on optimal parameter estimation and Bayesian model averaging (BMA).
@@ -3937,16 +4035,16 @@ def BMAFilter(clip, guidance=None, radius=1, lamda=1e-2, epsilon=1e-5, mode=3, *
     clip = mvf.Depth(clip, depth=32, **depth_args)
     guidance = mvf.Depth(guidance, depth=32, **depth_args) if guidance != clip_src else clip
 
-    if mode in (1, 3):
-        Filter = functools.partial(BoxFilter, radius=radius+1)
-    elif mode in (2, 4):
-        def Filter(clip):
+    if mode in (2, 4):
+        def Filter(clip: vs.VideoNode) -> vs.VideoNode:
             if radius == 1:
                 clip = core.std.Median(clip)
             else:
                 clip = mvf.Depth(clip, 12, **depth_args)
                 clip = core.ctmf.CTMF(clip, radius=radius)
             return mvf.Depth(clip, 32, **depth_args)
+    elif mode in (1, 3):
+        Filter = functools.partial(BoxFilter, radius=radius+1)
 
     Expectation = functools.partial(BoxFilter, radius=radius+1)
 
@@ -3989,7 +4087,10 @@ def BMAFilter(clip, guidance=None, radius=1, lamda=1e-2, epsilon=1e-5, mode=3, *
     return mvf.Depth(res, depth=bits, sample=sampleType, **depth_args)
 
 
-def LLSURE(clip, guidance=None, radius=2, sigma=0, epsilon=1e-5, **depth_args):
+def LLSURE(clip: vs.VideoNode, guidance: Optional[vs.VideoNode] = None, radius: int = 2, 
+           sigma: Union[float, vs.VideoNode] = 0, epsilon: float = 1e-5, 
+           **depth_args: Any
+           ) -> vs.VideoNode:
     """Local Linear SURE-Based Edge-Preserving Image Filtering
 
     LLSURE is based on a local linear model and using the principle of Stein’s unbiased risk estimate (SURE) 
@@ -4086,7 +4187,7 @@ def LLSURE(clip, guidance=None, radius=2, sigma=0, epsilon=1e-5, **depth_args):
     return mvf.Depth(res, depth=bits, sample=sampleType, **depth_args)
 
 
-def YAHRmod(clp, blur=2, depth=32, **limit_filter_args):
+def YAHRmod(clp: vs.VideoNode, blur: int = 2, depth: int = 32, **limit_filter_args: Any) -> vs.VideoNode:
     """Modification of YAHR with better texture preserving property
 
     The YAHR() is a simple and powerful script to reduce halos from over enhanced edges.
@@ -4154,7 +4255,8 @@ def YAHRmod(clp, blur=2, depth=32, **limit_filter_args):
         return last
 
 
-def RandomInterleave(clips, seed=None, rand_list=None):
+def RandomInterleave(clips: Sequence[vs.VideoNode], seed: Optional[int] = None, 
+                     rand_list: Optional[Sequence[int]] = None) -> vs.VideoNode:
     """Returns a clip with the frames from all clips randomly interleaved
 
     Useful for blinded-experiment.
@@ -4175,8 +4277,10 @@ def RandomInterleave(clips, seed=None, rand_list=None):
 
     funcName = 'RandomInterleave'
 
-    if not isinstance(clips, list):
+    if not isinstance(clips, abc.Sequence):
         raise TypeError(funcName + ': \"clips\" must be a list of clips!')
+    else:
+        clips = list(clips)
 
     length = len(clips)
     if length == 1:
@@ -4198,17 +4302,24 @@ def RandomInterleave(clips, seed=None, rand_list=None):
     for i in range(length):
         clips[i] = core.std.DuplicateFrames(clips[i], frames=frames)
 
-    def selector(n, f):
-        return f[rand_list[n]]
+    def selector(n: int, f: vs.VideoFrame) -> vs.VideoFrame:
+        return f[rand_list[n]] # type: ignore
 
     clip = core.std.ModifyFrame(clips[0], clips=clips, selector=selector)
 
     return core.std.AssumeFPS(clip, fpsnum=clips[0].fps.numerator * length, fpsden=clips[0].fps.denominator)
 
 
-def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, block_h=None, is_rgb_model=True, pad=None, crop=None, 
-    pre_upscale=False, upscale_uv=False, merge_source=False, use_fmtc=False, resample_kernel=None, resample_args=None, pad_mode=None, 
-    framework=None, data_format=None, device_id=0, use_plugins_padding=False):
+def super_resolution(clip: vs.VideoNode, model_filename: str, epoch: int = 0, up_scale: int = 2, 
+                     block_w: int = 128, block_h: Optional[int] = None, is_rgb_model: bool = True, 
+                     pad: Optional[Tuple[int, int, int, int]] = None, 
+                     crop: Optional[Tuple[int, int, int, int]] = None, 
+                     pre_upscale: bool = False, upscale_uv: bool = False, merge_source: bool = False, 
+                     use_fmtc: bool = False, resample_kernel: Optional[str] = None, 
+                     resample_args: Optional[Dict[str, Any]] = None, pad_mode: Optional[str] = None, 
+                     framework: Optional[str] = None, data_format: Optional[str] = None, 
+                     device_id: Union[int, Sequence[int]] = 0, use_plugins_padding: bool = False
+                     ) -> vs.VideoNode:
     '''Use MXNet to accelerate Image-Processing in VapourSynth using C++ interface
 
     Drop-in replacement of muvsfunc_numpy's counterpart using core.mx.Predict().
@@ -4251,11 +4362,11 @@ def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, blo
             If not, it is assumed to be Y model, and RGB input will be converted to YUV before feeding to the network
             Default is True.
 
-        pad: (list of four ints) Patch-wise padding before upscaling.
+        pad: (tuple of four ints) Patch-wise padding before upscaling.
             The four values indicate padding at top, bottom, left, right of each patch respectively.
             Default is None.
 
-        crop: (list of four ints) Patch-wise cropping after upscaling.
+        crop: (tuple of four ints) Patch-wise cropping after upscaling.
             The four values indicate cropping at top, bottom, left, right of each patch respectively.
             Moreover, due to the implementation of vs_mxnet, the values at top and left should be zero.
             Default is None.
@@ -4353,7 +4464,7 @@ def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, blo
         if data_format != 'NCHW':
             raise ValueError(funcName + ': Only NCHW data format is supported! Please switch to muvsfunc_numpy\'s implementation.')
 
-    if not isinstance(device_id, list) or not isinstance(device_id, tuple):
+    if isinstance(device_id, int):
         device_id = [device_id]
 
     if use_plugins_padding and not pad[0] == pad[1] == pad[2] == pad[3]:
@@ -4394,24 +4505,24 @@ def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, blo
             up_scale = 1
 
     # inference
-    def inference(clip, dev_id):
+    def inference(clip: vs.VideoNode, dev_id: int) -> vs.VideoNode:
         '''wrapper function for inference'''
 
         if is_rgb_model or not upscale_uv:
             w, h = clip.width, clip.height
 
-            if not use_plugins_padding and (pad[0]-crop[0]//up_scale > 0 or pad[1]-crop[1]//up_scale > 0 or 
-                pad[2]-crop[2]//up_scale > 0 or pad[3]-crop[3]//up_scale > 0):
+            if not use_plugins_padding and (pad[0]-crop[0]//up_scale > 0 or pad[1]-crop[1]//up_scale > 0 or # type: ignore
+                pad[2]-crop[2]//up_scale > 0 or pad[3]-crop[3]//up_scale > 0): # type: ignore
 
-                clip = haf.Padding(clip, pad[2]-crop[2]//up_scale, pad[3]-crop[3]//up_scale, 
-                    pad[0]-crop[0]//up_scale, pad[1]-crop[1]//up_scale)
+                clip = haf.Padding(clip, pad[2]-crop[2]//up_scale, pad[3]-crop[3]//up_scale, # type: ignore
+                    pad[0]-crop[0]//up_scale, pad[1]-crop[1]//up_scale) # type: ignore
 
             super_res = core.mx.Predict(clip, symbol=symbol_filename, param=param_filename, 
-                patch_w=block_w+pad[2]+pad[3], patch_h=block_h+pad[0]+pad[1], scale=up_scale, 
-                output_w=block_w*up_scale+crop[2]+crop[3], output_h=block_h*up_scale+crop[0]+crop[1], # crop[0] == crop[2] == 0
+                patch_w=block_w+pad[2]+pad[3], patch_h=block_h+pad[0]+pad[1], scale=up_scale, # type: ignore 
+                output_w=block_w*up_scale+crop[2]+crop[3], output_h=block_h*up_scale+crop[0]+crop[1], # type: ignore # crop[0] == crop[2] == 0
                 frame_w=w*up_scale, frame_h=h*up_scale, step_w=block_w, step_h=block_h, 
-                outstep_w=block_w*up_scale, outstep_h=block_h*up_scale, 
-                padding=pad[0]-crop[0]//up_scale if use_plugins_padding else 0, 
+                outstep_w=block_w*up_scale, outstep_h=block_h*up_scale, # type: ignore
+                padding=pad[0]-crop[0]//up_scale if use_plugins_padding else 0, # type: ignore
                 ctx=2 if dev_id >= 0 else 1, dev_id=max(dev_id, 0))
 
         else: # Y model, YUV input that may have subsampling, need to upscale uv
@@ -4421,18 +4532,18 @@ def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, blo
             for i in range(num_planes):
                 w, h = yuv_list[i].width, yuv_list[i].height
 
-                if not use_plugins_padding and (pad[0]-crop[0]//up_scale > 0 or pad[1]-crop[1]//up_scale > 0 or 
-                    pad[2]-crop[2]//up_scale > 0 or pad[3]-crop[3]//up_scale > 0):
+                if not use_plugins_padding and (pad[0]-crop[0]//up_scale > 0 or pad[1]-crop[1]//up_scale > 0 or # type: ignore
+                    pad[2]-crop[2]//up_scale > 0 or pad[3]-crop[3]//up_scale > 0): # type: ignore
 
-                    yuv_list[i] = haf.Padding(yuv_list[i], pad[2]-crop[2]//up_scale, pad[3]-crop[3]//up_scale, 
-                        pad[0]-crop[0]//up_scale, pad[1]-crop[1]//up_scale)
+                    yuv_list[i] = haf.Padding(yuv_list[i], pad[2]-crop[2]//up_scale, pad[3]-crop[3]//up_scale, # type: ignore
+                        pad[0]-crop[0]//up_scale, pad[1]-crop[1]//up_scale) # type: ignore
 
                 yuv_list[i] = core.mx.Predict(yuv_list[i], symbol=symbol_filename, param=param_filename, 
-                    patch_w=block_w+pad[2]+pad[3], patch_h=block_h+pad[0]+pad[1], scale=up_scale, 
-                    output_w=block_w*up_scale+crop[2]+crop[3], output_h=block_h*up_scale+crop[0]+crop[1], # crop[0] == crop[2] == 0
+                    patch_w=block_w+pad[2]+pad[3], patch_h=block_h+pad[0]+pad[1], scale=up_scale, # type: ignore
+                    output_w=block_w*up_scale+crop[2]+crop[3], output_h=block_h*up_scale+crop[0]+crop[1], # type: ignore # crop[0] == crop[2] == 0
                     frame_w=w*up_scale, frame_h=h*up_scale, step_w=block_w, step_h=block_h, 
-                    outstep_w=block_w*up_scale, outstep_h=block_h*up_scale, 
-                    padding=pad[0]-crop[0]//up_scale if use_plugins_padding else 0, 
+                    outstep_w=block_w*up_scale, outstep_h=block_h*up_scale, # type: ignore
+                    padding=pad[0]-crop[0]//up_scale if use_plugins_padding else 0, # type: ignore
                     ctx=2 if dev_id >= 0 else 1, dev_id=max(dev_id, 0))
 
             super_res = core.std.ShufflePlanes(yuv_list, [0] * num_planes, clip.format.color_family)
@@ -4441,7 +4552,6 @@ def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, blo
 
     if len(device_id) == 1:
         super_res = inference(clip, device_id[0])
-
     else: # multi-GPU data parallelism
         workers = len(device_id)
         super_res_list = [inference(clip[i::workers], device_id[i]) for i in range(workers)]
@@ -4472,7 +4582,9 @@ def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, blo
     return super_res
 
 
-def MDSI(clip1, clip2, down_scale=1, alpha=0.6, show_maps=False):
+def MDSI(clip1: vs.VideoNode, clip2: vs.VideoNode, down_scale: int = 1, alpha: float = 0.6, 
+         show_maps: bool = False
+         ) -> vs.VideoNode:
     """Mean Deviation Similarity Index Calculator
 
     MDSI is a full reference IQA model that utilize gradient similarity (GS), chromaticity similarity (CS), and deviation pooling (DP).
@@ -4578,14 +4690,14 @@ def MDSI(clip1, clip2, down_scale=1, alpha=0.6, show_maps=False):
     # The following code is modified from mvf.PlaneStatistics()
     mean_gcs = mvf.PlaneAverage(gcs, 0, "PlaneMean")
 
-    def _PlaneADFrame(n, f, clip):
+    def _PlaneADFrame(n: int, f: vs.VideoFrame, clip: vs.VideoNode, core: vs.Core) -> vs.VideoNode:
         mean = f.props['PlaneMean']
         expr = "x {mean} - abs".format(mean=mean)
         return core.std.Expr(clip, expr)
-    ADclip = core.std.FrameEval(gcs, functools.partial(_PlaneADFrame, clip=gcs), mean_gcs)
+    ADclip = core.std.FrameEval(gcs, functools.partial(_PlaneADFrame, clip=gcs, core=core), mean_gcs)
     ADclip = mvf.PlaneAverage(ADclip, 0, "PlaneMAD")
 
-    def _FrameMDSITransfer(n, f):
+    def _FrameMDSITransfer(n: int, f: vs.VideoFrame) -> vs.VideoFrame:
         fout = f[0].copy()
         fout.props['FrameMDSI'] = f[1].props['PlaneMAD'] ** 0.25
         return fout
@@ -4597,7 +4709,10 @@ def MDSI(clip1, clip2, down_scale=1, alpha=0.6, show_maps=False):
         return clip1
 
 
-def MaskedLimitFilter(flt, src, ref=None, thr=1.0, elast=2.0, brighten_thr=None, planes=None):
+def MaskedLimitFilter(flt: vs.VideoNode, src: vs.VideoNode, ref: Optional[vs.VideoNode] = None, 
+                      thr: Union[float, vs.VideoNode] = 1.0, elast: Union[float, vs.VideoNode] = 2.0, 
+                      brighten_thr: Optional[Union[float, vs.VideoNode]] = None, 
+                      planes: PlanesType = None) -> vs.VideoNode:
     """Masked limit fIlter
 
     Modified from mvsfunc.LimitFilter().
@@ -4724,7 +4839,7 @@ def MaskedLimitFilter(flt, src, ref=None, thr=1.0, elast=2.0, brighten_thr=None,
     dif_ref_str = f"{flt_str} {ref_str} -"
     dif_abs_str = f"{dif_ref_str} abs"
 
-    def foldable(string):
+    def foldable(string: str) -> bool:
         for char in string:
             if char.isalpha():
                 return False
@@ -4813,8 +4928,11 @@ def MaskedLimitFilter(flt, src, ref=None, thr=1.0, elast=2.0, brighten_thr=None,
         return core.std.Expr(clips, [(limitExpr if i in planes else "") for i in range(flt.format.num_planes)])
 
 
-def multi_scale(func=None, down_scale=1.5, up_scale_func=None, 
-    down_scale_func=None, multi_scale_mode=1, num_levels=2):
+def multi_scale(func: Optional[Callable[..., vs.VideoNode]] = None, down_scale: float = 1.5, 
+                up_scale_func: Optional[Callable[[vs.VideoNode, int, int], vs.VideoNode]] = None, 
+                down_scale_func: Optional[Callable[[vs.VideoNode, int, int], vs.VideoNode]] = None, 
+                multi_scale_mode: int = 1, num_levels: int = 2
+                ) -> vs.VideoNode:
     """A decorator that "multi-scale" a given function
 
     Note that the resulting function may be significantly different from its single-scale counterpart.
@@ -4896,16 +5014,20 @@ def multi_scale(func=None, down_scale=1.5, up_scale_func=None,
         raise ValueError(f'{funcName}: "num_levels" must be greater than 0! (got {num_levels})')
 
     if func is None:
-        return lambda func: functools.wraps(func)(lambda clip, *args, **kwargs: _multi_scale_filtering(
+        return lambda func: functools.wraps(func)(lambda clip, *args, **kwargs: _multi_scale_filtering( # type: ignore
             clip, func, down_scale, up_scale_func, down_scale_func, multi_scale_mode, num_levels, *args, **kwargs))
     elif callable(func):
-        return functools.wraps(func)(lambda clip, *args, **kwargs: _multi_scale_filtering(
+        return functools.wraps(func)(lambda clip, *args, **kwargs: _multi_scale_filtering( # type: ignore
             clip, func, down_scale, up_scale_func, down_scale_func, multi_scale_mode, num_levels, *args, **kwargs))
     else:
         raise TypeError(f'{funcName}: Unknown type of "func"! (got {type(func)})')
 
 
-def _multi_scale_filtering(clip, func, down_scale, up_scale_func, down_scale_func, multi_scale_mode, num_levels, *args, **kwargs):
+def _multi_scale_filtering(clip: vs.VideoNode, func: Callable[..., vs.VideoNode], down_scale: float, 
+                           up_scale_func: Callable[[vs.VideoNode, int, int], vs.VideoNode], 
+                           down_scale_func: Callable[[vs.VideoNode, int, int], vs.VideoNode], 
+                           multi_scale_mode: int, num_levels: int, *args: Any, **kwargs: Any
+                           ) -> vs.VideoNode:
     """"Internal function used by multi_scale()"""
 
     if num_levels == 0:
@@ -4962,7 +5084,8 @@ def _multi_scale_filtering(clip, func, down_scale, up_scale_func, down_scale_fun
             raise ValueError(f'multi_scale: Unknown value of "multi_scale_mode"! (-3~-1 or 1~3, got {multi_scale_mode})')
 
 
-def avg_decimate(clip, clip2=None, weight=0.5, **vdecimate_kwargs):
+def avg_decimate(clip: vs.VideoNode, clip2: Optional[vs.VideoNode] = None, weight: float = 0.5, 
+                 **vdecimate_kwargs: Any) -> vs.VideoNode:
     """Averaging-based decimation filter
 
     Proposed by feisty2.
@@ -4992,7 +5115,7 @@ def avg_decimate(clip, clip2=None, weight=0.5, **vdecimate_kwargs):
 
     assert clip.num_frames >= 2
 
-    def avg_func(n, f, clip):
+    def avg_func(n: int, f: vs.VideoFrame, clip: vs.VideoNode) -> vs.VideoNode:
         if f.props["VDecimateDrop"] == 1:
             return core.misc.AverageFrames(clip, weights=[0, 1-weight, weight]) # forward averaging
         else:
@@ -5007,7 +5130,9 @@ def avg_decimate(clip, clip2=None, weight=0.5, **vdecimate_kwargs):
     return decimate
 
 
-def YAHRmask(clp, expand=5, warpdepth=32, blur=2, useawarp4=False, yahr=None):
+def YAHRmask(clp: vs.VideoNode, expand: float = 5, warpdepth: int = 32, blur: int = 2, 
+             useawarp4: bool = False, yahr: Optional[vs.VideoNode] = None
+             ) -> vs.VideoNode:
     """YAHRmask
 
     Author: Tophf
@@ -5096,7 +5221,10 @@ def YAHRmask(clp, expand=5, warpdepth=32, blur=2, useawarp4=False, yahr=None):
         return last
 
 
-def Cdeblend(input, omode=0, bthresh=0.1, mthresh=0.6, xr=1.5, yr=2.0, fnr=False, dclip=None):
+def Cdeblend(input: vs.VideoNode, omode: int = 0, bthresh: float = 0.1, mthresh: float = 0.6, 
+             xr: float = 1.5, yr: float = 2.0, fnr: bool = False, 
+             dclip: Optional[vs.VideoNode] = None
+             ) -> vs.VideoNode:
     """A simple blend replacing function like unblend or removeblend
 
     Port from Cdeblend v1.1b (http://avisynth.nl/images/Cdeblend.avs)
@@ -5173,7 +5301,7 @@ def Cdeblend(input, omode=0, bthresh=0.1, mthresh=0.6, xr=1.5, yr=2.0, fnr=False
 
     current = 0
 
-    def evaluate(n, f, clip):
+    def evaluate(n: int, f: vs.VideoFrame, clip: vs.VideoNode, core: vs.Core) -> vs.VideoNode:
         nonlocal Cdp3, Cdp2, Cdp1, Cdc0, Cdn1, Cbp3, Cbp2, Cbp1, Cbc0, Cbn1, Cbn2, current
 
         Cdiff = f[0].props["PlaneMAE"] * 255
@@ -5262,14 +5390,14 @@ def Cdeblend(input, omode=0, bthresh=0.1, mthresh=0.6, xr=1.5, yr=2.0, fnr=False
         # AverageLuma(mask)
         Cbval = mvf.PlaneStatistics(mask, mean=True, mad=False, var=False, std=False, rms=False)
 
-    last = core.std.FrameEval(input, functools.partial(evaluate, clip=input), prop_src=[Cdiff, Cbval])
+    last = core.std.FrameEval(input, functools.partial(evaluate, clip=input, core=core), prop_src=[Cdiff, Cbval])
 
     recl = haf.ChangeFPS(haf.ChangeFPS(last, last.fps_num * 2, last.fps_den * 2), last.fps_num, last.fps_den).std.Cache(make_linear=True)
 
     return recl
 
 
-def S_BoxFilter(clip, radius=1, planes=None):
+def S_BoxFilter(clip: vs.VideoNode, radius: int = 1, planes: PlanesType = None) -> vs.VideoNode:
     """Side window box filter
 
     Side window box filter is a local edge-preserving filter that is derived from
@@ -5332,7 +5460,8 @@ def S_BoxFilter(clip, radius=1, planes=None):
     return res
 
 
-def VFRSplice(clips, tcfile=None, v2=True, precision=6):
+def VFRSplice(clips: Sequence[vs.VideoNode], tcfile: Optional[str] = None, v2: bool = True, 
+              precision: int = 6) -> vs.VideoNode:
     """fractions-based VFRSplice()
 
     This function is modified from mvsfunc.VFRSplice().
@@ -5360,22 +5489,23 @@ def VFRSplice(clips, tcfile=None, v2=True, precision=6):
 
     funcName = "VFRSplice"
 
-    from fractions import Fraction
-
     # Arguments
     if isinstance(clips, vs.VideoNode):
         clips = [clips]
-    elif isinstance(clips, list):
+    elif isinstance(clips, abc.Sequence):
         for clip in clips:
             if not isinstance(clip, vs.VideoNode):
                 raise TypeError(f'{funcName}: each element in "clips" must be a clip!')
-            if clip.fps == Fraction(0, 1):
+            if clip.fps.numerator == 0 and clip.fps.denominator == 1:
                 raise ValueError(f'{funcName}: each clip in "clips" must be CFR!')
     else:
         raise TypeError(f'{funcName}: "clips" must be a clip or a list of clips!')
 
 
-    def exclusive_accumulate(iterable, func=operator.add, initializer=None):
+    T = TypeVar("T")
+    def exclusive_accumulate(iterable: Iterable[T], func: Callable[[T, T], T] = operator.add, 
+                             initializer: Optional[T] = None
+                             ) -> Generator[T, None, None]:
         """Exclusive scan
 
         Make an iterator that returns accumulated results of binary functions, 
@@ -5423,8 +5553,8 @@ def VFRSplice(clips, tcfile=None, v2=True, precision=6):
         raw_tc_gen = itertools.accumulate(raw_record_gen, record_push)
 
         # simplified timecode v1 generator for spliced clip (merges successive records with equal fps)
-        record_concat = lambda x, y: tc_record(x.start, y.end, y.fps) # requires x.fps == y.fps
-        tc_gen = (reduce(record_concat, g) for (_, g) in itertools.groupby(raw_tc_gen, lambda x: x.fps))
+        record_concat = lambda x, y: tc_record(x.start, y.end, y.fps) # requires x.fps == y.fps and x.end + 1 == y.start
+        tc_gen = (reduce(record_concat, g) for (_, g) in itertools.groupby(raw_tc_gen, lambda x: x.fps)) # type: ignore
 
         # tc_list = list(tc_gen) # result is equal to mvsfunc's counterpart
 
@@ -5432,27 +5562,27 @@ def VFRSplice(clips, tcfile=None, v2=True, precision=6):
         # Write to timecode file
 
         # fraction to str function
-        frac2str = lambda frac, precision: "{:<.{precision}F}".format(float(frac), precision=precision)
+        frac2str = lambda frac, precision: "{:<.{precision}F}".format(float(frac), precision=precision) # type: Callable[[numbers.Real, int], str]
 
         # write
         if v2: # timecode v2
             # fps to milesecond function
-            fps2ms = lambda fps: 1000 / fps
+            fps2ms = lambda fps: 1000 / fps # type: Callable[[numbers.Real], numbers.Real] # type: ignore
 
             # exclusive scan to calculate time stamps
             ms_gen = (fps2ms(tc.fps) for tc in tc_gen for _ in range(tc.start, tc.end + 1))
             time_gen = exclusive_accumulate(ms_gen, initializer=0)
 
             # time to string function
-            time2strln = lambda time, precision: "{time}\n".format(time=frac2str(time, precision))
+            time2strln = lambda time, precision: "{time}\n".format(time=frac2str(time, precision)) # type: Callable[[numbers.Real, int], str]
 
             olines = itertools.chain(
                 ["# timecode format v2\n"], 
-                (time2strln(time, precision) for time in time_gen)
+                (time2strln(time, precision) for time in time_gen) # type: ignore
             )
         else: # timecode v1
             # timecode to string function
-            tc2strln = lambda tc, precision: f"{tc.start},{tc.end},{frac2str(tc.fps, precision)}\n"
+            tc2strln = lambda tc, precision: f"{tc.start},{tc.end},{frac2str(tc.fps, precision)}\n" # type: Callable[[tc_record, int], str]
 
             first_tc = next(tc_gen)
 
