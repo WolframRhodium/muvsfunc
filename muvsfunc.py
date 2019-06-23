@@ -66,8 +66,8 @@ import math
 import operator
 from collections import abc
 import numbers
-from typing import Any, Callable, Dict, Generator, Iterable
-from typing import Optional, Sequence, Tuple, TypeVar, Union
+from typing import Any, Callable, Dict, Iterable, Optional
+from typing import Sequence, Tuple, TypeVar, Union
 
 import vapoursynth as vs
 from vapoursynth import core
@@ -814,8 +814,8 @@ def AnimeMask2(input: vs.VideoNode, r: float = 1.2, expr: Optional[str] = None,
     if mode not in [-1, 1]:
         raise ValueError(funcName + ': \'mode\' have not a correct value! [-1 or 1]')
 
-    smooth = core.resize.Bicubic(input, haf.m4(w / r), haf.m4(h / r)).resize.Bicubic(w, h, filter_param_a=1, filter_param_b=0)
-    smoother = core.resize.Bicubic(input, haf.m4(w / r), haf.m4(h / r)).resize.Bicubic(w, h, filter_param_a=1.5, filter_param_b=-0.25)
+    smooth = core.resize.Bicubic(input, haf.m4(w / r), haf.m4(h / r), filter_param_a=1/3, filter_param_b=1/3).resize.Bicubic(w, h, filter_param_a=1, filter_param_b=0)
+    smoother = core.resize.Bicubic(input, haf.m4(w / r), haf.m4(h / r), filter_param_a=1/3, filter_param_b=1/3).resize.Bicubic(w, h, filter_param_a=1.5, filter_param_b=-0.25)
 
     calc_expr = 'x y - ' if mode == 1 else 'y x - '
 
@@ -2366,15 +2366,15 @@ def abcxyz(clp: vs.VideoNode, rad: float = 3.0, ss: float = 1.5) -> vs.VideoNode
         clp_src = clp
         clp = mvf.GetPlane(clp)
 
-    x = core.resize.Bicubic(clp, haf.m4(ox/rad), haf.m4(oy/rad)).resize.Bicubic(ox, oy, filter_param_a=1, filter_param_b=0)
+    x = core.resize.Bicubic(clp, haf.m4(ox/rad), haf.m4(oy/rad), filter_param_a=1/3, filter_param_b=1/3).resize.Bicubic(ox, oy, filter_param_a=1, filter_param_b=0)
     y = core.std.Expr([clp, x], ['x {a} + y < x {a} + x {b} - y > x {b} - y ? ? x y - abs * x {c} x y - abs - * + {c} /'.format(
         a=scale(8, bits), b=scale(24, bits), c=scale(32, bits))])
 
     z1 = core.rgvs.Repair(clp, y, [1])
 
     if ss != 1.:
-        maxbig = core.std.Maximum(y).resize.Bicubic(haf.m4(ox*ss), haf.m4(oy*ss))
-        minbig = core.std.Minimum(y).resize.Bicubic(haf.m4(ox*ss), haf.m4(oy*ss))
+        maxbig = core.std.Maximum(y).resize.Bicubic(haf.m4(ox*ss), haf.m4(oy*ss), filter_param_a=1/3, filter_param_b=1/3)
+        minbig = core.std.Minimum(y).resize.Bicubic(haf.m4(ox*ss), haf.m4(oy*ss), filter_param_a=1/3, filter_param_b=1/3)
         z2 = core.resize.Lanczos(clp, haf.m4(ox*ss), haf.m4(oy*ss))
         z2 = core.std.Expr([z2, maxbig, minbig], ['x y min z max']).resize.Lanczos(ox, oy)
         z1 = z2  # for simplicity
@@ -2575,7 +2575,7 @@ def BlindDeHalo3(clp: vs.VideoNode, rx: float = 3.0, ry: float = 3.0, strength: 
     i = clp if not interlaced else core.std.SeparateFields(clp, tff=True)
     oxi = i.width
     oyi = i.height
-    sm = core.resize.Bicubic(i, haf.m4(oxi/rx), haf.m4(oyi/ry))
+    sm = core.resize.Bicubic(i, haf.m4(oxi/rx), haf.m4(oyi/ry), filter_param_a=1/3, filter_param_b=1/3)
     mm = core.std.Expr([sm.std.Maximum(), sm.std.Minimum()], ['x y - 4 *']).std.Maximum().std.Deflate().std.Convolution([1]*9)
     mm = mm.std.Inflate().resize.Bicubic(oxi, oyi, filter_param_a=1, filter_param_b=0).std.Inflate()
     sm = core.resize.Bicubic(sm, oxi, oyi, filter_param_a=1, filter_param_b=0)
@@ -2590,7 +2590,7 @@ def BlindDeHalo3(clp: vs.VideoNode, rx: float = 3.0, ry: float = 3.0, strength: 
         LIM = 'x {LL} + y < x {LL} + x {LL} - y > x {LL} - y ? ?'.format(LL=LL)
 
         base = i if PPmode < 0 else clean
-        small = core.resize.Bicubic(base, haf.m4(oxi / math.sqrt(rx * 1.5)), haf.m4(oyi / math.sqrt(ry * 1.5)))
+        small = core.resize.Bicubic(base, haf.m4(oxi / math.sqrt(rx * 1.5)), haf.m4(oyi / math.sqrt(ry * 1.5)), filter_param_a=1/3, filter_param_b=1/3)
         ex1 = Blur(small.std.Maximum(), 0.5)
         in1 = Blur(small.std.Minimum(), 0.5)
         hull = core.std.Expr([ex1.std.Maximum().std.Convolution(matrix=[1, 2, 1, 2, 4, 2, 1, 2, 1]), ex1, in1, 
@@ -5505,7 +5505,7 @@ def VFRSplice(clips: Sequence[vs.VideoNode], tcfile: Optional[str] = None, v2: b
     T = TypeVar("T")
     def exclusive_accumulate(iterable: Iterable[T], func: Callable[[T, T], T] = operator.add, 
                              initializer: Optional[T] = None
-                             ) -> Generator[T, None, None]:
+                             ) -> Iterable[T]:
         """Exclusive scan
 
         Make an iterator that returns accumulated results of binary functions, 
