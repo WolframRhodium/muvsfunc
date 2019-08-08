@@ -585,21 +585,26 @@ def GradFun3(src: vs.VideoNode, thr: float = 0.35, radius: Optional[int] = None,
         ref_16 = core.fmtc.bitdepth(ref, bits=16, planes=planes) if ref.format.bits_per_sample < 16 else ref
 
     # Main debanding
+    """
+    chroma_flag: Whether we need to process Y and UV separately. It's True when:
+        Y is processed;
+        at least one from UV is processed;
+        Y and UV use different parameters.
+    """
     chroma_flag = (thrc != thr or radiusc != radius or
                    elastc != elast) and 0 in planes and (1 in planes or 2 in planes)
 
-    if not chroma_flag:
-        planes2 = list(planes)
+    if chroma_flag:
+        planes2 = [0]
     else:
-        planes2 = [0] if 0 in planes else []
+        planes2 = list(planes)
 
     if not planes2:
         raise ValueError(funcName + ': no plane is processed!')
 
     flt_y = _GF3_smooth(src_16, ref_16, smode, radius, thr, elast, planes2)
     if chroma_flag:
-        if 0 in planes2:
-            planes2.remove(0)
+        planes2 = [i for i in planes if i > 0]
         flt_c = _GF3_smooth(src_16, ref_16, smode, radiusc, thrc, elastc, planes2)
         flt = core.std.ShufflePlanes([flt_y, flt_c], list(range(src.format.num_planes)), src.format.color_family)
     else:
