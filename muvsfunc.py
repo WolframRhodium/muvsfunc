@@ -630,8 +630,9 @@ def GradFun3(src: vs.VideoNode, thr: float = 0.35, radius: Optional[int] = None,
         res_16 = flt
 
     # Dithering
-    result = res_16 if lsb else core.fmtc.bitdepth(res_16, bits=bits, planes=planes, dmode=mode, ampo=ampo,
-                                                   ampn=ampn, dyn=dyn, staticnoise=staticnoise, patsize=pat)
+    result = res_16 if lsb or bits >= 16 else core.fmtc.bitdepth(res_16, bits=bits, planes=planes, dmode=mode, 
+                                                                 ampo=ampo, ampn=ampn, dyn=dyn, 
+                                                                 staticnoise=staticnoise, patsize=pat)
 
     if debug:
         last = dmask
