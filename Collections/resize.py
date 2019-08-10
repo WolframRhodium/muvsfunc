@@ -34,7 +34,7 @@ def resize(clip, w=None, h=None, sx=0, sy=0, sw=None, sh=None, kernel="spline36"
     sh = _expand(sh, num_planes)
 
     if num_planes == 1:
-        res = eval(f"core.resize.{kernel}(clip, w, h, src_left=sx[0], src_top=sy[0], src_width=sw[0], src_height=sh[0], filter_param_a=a1, filter_param_b=a2)")
+        res = eval(f"core.resize.{kernel}")(clip, w, h, src_left=sx[0], src_top=sy[0], src_width=sw[0], src_height=sh[0], filter_param_a=a1, filter_param_b=a2)
     else:
         # copied from nnedi3_resample.py
         hSubS = 1 << clip.format.subsampling_w
@@ -48,9 +48,9 @@ def resize(clip, w=None, h=None, sx=0, sy=0, sw=None, sh=None, kernel="spline36"
         planes = [core.std.ShufflePlanes(clip, i, vs.GRAY) for i in range(num_planes)]
         for i in range(num_planes):
             if i == 0:
-                planes[i] = eval(f"core.resize.{kernel}(planes[0], w, h, src_left=sx[0], src_top=sy[0], src_width=sw[0], src_height=sh[0], filter_param_a=a1, filter_param_b=a2)")
+                planes[i] = eval(f"core.resize.{kernel}")(planes[0], w, h, src_left=sx[0], src_top=sy[0], src_width=sw[0], src_height=sh[0], filter_param_a=a1, filter_param_b=a2)
             else:
-                planes[i] = eval(f"core.resize.{kernel}(planes[i], w // (1 << clip.format.subsampling_w), h // (1 << clip.format.subsampling_h), src_left=((sx[i]-hCPlace) * hScale + hCPlace) / hScale / hSubS, src_top=((sy[i]-vCPlace) * vScale + vCPlace) / vScale / vSubS, src_width=sw[i] // (1 << clip.format.subsampling_w), src_height=sh[i] // (1 << clip.format.subsampling_h), filter_param_a=a1, filter_param_b=a2)")
+                planes[i] = eval(f"core.resize.{kernel}")(planes[i], w // (1 << clip.format.subsampling_w), h // (1 << clip.format.subsampling_h), src_left=((sx[i]-hCPlace) * hScale + hCPlace) / hScale / hSubS, src_top=((sy[i]-vCPlace) * vScale + vCPlace) / vScale / vSubS, src_width=sw[i] // (1 << clip.format.subsampling_w), src_height=sh[i] // (1 << clip.format.subsampling_h), filter_param_a=a1, filter_param_b=a2)
         res = core.std.ShufflePlanes(planes, [0] * num_planes, clip.format.color_family)
 
     return res

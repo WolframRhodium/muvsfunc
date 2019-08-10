@@ -679,7 +679,6 @@ def _GF3_smoothgrad_multistage(src: vs.VideoNode, ref: vs.VideoNode, radius: vs.
 def _GF3_smoothgrad_multistage_3(src: vs.VideoNode, radius: int, thr: float, 
                                  elast: float, planes: PlanesType
                                  ) -> vs.VideoNode:
-
     ref = SmoothGrad(src, radius=radius // 3, thr=thr * 0.8, elast=elast)
     last = BoxFilter(src, radius=radius, planes=planes)
     last = BoxFilter(last, radius=radius, planes=planes)
@@ -690,7 +689,6 @@ def _GF3_smoothgrad_multistage_3(src: vs.VideoNode, radius: int, thr: float,
 def _GF3_dfttest(src: vs.VideoNode, ref: vs.VideoNode, radius: int, 
                  thr: float, elast: float, planes: PlanesType
                  ) -> vs.VideoNode:
-
     hrad = max(radius * 3 // 4, 1)
     last = core.dfttest.DFTTest(src, sigma=hrad * thr * thr * 32, sbsize=hrad * 4,
                                 sosize=hrad * 3, tbsize=1, planes=planes)
@@ -702,7 +700,6 @@ def _GF3_dfttest(src: vs.VideoNode, ref: vs.VideoNode, radius: int,
 def _GF3_bilateral_multistage(src: vs.VideoNode, ref: vs.VideoNode, radius: int, 
                               thr: float, elast: float, planes: PlanesType
                               ) -> vs.VideoNode:
-
     last = core.bilateral.Bilateral(src, ref=ref, sigmaS=radius / 2, sigmaR=thr / 255, planes=planes, algorithm=0)
 
     last = mvf.LimitFilter(last, src, thr=thr, elast=elast, planes=planes)
@@ -711,7 +708,6 @@ def _GF3_bilateral_multistage(src: vs.VideoNode, ref: vs.VideoNode, radius: int,
 
 
 def _Build_gf3_range_mask(src: vs.VideoNode, radius: int = 1) -> vs.VideoNode:
-
     last = src
 
     if radius > 1:
@@ -726,7 +722,7 @@ def _Build_gf3_range_mask(src: vs.VideoNode, radius: int = 1) -> vs.VideoNode:
         mini = core.std.Minimum(last, [0])
         exp = "x y -"
         exp2 = "x {thY1} < {black} x ? {thY2} > {white} x ?".format(thY1=0, thY2=255, black=black, white=white)
-        last = core.std.Expr([maxi,mini],[exp])
+        last = core.std.Expr([maxi,mini], [exp])
         last = core.std.Expr([last], [exp2])
 
     return last
@@ -3096,12 +3092,13 @@ def GuidedFilter(input: vs.VideoNode, guidance: Optional[vs.VideoNode] = None, r
     if fast:
         down_w = math.floor(width / s)
         down_h = math.floor(height / s)
+        kernel1 = kernel1.capitalize()
         if use_fmtc1:
             p = core.fmtc.resample(p, down_w, down_h, kernel=kernel1, **kernel1_args)
             I = core.fmtc.resample(I, down_w, down_h, kernel=kernel1, **kernel1_args) if guidance is not None else p
         else: # use zimg
-            p = eval('core.resize.{kernel}(p, down_w, down_h, **kernel1_args)'.format(kernel=kernel1.capitalize()))
-            I = eval('core.resize.{kernel}(I, down_w, down_h, **kernel1_args)'.format(kernel=kernel1.capitalize())) if guidance is not None else p
+            p = eval(f'core.resize.{kernel1}')(p, down_w, down_h, **kernel1_args)
+            I = eval(f'core.resize.{kernel1}')(I, down_w, down_h, **kernel1_args) if guidance is not None else p
 
         r = math.floor(r / s)
 
@@ -3176,12 +3173,13 @@ def GuidedFilter(input: vs.VideoNode, guidance: Optional[vs.VideoNode] = None, r
 
     # Fast guided filter's upsampling
     if fast:
+        kernel2 = kernel2.capitalize()
         if use_fmtc2:
             mean_a = core.fmtc.resample(mean_a, width, height, kernel=kernel2, **kernel2_args)
             mean_b = core.fmtc.resample(mean_b, width, height, kernel=kernel2, **kernel2_args)
         else: # use zimg
-            mean_a = eval('core.resize.{kernel}(mean_a, {w}, {h}, **kernel2_args)'.format(kernel=kernel2.capitalize(), w=width, h=height))
-            mean_b = eval('core.resize.{kernel}(mean_b, {w}, {h}, **kernel2_args)'.format(kernel=kernel2.capitalize(), w=width, h=height))
+            mean_a = eval(f'core.resize.{kernel2}')(mean_a, width, height, **kernel2_args)
+            mean_b = eval(f'core.resize.{kernel2}')(mean_b, width, height, **kernel2_args)
 
     # Linear translation
     q = core.std.Expr([mean_a, I_src, mean_b], ['x y * z +'])
@@ -3264,12 +3262,13 @@ def GuidedFilterColor(input: vs.VideoNode, guidance: vs.VideoNode, radius: int =
     if fast:
         down_w = math.floor(width / s)
         down_h = math.floor(height / s)
+        kernel1 = kernel1.capitalize()
         if use_fmtc1:
             p = core.fmtc.resample(p, down_w, down_h, kernel=kernel1, **kernel1_args)
             I = core.fmtc.resample(I, down_w, down_h, kernel=kernel1, **kernel1_args)
         else: # use zimg
-            p = eval('core.resize.{kernel}(p, {w}, {h}, **kernel1_args)'.format(kernel=kernel1.capitalize(), w=down_w, h=down_h))
-            I = eval('core.resize.{kernel}(I, {w}, {h}, **kernel1_args)'.format(kernel=kernel1.capitalize(), w=down_w, h=down_h)) if guidance is not None else p
+            p = eval(f'core.resize.{kernel1}')(p, down_w, down_h, **kernel1_args)
+            I = eval(f'core.resize.{kernel1}')(I, down_w, down_h, **kernel1_args) if guidance is not None else p
 
         r = math.floor(r / s)
 
@@ -3341,16 +3340,17 @@ def GuidedFilterColor(input: vs.VideoNode, guidance: vs.VideoNode, radius: int =
 
     # Fast guided filter's upsampling
     if fast:
+        kernel2 = kernel2.capitalize()
         if use_fmtc2:
             mean_a_r = core.fmtc.resample(mean_a_r, width, height, kernel=kernel2, **kernel2_args)
             mean_a_g = core.fmtc.resample(mean_a_g, width, height, kernel=kernel2, **kernel2_args)
             mean_a_b = core.fmtc.resample(mean_a_b, width, height, kernel=kernel2, **kernel2_args)
             mean_b = core.fmtc.resample(mean_b, width, height, kernel=kernel2, **kernel2_args)
         else: # use zimg
-            mean_a_r = eval('core.resize.{kernel}(mean_a_r, {w}, {h}, **kernel2_args)'.format(kernel=kernel2.capitalize(), w=width, h=height))
-            mean_a_g = eval('core.resize.{kernel}(mean_a_g, {w}, {h}, **kernel2_args)'.format(kernel=kernel2.capitalize(), w=width, h=height))
-            mean_a_b = eval('core.resize.{kernel}(mean_a_b, {w}, {h}, **kernel2_args)'.format(kernel=kernel2.capitalize(), w=width, h=height))
-            mean_b = eval('core.resize.{kernel}(mean_b, {w}, {h}, **kernel2_args)'.format(kernel=kernel2.capitalize(), w=width, h=height))
+            mean_a_r = eval(f'core.resize.{kernel2}')(mean_a_r, width, height, **kernel2_args)
+            mean_a_g = eval(f'core.resize.{kernel2}')(mean_a_g, width, height, **kernel2_args)
+            mean_a_b = eval(f'core.resize.{kernel2}')(mean_a_b, width, height, **kernel2_args)
+            mean_b = eval(f'core.resize.{kernel2}')(mean_b, width, height, **kernel2_args)
 
     # Linear translation
     q = core.std.Expr([mean_a_r, I_src_r, mean_a_g, I_src_g, mean_a_b, I_src_b, mean_b], ['x y * z a * + b c * + d +'])
@@ -3698,12 +3698,13 @@ def SSIM_downsample(clip: vs.VideoNode, w: int, h: int, smooth: Union[float, VSF
 
     clip = mvf.Depth(clip, depth=32, sample=vs.FLOAT, **depth_args)
 
+    kernel = kernel.capitalize()
     if use_fmtc:
         l = core.fmtc.resample(clip, w, h, kernel=kernel, **resample_args)
         l2 = core.fmtc.resample(core.std.Expr([clip], ['x dup *']), w, h, kernel=kernel, **resample_args)
     else: # use vszimg
-        l = eval('core.resize.{kernel}(clip, w, h, **resample_args)'.format(kernel=kernel.capitalize()))
-        l2 = eval('core.resize.{kernel}(core.std.Expr([clip], ["x dup *"]), w, h, **resample_args)'.format(kernel=kernel.capitalize()))
+        l = eval(f'core.resize.{kernel}')(clip, w, h, **resample_args)
+        l2 = eval(f'core.resize.{kernel}')(core.std.Expr([clip], ["x dup *"]), w, h, **resample_args)
 
     m = Filter(l)
     sl_plus_m_square = Filter(core.std.Expr([l], ['x dup *']))
@@ -4505,8 +4506,8 @@ def super_resolution(clip: vs.VideoNode, model_filename: str, epoch: int = 0, up
                 if resample_kernel.lower() == 'catmull-rom':
                     clip = core.resize.Bicubic(clip, clip.width*up_scale, clip.height*up_scale, filter_param_a=0, filter_param_b=0.5, **resample_args)
                 else:
-                    clip = eval('core.resize.{kernel}(clip, clip.width*up_scale, clip.height*up_scale, **resample_args)'.format(
-                        kernel=resample_kernel.capitalize()))
+                    kernel = resample_kernel.capitalize()
+                    clip = eval(f'core.resize.{kernel}')(clip, clip.width*up_scale, clip.height*up_scale, **resample_args)
 
             up_scale = 1
 
@@ -4578,8 +4579,8 @@ def super_resolution(clip: vs.VideoNode, model_filename: str, epoch: int = 0, up
                 if resample_kernel.lower() == 'catmull-rom':
                     low_res = core.resize.Bicubic(clip, super_res.width, super_res.height, filter_param_a=0, filter_param_b=0.5, **resample_args)
                 else:
-                    low_res = eval('core.resize.{kernel}(clip, {w}, {h}, **resample_args)'.format(w=super_res.width, h=super_res.height, 
-                        kernel=resample_kernel.capitalize()))
+                    kernel = resample_kernel.capitalize()
+                    low_res = eval(f'core.resize.{kernel}')(clip, super_res.width, super_res.height, **resample_args)
         else:
             low_res = clip
 

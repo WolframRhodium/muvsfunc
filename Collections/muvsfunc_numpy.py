@@ -693,7 +693,7 @@ def _L0GradProj_ProjL1ball(Du, epsilon):
     # while it is O(n) for numpy.partition(introselect)
     I = np.argpartition(-sumDu.reshape(-1), epsilon-1)[:epsilon]
     threInd = np.zeros(sizeDu[:2])
-    threInd.reshape(-1)[I] = 1; # set ones for values to be held
+    threInd.reshape(-1)[I] = 1 # set ones for values to be held
 
     threInd = np.tile(threInd[:, :, np.newaxis, np.newaxis], (1, 1, *sizeDu[2:]))
     Du *= threInd
@@ -1673,7 +1673,8 @@ def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, blo
                 if resample_kernel.lower() == 'catmull-rom':
                     clip = core.resize.Bicubic(clip, clip.width*up_scale, clip.height*up_scale, filter_param_a=0, filter_param_b=0.5, **resample_args)
                 else:
-                    clip = eval('core.resize.{kernel}(clip, clip.width*up_scale, clip.height*up_scale, **resample_args)'.format(kernel=resample_kernel.capitalize()))
+                    kernel = resample_kernel.capitalize()
+                    clip = eval(f'core.resize.{kernel}')(clip, clip.width*up_scale, clip.height*up_scale, **resample_args)
 
             up_scale = 1
 
@@ -1737,7 +1738,8 @@ def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, blo
                 if resample_kernel.lower() == 'catmull-rom':
                     low_res = core.resize.Bicubic(clip, super_res.width, super_res.height, filter_param_a=0, filter_param_b=0.5, **resample_args)
                 else:
-                    low_res = eval('core.resize.{kernel}(clip, {w}, {h}, **resample_args)'.format(w=super_res.width, h=super_res.height, kernel=resample_kernel.capitalize()))
+                    kernel = resample_kernel.capitalize()
+                    low_res = eval(f'core.resize.{kernel}')(clip, super_res.width, super_res.height, **resample_args)
         else:
             low_res = clip
 
@@ -1925,7 +1927,7 @@ def gaussian_core(img, sigma_h=1.5, sigma_v=None):
     from scipy.fftpack import dctn, idctn
 
     if sigma_v is None:
-        sigma_v = sigma
+        sigma_v = sigma_h
 
     h, w = img.shape
     img = img.astype(np.float32)
