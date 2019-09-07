@@ -1925,21 +1925,26 @@ def SmoothGrad(input: vs.VideoNode, radius: int = 9, thr: float = 0.25,
     return mvf.LimitFilter(smooth, input, ref, thr, elast, planes=planes, **limit_filter_args)
 
 
-def DeFilter(input: vs.VideoNode, fun: VSFuncType, iter: int = 10, planes: PlanesType = None, 
-             **fun_args: Any) -> vs.VideoNode:
+def DeFilter(clip: vs.VideoNode, func: VSFuncType, iteration: int = 10, planes: PlanesType = None, 
+             step_size: float = 1., **func_args: Any) -> vs.VideoNode:
     '''Zero-order reverse filter
 
     Args:
-        input: Input clip to be reversed.
+        clip: Input clip to be reversed.
 
-        fun: The function of how the input clip is filtered.
+        func: The function of how the input clip is filtered.
 
-        iter: (int) Number of iterations. Default is 10.
+        iteration: (int) Number of iterations. Default is 10.
 
         planes: (int []) Whether to process the corresponding plane. By default, every plane will be processed.
-            The unprocessed planes will be copied from the source clip, "input".
+            The unprocessed planes will be copied from the source clip, "clip".
 
-        fun_args: (dict) Additional arguments passed to "fun" in the form of keyword arguments. Alternative to functools.partial.
+        step_size: (float, positive) Step size of updating.
+            A lower value helps to prevent divergence, as analyzed in [3].
+            The optimal value depends on the function.
+            Default is 1.
+
+        func_args: (dict) Additional arguments passed to "func" in the form of keyword arguments. Alternative to functools.partial.
 
     Ref:
         [1] Tao, X., Zhou, C., Shen, X., Wang, J., & Jia, J. (2017, October). Zero-Order Reverse Filtering.
@@ -1951,21 +1956,25 @@ def DeFilter(input: vs.VideoNode, fun: VSFuncType, iter: int = 10, planes: Plane
 
     funcName = 'DeFilter'
 
-    if not isinstance(input, vs.VideoNode):
-        raise TypeError(funcName + ': \"input\" must be a clip!')
+    if not isinstance(clip, vs.VideoNode):
+        raise TypeError(funcName + ': \"clip\" must be a clip!')
 
     if planes is None:
-        planes = list(range(input.format.num_planes))
+        planes = list(range(clip.format.num_planes))
     elif isinstance(planes, int):
         planes = [planes]
 
     # initialization
-    flt = input
-    calc_expr = 'x y + z -'
+    flt = clip
+    calc_expr = "x y z - +" if step_size == 1. else f"x y z - {step_size} * +"
+    expr = [(calc_expr if i in planes else '') for i in range(clip.format.num_planes)]
 
     # iteration
-    for i in range(iter):
-        flt = core.std.Expr([flt, input, fun(flt, **fun_args)], [(calc_expr if i in planes else '') for i in range(input.format.num_planes)])
+    for _ in range(iteration):
+        flt = core.std.Expr([flt, clip, func(flt, **func_args)], expr)
+
+    # equivalence
+    # flt = functools.reduce(lambda flt, src: core.std.Expr([flt, src, func(flt, **func_args)], expr), [clip] * iteration)
 
     return flt
 
@@ -4847,11 +4856,7 @@ def MaskedLimitFilter(flt: vs.VideoNode, src: vs.VideoNode, ref: Optional[vs.Vid
     dif_abs_str = f"{dif_ref_str} abs"
 
     def foldable(string: str) -> bool:
-        for char in string:
-            if char.isalpha():
-                return False
-        else:
-            return True
+        return not any(char.isalpha() for char in string)
 
     if value_range == 255:
         thr_1_str = thr_str
@@ -5569,7 +5574,7 @@ def VFRSplice(clips: Sequence[vs.VideoNode], tcfile: Optional[str] = None, v2: b
         # Write to timecode file
 
         # fraction to str function
-        frac2str = lambda frac, precision: "{:<.{precision}F}".format(float(frac), precision=precision) # type: Callable[[numbers.Real, int], str]
+        frac2str = lambda frac, precision: f"{float(frac):<.{precision}F}" # type: Callable[[numbers.Real, int], str]
 
         # write
         if v2: # timecode v2

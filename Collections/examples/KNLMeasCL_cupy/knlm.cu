@@ -76,9 +76,9 @@ void nlmHorizontal(const float * __restrict__ U4a, float * __restrict__ U4b) {
             U4a[y * VI_DIM_X + CLAMPX(x + i * HRZ_BLOCK_X)];
 
 #if __CUDACC_VER_MAJOR__ >= 9 // CUDA 9.0 or later
-        cta.sync();
+    cta.sync();
 #else
-        __syncthreads();
+    __syncthreads();
 #endif
 
     for (int i = 1; i <= HRZ_RESULT; i++) {
@@ -112,13 +112,13 @@ void nlmVertical(const float * __restrict__ U4b, float * __restrict__ U4a) {
             U4b[CLAMPY(y + i * VRT_BLOCK_Y) * VI_DIM_X + x];
 
 #if __CUDACC_VER_MAJOR__ >= 9 // CUDA 9.0 or later
-        cta.sync();
+    cta.sync();
 #else
-        __syncthreads();
+    __syncthreads();
 #endif
 
-   for (int i = 1; i <= HRZ_RESULT; i++) {
-       if (x >= VI_DIM_X || (y + i * VRT_BLOCK_Y) >= VI_DIM_Y) 
+    for (int i = 1; i <= HRZ_RESULT; i++) {
+        if (x >= VI_DIM_X || (y + i * VRT_BLOCK_Y) >= VI_DIM_Y) 
             return;
 
         float sum = 0.0f;
