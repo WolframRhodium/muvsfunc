@@ -10,4 +10,6 @@ Muonium's VapourSynth functions
 
 `LUM.py` and `SuperRes.py`(it's not the SuperRes in madVR or MPDN) are the dross of history. You won't need to use them.
 
-#### **_(Read [tutorial](https://github.com/WolframRhodium/muvsfunc/wiki/OpenCV-Python-for-VapourSynth) to use [OpenCV](https://opencv.org/) in VapourSynth.)_**
+#### **_[OpenCV for VapourSynth](https://github.com/WolframRhodium/muvsfunc/wiki/OpenCV-Python-for-VapourSynth)_**
+
+#### [muvs tutorial](https://github.com/WolframRhodium/muvsfunc/wiki/muvs-tutorial)
