@@ -274,7 +274,7 @@ class _Plugin:
         args_dict = inspect.signature(func).bind(*args, **kwargs).arguments
 
         # replace clip in args_dict.values() with name of clip
-        call_args = ', '.join(f"{k}={_repr(v)}" for k, v in args_dict.items())
+        call_args = ', '.join(f"{k}={_repr(v)}" for k, v in args_dict.items() if v is not None)
         call_str = f"core.{func.plugin.namespace}.{func.name}({call_args})"
 
         output_str += f"{_repr(output, default_prefix='clip')} = {call_str}\n"
