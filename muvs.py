@@ -312,7 +312,7 @@ class _ArithmeticExpr:
             return ""
 
     def __hash__(self):
-        return functools.reduce(operator.xor, (hash(x) for x in self.clips + (self.expr,)), 0)
+        return hash(self.clips + (self.expr,))
 
     @property
     def clips(self):
