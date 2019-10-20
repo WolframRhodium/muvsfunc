@@ -361,7 +361,7 @@ class _ArithmeticExpr:
         # "X X *"" -> "X dup *"
         # _expr[i] == self._expr cannot be used since == is overloaded to return non-boolean value
         for i in range(position + 1, len(_expr)):
-            if len(_expr[i]) == len(self._expr) and all((x is y) for x, y in zip(_expr[i], self._expr)):
+            if len(_expr[i]) == len(self._expr) and all((hash(x) == hash(y)) for x, y in zip(_expr[i], self._expr)):
                 _expr[i] = ("dup",)
 
         _expr.append((op,))
