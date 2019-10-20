@@ -21,6 +21,7 @@ import collections.abc
 from contextlib import contextmanager
 import functools
 import inspect
+import itertools
 import math
 import numbers
 import operator
@@ -363,13 +364,9 @@ class _ArithmeticExpr:
             if len(_expr[i]) == len(self._expr) and all((x is y) for x, y in zip(_expr[i], self._expr)):
                 _expr[i] = ("dup",)
 
-        _expr2 = []
-        for expr in _expr:
-            _expr2.extend(expr)
+        _expr.append((op,))
 
-        _expr2.append(op)
-
-        return type(self)(tuple(_expr2))
+        return type(self)(tuple(itertools.chain(*_expr)))
 
     def compute(self, planes=None, format=None) -> '_VideoNode':
         if options.arithmetic_expr:
