@@ -286,11 +286,11 @@ class _ArithmeticExpr:
     def __init__(self, obj): 
         if options.arithmetic_expr:
             if isinstance(obj, _VideoNode):
-                self._expr = [obj]
+                self._expr = (obj, )
             elif isinstance(obj, type(self)):
-                self._expr = obj._expr.copy()
-            elif isinstance(obj, list):
-                self._expr = obj.copy()
+                self._expr = obj._expr
+            elif isinstance(obj, tuple):
+                self._expr = obj
             else:
                 raise TypeError(f"{type(self).__name__!r}: Unknown initializer ({type(obj)})")
         else:
@@ -359,14 +359,14 @@ class _ArithmeticExpr:
 
         _expr2 = []
         for expr in _expr:
-            if isinstance(expr, list):
+            if isinstance(expr, tuple):
                 _expr2.extend(expr)
             else:
                 _expr2.append(expr)
 
         _expr2.append(op)
 
-        return type(self)(_expr2)
+        return type(self)(tuple(_expr2))
 
     def compute(self, planes=None, format=None) -> '_VideoNode':
         if options.arithmetic_expr:
