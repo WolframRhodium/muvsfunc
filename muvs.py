@@ -202,7 +202,7 @@ class _Plugin:
             @functools.wraps(func)
             def closure(*args, **kwargs) -> '_VideoNode':
                 if self._injected_clip is not None:
-                    args = (self._injected_clip,) + args
+                    args = (self._injected_clip, ) + args
 
                 def get_node(obj):
                     if isinstance(obj, vs.VideoNode):
@@ -286,7 +286,7 @@ class _ArithmeticExpr:
     def __init__(self, obj): 
         if options.arithmetic_expr:
             if isinstance(obj, _VideoNode):
-                self._expr = (obj, )
+                self._expr = (obj,)
             elif isinstance(obj, type(self)):
                 self._expr = obj._expr
             elif isinstance(obj, tuple):
@@ -346,9 +346,9 @@ class _ArithmeticExpr:
 
         def to_element(obj):
             if isinstance(obj, numbers.Real):
-                return repr(float(obj))
+                return (repr(float(obj)),)
             elif isinstance(obj, _VideoNode):
-                return obj
+                return (obj,)
             elif isinstance(obj, _ArithmeticExpr):
                 return obj._expr
             else:
@@ -357,12 +357,15 @@ class _ArithmeticExpr:
         _expr = [to_element(operand) for operand in operands]
         _expr.insert(position, self._expr)
 
+        # "X X *"" -> "X dup *"
+        # _expr[i] == self._expr cannot be used since == is overloaded to return non-boolean value
+        for i in range(position + 1, len(_expr)):
+            if len(_expr[i]) == len(self._expr) and all((x is y) for x, y in zip(_expr[i], self._expr)):
+                _expr[i] = ("dup",)
+
         _expr2 = []
         for expr in _expr:
-            if isinstance(expr, tuple):
-                _expr2.extend(expr)
-            else:
-                _expr2.append(expr)
+            _expr2.extend(expr)
 
         _expr2.append(op)
 
