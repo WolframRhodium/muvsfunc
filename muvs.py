@@ -22,7 +22,7 @@ from contextlib import contextmanager
 import functools
 import inspect
 import itertools
-import math
+from math import exp, log, sqrt
 import numbers
 import operator
 from typing import Union, Optional, Dict, List, Callable
@@ -283,6 +283,18 @@ class _Plugin:
         return output_str
 
 
+class _LambdaFunction:
+    def __init__(self, func_str: str):
+        self.func = eval(func_str)
+        self.func_str = func_str
+    
+    def __call__(self, *args, **kwargs):
+        return self.func(*args, **kwargs)
+    
+    def __repr__(self):
+        return self.func_str
+
+
 class _ArithmeticExpr:
     def __init__(self, obj): 
         if options.arithmetic_expr:
@@ -322,27 +334,75 @@ class _ArithmeticExpr:
 
     @property
     def expr(self) -> str:
-        def _factory() -> Callable[..., str]:
+        def _to_var_factory() -> Callable[..., str]:
             _clip_var_mapping = {} # type: Dict[_VideoNode, str]
             _vars = "xyzabcdefghijklmnopqrstuvw"
             def closure(obj):
                 if isinstance(obj, _VideoNode):
-                    if len(_clip_var_mapping) == len(_vars):
-                        raise RuntimeError(f"{type(self).__name__!r}: Too many nodes")
-                    else:
+                    if obj in _clip_var_mapping or len(_clip_var_mapping) < len(_vars):
                         return _clip_var_mapping.setdefault(obj, f"{_vars[len(_clip_var_mapping)]}")
+                    else:
+                        raise RuntimeError(f"{type(self).__name__!r}: Too many nodes")
                 else:
                     return obj
             return closure
 
-        _to_var = _factory()
+        _to_var = _to_var_factory()
 
         if len(self._expr) > 1:
             return ' '.join(_to_var(item) for item in self._expr).strip()
         else:
             return ""
+    
+    @property
+    def lutf(self) -> Callable[..., numbers.Integral]:
+        clips = self.clips
 
-    def _operation(self, op: str, *operands, position=0) -> '_ArithmeticExpr':
+        assert len(clips) in [1, 2]
+
+        def rpn_parser(stack, next_val: str):
+            if isinstance(next_val, str): # operators or constants
+                if next_val in ["abs", "exp", "log", "sqrt"]:
+                    return stack[:-1] + (f"{next_val}({stack[-1]})",)
+                elif next_val == "not":
+                    return stack[:-1] + (f"(not {stack[-1]})",)
+                elif next_val == 'dup':
+                    return stack + (stack[-1],)
+                elif next_val in ['<', '<=', '>', '>=', '+', '-', '*', '/', 'and', 'or']:
+                    return stack[:-2] + (f"({stack[-2]} {next_val} {stack[-1]})",)
+                elif next_val == '=':
+                    return stack[:-2] + (f"({stack[-2]} == {stack[-1]})",)
+                elif next_val == '= not':
+                    return stack[:-2] + (f"({stack[-2]} != {stack[-1]})",)
+                elif next_val == 'pow':
+                    return stack[:-2] + (f"({stack[-2]} ** {stack[-1]})",)
+                elif next_val == 'xor':
+                    return stack[:-2] + (f"(({stack[-2]} and not {stack[-1]}) or (not {stack[-2]} and {stack[-1]}))",)
+                elif next_val in ['min', 'max']:
+                    return stack[:-2] + (f"{next_val}({stack[-2]}, {stack[-1]})",)
+                elif next_val == '?':
+                    return stack[:-3] + (f"({stack[-2]} if {stack[-3]} else {stack[-1]})",)
+                else: # vars, constants
+                    return stack + (next_val,)
+            else:
+                raise TypeError(f"Unknown node in expr ({type(next_val)})")
+
+        # postfix2infix
+        func_expr = functools.reduce(rpn_parser, self.expr.split(), ())
+
+        assert len(func_expr) == 1, f"{func_expr}"
+
+        func_impl = func_expr[0]
+        func_impl = f"min(max(int({func_impl} + 0.5), 0), {(2 ** clips[0].format.bits_per_sample) - 1})" # clamp
+
+        if len(clips) == 1:
+            lut_str = f"lambda x: {func_impl}"
+        else: # len(clips) == 2
+            lut_str = f"lambda x, y: {func_impl}"
+
+        return _LambdaFunction(lut_str)
+
+    def _operate(self, op: str, *operands, position=0) -> '_ArithmeticExpr':
         # accpted operands: Union[numbers.Real, _VideoNode, _ArithmeticExpr]
 
         def to_element(obj):
@@ -368,22 +428,59 @@ class _ArithmeticExpr:
 
         return type(self)(tuple(itertools.chain(*_expr)))
 
-    def compute(self, planes=None, format=None) -> '_VideoNode':
+    def compute(self, planes=None, bits=None, use_lut=None) -> '_VideoNode':
         if options.arithmetic_expr:
-            if self.expr not in ['', 'x']:
-                if planes is None:
-                    expr = self.expr
-                else:
-                    if isinstance(planes, int):
-                        planes = [planes]
-
-                    expr = [
-                        (self.expr if i in planes else "") 
-                        for i in range(self.clips[0]._node.format.num_planes)]
-
-                return core.std.Expr(clips=self.clips, expr=expr, format=format)
+            if self.expr in ['', 'x']: # empty expr
+                return _VideoNode(clips[0]._node)
             else:
-                return _VideoNode(self.clips[0]._node)
+                clips = self.clips
+
+                if bits is None:
+                    not_equal_bits = lambda clip1, clip2: clip1.format.bits_per_sample == clip2.format.bits_per_sample
+
+                    if len(clips) >= 2 and any(not_equal_bits(clips[0], clip) for clip in clips[1:]):
+                        raise ValueError('"bits" must be specified.')
+                    else:
+                        bits = clips[0].format.bits_per_sample
+
+                is_int = lambda clip: clip.format.sample_type == vs.INTEGER
+                get_bits = lambda clip: clip.format.bits_per_sample
+                lut_available = lambda clips: len(clips) <= 2 and all(map(is_int, clips)) or sum(map(get_bits, clips)) <= 20
+
+                if use_lut is None:
+                    use_lut = lut_available(clips)
+                elif use_lut and not lut_available(clips):
+                    raise ValueError("Lut computation is not available")
+
+                # process
+                if use_lut: # std.Lut() / std.Lut2()
+                    if len(clips) == 1:
+                        return core.std.Lut(clips[0], planes=planes, bits=bits, function=self.lutf)
+                    else: # len(clips) == 2
+                        return core.std.Lut2(clips[0], clips[1], planes=planes, bits=bits, function=self.lutf)
+
+                else: # std.Expr()
+                    if planes is None:
+                        expr = self.expr
+                    else:
+                        if isinstance(planes, int):
+                            planes = [planes]
+
+                        expr = [
+                            (self.expr if i in planes else "") 
+                            for i in range(clips[0]._node.format.num_planes)]
+
+                    in_format = clips[0]._node.format
+                    out_format = core.register_format(
+                        color_family=in_format.color_family, 
+                        sample_type=in_format.sample_type, 
+                        bits_per_sample=bits, 
+                        subsampling_w=in_format.subsampling_w, 
+                        subsampling_h=in_format.subsampling_h
+                    )
+
+                    return core.std.Expr(clips=clips, expr=expr, format=out_format)
+                
         else:
             raise RuntimeError("Arithmetic expression is disabled.")
 
@@ -391,69 +488,69 @@ class _ArithmeticExpr:
 
     # unary operations
     def __neg__(self):
-        return self._operation('-', 0, position=1)
+        return self._operate('-', 0, position=1)
 
     def __pos__(self):
         return type(self)(self)
 
     def __abs__(self):
-        return self._operation('abs')
+        return self._operate('abs')
 
     # custom unary operations
     def __exp__(self):
-        return self._operation('exp')
+        return self._operate('exp')
 
     def __log__(self):
-        return self._operation('log')
+        return self._operate('log')
 
     def __not__(self):
-        return self._operation('not')
+        return self._operate('not')
 
     def __sqrt__(self):
-        return self._operation('sqrt')
+        return self._operate('sqrt')
 
     # binary operations
     def __lt__(self, other):
-        return self._operation('<', other, position=0)
+        return self._operate('<', other, position=0)
 
     def __le__(self, other):
-        return self._operation('<=', other, position=0)
+        return self._operate('<=', other, position=0)
 
     def __eq__(self, other):
-        return self._operation('=', other, position=0)
+        return self._operate('=', other, position=0)
 
     def __ne__(self, other):
-        return self._operation('= not', other, position=0)
+        return self._operate('= not', other, position=0)
 
     def __gt__(self, other):
-        return self._operation('>', other, position=0)
+        return self._operate('>', other, position=0)
 
     def __ge__(self, other):
-        return self._operation('>=', other, position=0)
+        return self._operate('>=', other, position=0)
 
     def __add__(self, other):
-        return self._operation('+', other, position=0)
+        return self._operate('+', other, position=0)
 
     def __radd__(self, other):
-        return self._operation('+', other, position=1)
+        return self._operate('+', other, position=1)
 
     def __sub__(self, other):
-        return self._operation('-', other, position=0)
+        return self._operate('-', other, position=0)
 
     def __rsub__(self, other):
-        return self._operation('-', other, position=1)
+        return self._operate('-', other, position=1)
 
     def __mul__(self, other):
-        return self._operation('*', other, position=0)
+        return self._operate('*', other, position=0)
 
     def __rmul__(self, other):
-        return self._operation('*', other, position=1)
+        return self._operate('*', other, position=1)
 
     def __truediv__(self, other):
-        return self._operation('/', other, position=0)
+        return self._operate('/', other, position=0)
 
     def __rtruediv__(self, other):
-        return self._operation('/', other, position=1)
+        return self._operate('/', other, position=1)
 
     def __pow__(self, other, module=None):
         if module is None:
@@ -470,55 +567,55 @@ class _ArithmeticExpr:
                         _pre_expr += "dup dup * "
                         _post_expr += "* "
 
-                return self._operation((_pre_expr + _post_expr).strip())
+                return self._operate((_pre_expr + _post_expr).strip())
             else:
-                return self._operation('pow', other, position=0)
+                return self._operate('pow', other, position=0)
         else:
             return NotImplemented
 
     def __rpow__(self, other):
-        return self._operation('pow', other, position=1)
+        return self._operate('pow', other, position=1)
 
     def __and__(self, other):
-        return self._operation('and', other, position=0)
+        return self._operate('and', other, position=0)
 
     def __rand__(self, other):
-        return self._operation('and', other, position=1)
+        return self._operate('and', other, position=1)
 
     def __or__(self, other):
-        return self._operation('or', other, position=0)
+        return self._operate('or', other, position=0)
 
     def __ror__(self, other):
-        return self._operation('or', other, position=1)
+        return self._operate('or', other, position=1)
 
     def __xor__(self, other):
-        return self._operation('xor', other, position=0)
+        return self._operate('xor', other, position=0)
 
     def __rxor__(self, other):
-        return self._operation('xor', other, position=1)
+        return self._operate('xor', other, position=1)
 
     # custom binary operations
     def __min__(self, other):
-        return self._operation('min', other, position=0)
+        return self._operate('min', other, position=0)
 
     def __rmin__(self, other):
-        return self._operation('min', other, position=1)
+        return self._operate('min', other, position=1)
 
     def __max__(self, other):
-        return self._operation('max', other, position=0)
+        return self._operate('max', other, position=0)
 
     def __rmax__(self, other):
-        return self._operation('max', other, position=1)
+        return self._operate('max', other, position=1)
 
     # custom ternary operation
     def __conditional__(self, other_true, other_false):
-        return self._operation('?', other_true, other_false, position=0)
+        return self._operate('?', other_true, other_false, position=0)
 
     def __rconditional__(self, other_condition, other_false):
-        return self._operation('?', other_condition, other_false, position=1)
+        return self._operate('?', other_condition, other_false, position=1)
 
     def __rrconditional__(self, other_condition, other_true):
-        return self._operation('?', other_condition, other_true, position=2)
+        return self._operate('?', other_condition, other_true, position=2)
 
 
 def _build_VideoNode():
@@ -642,7 +739,7 @@ Abs = abs
 
 @functools.singledispatch
 def Exp(x):
-    return math.exp(x)
+    return exp(x)
 
 @Exp.register(_ArithmeticExpr)
 @Exp.register(_VideoNode)
@@ -662,7 +759,7 @@ def _(x) -> _ArithmeticExpr:
 
 @functools.singledispatch
 def Log(x):
-    return math.log(x)
+    return log(x)
 
 @Log.register(_ArithmeticExpr)
 @Log.register(_VideoNode)
@@ -672,7 +769,7 @@ def _(x) -> _ArithmeticExpr:
 
 @functools.singledispatch
 def Sqrt(x):
-    return math.sqrt(x)
+    return sqrt(x)
 
 @Sqrt.register(_ArithmeticExpr)
 @Sqrt.register(_VideoNode)
