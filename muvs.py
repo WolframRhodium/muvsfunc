@@ -436,7 +436,7 @@ class _ArithmeticExpr:
                 clips = self.clips
 
                 if bits is None:
-                    not_equal_bits = lambda clip1, clip2: clip1.format.bits_per_sample == clip2.format.bits_per_sample
+                    not_equal_bits = lambda clip1, clip2: clip1.format.bits_per_sample != clip2.format.bits_per_sample
 
                     if len(clips) >= 2 and any(not_equal_bits(clips[0], clip) for clip in clips[1:]):
                         raise ValueError('"bits" must be specified.')
