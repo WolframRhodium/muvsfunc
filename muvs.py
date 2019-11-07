@@ -182,6 +182,21 @@ def _build_repr() -> Callable[..., str]:
 _repr = _build_repr()
 
 
+class _remove_wrap:
+    """Fixes callables that returns VideoNode"""
+    def __init__(self, func):
+        self.func = func
+
+    def __call__(self, *args, **kwargs):
+        output = self.func(*args, **kwargs)
+        if isinstance(output, _VideoNode):
+            output = output._node
+        return output
+
+    def __repr__(self):
+        return repr(self.func)
+
+
 class _Plugin:
     def __init__(self, plugin: vs.Plugin, injected_clip: Optional[vs.VideoNode]=None):
         if isinstance(plugin, vs.Plugin):
@@ -215,14 +230,6 @@ class _Plugin:
                     elif isinstance(obj, collections.abc.Sequence) and not isinstance(obj, (str, bytes, bytearray)):
                         return type(obj)(get_node(item) for item in obj)
                     elif callable(obj):
-                        def _remove_wrap(func):
-                            def wrapped(*args, **kwargs):
-                                res = func(*args, **kwargs)
-                                if isinstance(res, _VideoNode):
-                                    res = res._node
-                                return res
-                            return wrapped
-
                         return _remove_wrap(obj)
                     else:
                         return obj
