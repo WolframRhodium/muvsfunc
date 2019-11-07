@@ -182,21 +182,6 @@ def _build_repr() -> Callable[..., str]:
 _repr = _build_repr()
 
 
-class _remove_wrap:
-    """Fixes callables that returns VideoNode"""
-    def __init__(self, func):
-        self.func = func
-
-    def __call__(self, *args, **kwargs):
-        output = self.func(*args, **kwargs)
-        if isinstance(output, _VideoNode):
-            output = output._node
-        return output
-
-    def __repr__(self):
-        return repr(self.func)
-
-
 class _Plugin:
     def __init__(self, plugin: vs.Plugin, injected_clip: Optional[vs.VideoNode]=None):
         if isinstance(plugin, vs.Plugin):
@@ -230,6 +215,20 @@ class _Plugin:
                     elif isinstance(obj, collections.abc.Sequence) and not isinstance(obj, (str, bytes, bytearray)):
                         return type(obj)(get_node(item) for item in obj)
                     elif callable(obj):
+                        class _remove_wrap:
+                            """Fixes callables that returns VideoNode"""
+                            def __init__(self, func):
+                                self.func = func
+
+                            def __call__(self, *args, **kwargs):
+                                output = self.func(*args, **kwargs)
+                                if isinstance(output, _VideoNode):
+                                    output = output._node
+                                return output
+
+                            def __repr__(self):
+                                return repr(self.func)
+
                         return _remove_wrap(obj)
                     else:
                         return obj
@@ -298,18 +297,6 @@ class _Plugin:
         output_str += f"{_repr(output, default_prefix='clip')} = {call_str}\n"
 
         return output_str
-
-
-class _LambdaFunction:
-    def __init__(self, func_str: str):
-        self.func = eval(func_str)
-        self.func_str = func_str
-    
-    def __call__(self, *args, **kwargs):
-        return self.func(*args, **kwargs)
-    
-    def __repr__(self):
-        return self.func_str
 
 
 class _ArithmeticExpr:
@@ -416,6 +403,17 @@ class _ArithmeticExpr:
             lut_str = f"lambda x: {func_impl}"
         else: # len(clips) == 2
             lut_str = f"lambda x, y: {func_impl}"
+
+        class _LambdaFunction:
+            def __init__(self, func_str: str):
+                self.func = eval(func_str)
+                self.func_str = func_str
+            
+            def __call__(self, *args, **kwargs):
+                return self.func(*args, **kwargs)
+            
+            def __repr__(self):
+                return self.func_str
 
         return _LambdaFunction(lut_str)
 
