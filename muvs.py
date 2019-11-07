@@ -445,10 +445,10 @@ class _ArithmeticExpr:
 
                 is_int = lambda clip: clip.format.sample_type == vs.INTEGER
                 get_bits = lambda clip: clip.format.bits_per_sample
-                lut_available = lambda clips: len(clips) <= 2 and all(map(is_int, clips)) and sum(map(get_bits, clips)) <= 20 and len(self._expr) >= 5
+                lut_available = lambda clips: len(clips) <= 2 and all(map(is_int, clips)) and sum(map(get_bits, clips)) <= 20
 
                 if use_lut is None:
-                    use_lut = lut_available(clips)
+                    use_lut = lut_available(clips) and len(self._expr) >= 5
                 elif use_lut and not lut_available(clips):
                     raise ValueError("Lut computation is not available")
 
