@@ -355,7 +355,7 @@ class _ArithmeticExpr:
             return ""
     
     @property
-    def lutf(self) -> Callable[..., numbers.Integral]:
+    def lut_func(self) -> Callable[..., numbers.Integral]:
         clips = self.clips
 
         assert len(clips) in [1, 2]
@@ -445,7 +445,7 @@ class _ArithmeticExpr:
 
                 is_int = lambda clip: clip.format.sample_type == vs.INTEGER
                 get_bits = lambda clip: clip.format.bits_per_sample
-                lut_available = lambda clips: len(clips) <= 2 and all(map(is_int, clips)) or sum(map(get_bits, clips)) <= 20
+                lut_available = lambda clips: len(clips) <= 2 and all(map(is_int, clips)) and sum(map(get_bits, clips)) <= 20 and len(self._expr) >= 5
 
                 if use_lut is None:
                     use_lut = lut_available(clips)
@@ -455,9 +455,9 @@ class _ArithmeticExpr:
                 # process
                 if use_lut: # std.Lut() / std.Lut2()
                     if len(clips) == 1:
-                        return core.std.Lut(clips[0], planes=planes, bits=bits, function=self.lutf)
+                        return core.std.Lut(clips[0], planes=planes, bits=bits, function=self.lut_func)
                     else: # len(clips) == 2
-                        return core.std.Lut2(clips[0], clips[1], planes=planes, bits=bits, function=self.lutf)
+                        return core.std.Lut2(clips[0], clips[1], planes=planes, bits=bits, function=self.lut_func)
 
                 else: # std.Expr()
                     if planes is None:
