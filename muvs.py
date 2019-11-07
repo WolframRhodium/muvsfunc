@@ -214,6 +214,16 @@ class _Plugin:
                         return obj.compute()._node
                     elif isinstance(obj, collections.abc.Sequence) and not isinstance(obj, (str, bytes, bytearray)):
                         return type(obj)(get_node(item) for item in obj)
+                    elif callable(obj):
+                        def _remove_wrap(func):
+                            def wrapped(*args, **kwargs):
+                                res = func(*args, **kwargs)
+                                if isinstance(res, _VideoNode):
+                                    res = res._node
+                                return res
+                            return wrapped
+
+                        return _remove_wrap(obj)
                     else:
                         return obj
 
