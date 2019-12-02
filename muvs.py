@@ -32,24 +32,31 @@ from vapoursynth import core as _vscore
 
 
 class _Core:
-    _registered_func = {}
+    def __init__(self):
+        self._registered_funcs = {} # type: Dict[str, Callable[..., '_VideoNode']]
+
+    def __setattr__(self, name, value):
+        self.__dict__[name] = value
+
+        if name[0].isupper() and not hasattr(_vscore, name) and callable(value):
+            self._registered_funcs[name] = value
 
     def __getattr__(self, name):
         try:
             attr = getattr(_vscore, name)
-
+        except AttributeError as e:
+            if name in self._registered_funcs:
+                return self._registered_funcs[name]
+            else:
+                raise e
+        else:
             if isinstance(attr, vs.Plugin):
                 return _Plugin(attr)
             else:
                 return attr
-        except AttributeError:
-            if name in type(self)._registered_func:
-                return type(self)._registered_func[name]
-            else:
-                raise AttributeError
 
     def __dir__(self) -> List[str]:
-        return dir(_vscore)
+        return dir(_vscore) + sorted(list(self._registered_funcs.keys()))
 
     @property
     def num_threads(self):
@@ -75,17 +82,15 @@ class _Core:
     def max_cache_size(self, value):
         _vscore.max_cache_size = value
 
-    @classmethod
-    def register_function(cls, func_name: str, func):
-        if not func_name[0].isupper():
-            raise ValueError("The first letter should be uppercase.")
+    def register_functions(self, **kwargs: Dict[str, Callable[..., '_VideoNode']]):
+        if all((name[0].isupper() and not hasattr(_vscore, name)) 
+               for name in kwargs.keys()):
 
-        if hasattr(_vscore, func_name):
-            raise ValueError("Must not overwrite existing attribute.")
+            self._registered_funcs.update(kwargs)
         else:
-            cls._registered_func[func_name] = func
+            raise ValueError("Registration error.")
 
-core = _Core.__new__(_Core)
+core = _Core()
 
 
 def pollute(*modules):
@@ -671,7 +676,7 @@ def _build_VideoNode():
         self._node = node
 
     def __getattr__(self, name):
-        if isinstance(name, str) and name[0].isupper(): # non-standard attributes
+        if name[0].isupper(): # non-standard attributes
             if (self.format.color_family in _plane_idx_mapping and
                 name in _plane_idx_mapping[self.format.color_family]):
 
@@ -680,11 +685,11 @@ def _build_VideoNode():
 
             elif hasattr(core, name):
                 func = getattr(core, name)
-                return partial(func, self)
+                return functools.partial(func, self)
             else:
                 raise AttributeError(f"{type(self).__name__!r} object has no attribute {name!r}")
 
-        if hasattr(_vscore, name) and isinstance(getattr(_vscore, name), vs.Plugin):
+        elif hasattr(_vscore, name) and isinstance(getattr(_vscore, name), vs.Plugin):
             plugin = getattr(_vscore, name)
             return _Plugin(plugin, self._node)
         else:
