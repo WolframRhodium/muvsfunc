@@ -32,13 +32,21 @@ from vapoursynth import core as _vscore
 
 
 class _Core:
-    def __getattr__(self, name):
-        attr = getattr(_vscore, name)
+    _registered_func = {}
 
-        if isinstance(attr, vs.Plugin):
-            return _Plugin(attr)
-        else:
-            return attr
+    def __getattr__(self, name):
+        try:
+            attr = getattr(_vscore, name)
+
+            if isinstance(attr, vs.Plugin):
+                return _Plugin(attr)
+            else:
+                return attr
+        except AttributeError:
+            if name in type(self)._registered_func:
+                return type(self)._registered_func[name]
+            else:
+                raise AttributeError
 
     def __dir__(self) -> List[str]:
         return dir(_vscore)
@@ -66,6 +74,13 @@ class _Core:
     @max_cache_size.setter
     def max_cache_size(self, value):
         _vscore.max_cache_size = value
+    
+    @classmethod
+    def register_function(cls, func_name, func):
+        if hasattr(_vscore, func_name) or func_name in cls._registered_func:
+            raise ValueError("Must not overrite attribute")
+        else:
+            cls._registered_func[func_name] = func
 
 core = _Core.__new__(_Core)
 
@@ -658,6 +673,8 @@ def _build_VideoNode():
         if hasattr(_vscore, name) and isinstance(getattr(_vscore, name), vs.Plugin):
             plugin = getattr(_vscore, name)
             return _Plugin(plugin, self._node)
+        elif hasattr(core, name):
+            return lambda *args, **kwargs: getattr(core, name)(self, *args, **kwargs)
         else:
             attr = getattr(self._node, name)
 
@@ -743,7 +760,7 @@ def _build_VideoNode():
         "__pow__", "__rpow__", "__and__", "__rand__", "__xor__", "__rxor__", "__or__", "__ror__", 
         "__min__", "__rmin__", "__max__", "__rmax__", "__conditional__", "__rconditional__", "__rrconditional__"])
 
-    return type("_VideoNode", (object, ), _dict)
+    return type("_VideoNode", (object,), _dict)
 
 _VideoNode = _build_VideoNode()
 
