@@ -76,7 +76,10 @@ class _Core:
         _vscore.max_cache_size = value
 
     @classmethod
-    def register_function(cls, func_name, func):
+    def register_function(cls, func_name: str, func):
+        if not func_name[0].isupper():
+            raise ValueError("The first letter should be uppercase.")
+
         if hasattr(_vscore, func_name):
             raise ValueError("Must not overwrite existing attribute.")
         else:
@@ -478,7 +481,7 @@ class _ArithmeticExpr:
                 lut_available = lambda clips: len(clips) <= 2 and all(map(is_int, clips)) and sum(map(get_bits, clips)) <= 20
 
                 if use_lut is None:
-                    use_lut = lut_available(clips) and len(self._expr) >= 5
+                    use_lut = lut_available(clips) and len(self._expr) >= 15
                 elif use_lut and not lut_available(clips):
                     raise ValueError("Lut computation is not available")
 
@@ -649,11 +652,11 @@ class _ArithmeticExpr:
 
 
 def _build_VideoNode():
-    _plane_identifiers = {
-        vs.YUV: ['Y', 'U', 'V'], 
-        vs.RGB: ['R', 'G', 'B'], 
-        vs.GRAY: ['Y', 'GRAY'], 
-        vs.YCOCG: ['Y', 'CO', 'CG']
+    _plane_idx_mapping = {
+        vs.YUV: {'Y': 0, 'U': 1, 'V': 2}, 
+        vs.RGB: {'R': 0, 'G': 1, 'B': 2}, 
+        vs.GRAY: {'GRAY': 0, 'Y': 0}, 
+        vs.YCOCG: {'Y': 0, 'CO': 1, 'CG': 2}
     }
 
     def __init__(self, node: vs.VideoNode):
@@ -662,19 +665,21 @@ def _build_VideoNode():
         self._node = node
 
     def __getattr__(self, name):
-        if isinstance(name, str) and name.isupper():
-            color_family = self._node.format.color_family
-            if name in _plane_identifiers.keys():
-                idx = _plane_identifiers[color_family].index(name)
+        if isinstance(name, str) and name[0].isupper(): # non-standard attributes
+            if (self.format.color_family in _plane_idx_mapping and
+                name in _plane_idx_mapping[self.format.color_family]):
+
+                idx = _plane_idx_mapping[self.format.color_family][name]
                 return self.std.ShufflePlanes(planes=idx, colorfamily=vs.GRAY)
+
+            elif hasattr(core, name):
+                return lambda *args, **kwargs: getattr(core, name)(self, *args, **kwargs)
             else:
                 raise AttributeError(f"{type(self).__name__!r} object has no attribute {name!r}")
 
         if hasattr(_vscore, name) and isinstance(getattr(_vscore, name), vs.Plugin):
             plugin = getattr(_vscore, name)
             return _Plugin(plugin, self._node)
-        elif hasattr(core, name):
-            return lambda *args, **kwargs: getattr(core, name)(self, *args, **kwargs)
         else:
             attr = getattr(self._node, name)
 
