@@ -77,7 +77,7 @@ class _Core:
 
     @classmethod
     def register_function(cls, func_name, func):
-        if hasattr(_vscore, func_name) or func_name in cls._registered_func:
+        if hasattr(_vscore, func_name):
             raise ValueError("Must not overwrite existing attribute.")
         else:
             cls._registered_func[func_name] = func
