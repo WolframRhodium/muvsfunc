@@ -151,7 +151,13 @@ class _Options:
 
         if self._include_header:
             self._buffer.append("import vapoursynth as vs\n"
-                                "from vapoursynth import core\n\n")
+                                "from vapoursynth import core\n"
+                                "\n"
+                                f"core.add_cache = {core.add_cache}\n"
+                                f"core.num_threads = {core.num_threads}\n"
+                                f"core.max_cache_size = {core.max_cache_size}\n"
+                                "\n")
+
             self._include_header = False
 
     def end_recording(self):
@@ -673,7 +679,8 @@ def _build_VideoNode():
                 return self.std.ShufflePlanes(planes=idx, colorfamily=vs.GRAY)
 
             elif hasattr(core, name):
-                return lambda *args, **kwargs: getattr(core, name)(self, *args, **kwargs)
+                func = getattr(core, name)
+                return partial(func, self)
             else:
                 raise AttributeError(f"{type(self).__name__!r} object has no attribute {name!r}")
 
