@@ -24,7 +24,6 @@ import inspect
 import itertools
 from math import exp, log, sqrt
 import numbers
-import operator
 from typing import Union, Optional, Dict, List, Callable
 
 import vapoursynth as vs
@@ -36,10 +35,16 @@ class _Core:
         self._registered_funcs = {} # type: Dict[str, Callable[..., '_VideoNode']]
 
     def __setattr__(self, name, value):
-        self.__dict__[name] = value
-
-        if name[0].isupper() and not hasattr(_vscore, name) and callable(value):
-            self._registered_funcs[name] = value
+        if name in ["num_threads", "add_cache", "max_cache_size"]:
+            setattr(_vscore, name, value)
+        else:
+            if callable(value):
+                if name[0].isupper() and not hasattr(_vscore, name) and callable(value):
+                    self._registered_funcs[name] = value
+                else:
+                    raise AttributeError("Attribute name should be capitalized")
+            else:
+                self.__dict__[name] = value
 
     def __getattr__(self, name):
         try:
@@ -57,30 +62,6 @@ class _Core:
 
     def __dir__(self) -> List[str]:
         return dir(_vscore) + sorted(list(self._registered_funcs.keys()))
-
-    @property
-    def num_threads(self):
-        return _vscore.num_threads
-
-    @num_threads.setter
-    def num_threads(self, value):
-        _vscore.num_threads = value
-
-    @property
-    def add_cache(self):
-        return _vscore.add_cache
-
-    @add_cache.setter
-    def add_cache(self, value):
-        _vscore.add_cache = value
-
-    @property
-    def max_cache_size(self):
-        return _vscore.max_cache_size
-
-    @max_cache_size.setter
-    def max_cache_size(self, value):
-        _vscore.max_cache_size = value
 
     def register_functions(self, **kwargs: Dict[str, Callable[..., '_VideoNode']]):
         if all((name[0].isupper() and not hasattr(_vscore, name)) 
@@ -155,13 +136,14 @@ class _Options:
         self._record = True
 
         if self._include_header:
-            self._buffer.append("import vapoursynth as vs\n"
-                                "from vapoursynth import core\n"
-                                "\n"
-                                f"core.add_cache = {core.add_cache}\n"
-                                f"core.num_threads = {core.num_threads}\n"
-                                f"core.max_cache_size = {core.max_cache_size}\n"
-                                "\n")
+            self._buffer.append(
+                "import vapoursynth as vs\n"
+                "from vapoursynth import core\n"
+                "\n"
+                f"core.add_cache = {core.add_cache}\n"
+                f"core.num_threads = {core.num_threads}\n"
+                f"core.max_cache_size = {core.max_cache_size}\n"
+                "\n")
 
             self._include_header = False
 
@@ -423,7 +405,7 @@ class _ArithmeticExpr:
         # postfix2infix
         func_expr = functools.reduce(rpn_parser, self.expr.split(), ())
 
-        assert len(func_expr) == 1, f"{func_expr}"
+        assert len(func_expr) == 1, str(func_exp)
 
         func_impl = func_expr[0]
         func_impl = f"min(max(int({func_impl} + 0.5), 0), {(2 ** clips[0].format.bits_per_sample) - 1})" # clamp
