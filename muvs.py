@@ -39,7 +39,7 @@ class _Core:
             setattr(_vscore, name, value)
         else:
             if callable(value):
-                if name[0].isupper() and not hasattr(_vscore, name) and callable(value):
+                if name[0].isupper() and not hasattr(_vscore, name):
                     self._registered_funcs[name] = value
                 else:
                     raise AttributeError("Attribute name should be capitalized")
@@ -113,12 +113,14 @@ class _Options:
 
     @contextmanager
     def expr(self):
+        prev_expr = self._arithmetic_expr
+
         self.enable_arithmetic_expr()
 
         try:
             yield None
         finally:
-            self.disable_arithmetic_expr()
+            self._arithmetic_expr = prev_expr
 
     @property
     def buffer(self) -> List[str]:
