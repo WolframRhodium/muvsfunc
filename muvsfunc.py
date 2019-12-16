@@ -4334,8 +4334,7 @@ def super_resolution(clip: vs.VideoNode, model_filename: str, epoch: int = 0, up
                      use_fmtc: bool = False, resample_kernel: Optional[str] = None, 
                      resample_args: Optional[Dict[str, Any]] = None, pad_mode: Optional[str] = None, 
                      framework: Optional[str] = None, data_format: Optional[str] = None, 
-                     device_id: Union[int, Sequence[int]] = 0, use_plugins_padding: bool = False
-                     ) -> vs.VideoNode:
+                     device_id: Union[int, Sequence[int]] = 0) -> vs.VideoNode:
     '''Use MXNet to accelerate Image-Processing in VapourSynth using C++ interface
 
     Drop-in replacement of muvsfunc_numpy's counterpart using core.mx.Predict().
@@ -4427,10 +4426,6 @@ def super_resolution(clip: vs.VideoNode, model_filename: str, epoch: int = 0, up
             It can be a list of integers, indicating devices for multi-GPU data parallelism.
             Default is 0.
 
-        use_plugins_padding: (bool) Whether to use core.mx.Predict()'s built-in OpenCV based inplace padding'.
-            If not, vszimg (core.resize.Point) will be used.
-            Default is False.
-
     '''
 
     funcName = 'super_resolution'
@@ -4483,9 +4478,6 @@ def super_resolution(clip: vs.VideoNode, model_filename: str, epoch: int = 0, up
     if isinstance(device_id, int):
         device_id = [device_id]
 
-    if use_plugins_padding and not pad[0] == pad[1] == pad[2] == pad[3]:
-        raise ValueError(funcName + ': \'use_plugins_padding\' only allows symmetric padding! Please set its value to False!')
-
     # color space conversion
     if is_rgb_model and not isRGB:
         clip = mvf.ToRGB(clip, depth=32)
@@ -4527,7 +4519,7 @@ def super_resolution(clip: vs.VideoNode, model_filename: str, epoch: int = 0, up
         if is_rgb_model or not upscale_uv:
             w, h = clip.width, clip.height
 
-            if not use_plugins_padding and (pad[0]-crop[0]//up_scale > 0 or pad[1]-crop[1]//up_scale > 0 or # type: ignore
+            if (pad[0]-crop[0]//up_scale > 0 or pad[1]-crop[1]//up_scale > 0 or # type: ignore
                 pad[2]-crop[2]//up_scale > 0 or pad[3]-crop[3]//up_scale > 0): # type: ignore
 
                 clip = haf.Padding(clip, pad[2]-crop[2]//up_scale, pad[3]-crop[3]//up_scale, # type: ignore
@@ -4538,7 +4530,6 @@ def super_resolution(clip: vs.VideoNode, model_filename: str, epoch: int = 0, up
                 output_w=block_w*up_scale+crop[2]+crop[3], output_h=block_h*up_scale+crop[0]+crop[1], # type: ignore # crop[0] == crop[2] == 0
                 frame_w=w*up_scale, frame_h=h*up_scale, step_w=block_w, step_h=block_h, 
                 outstep_w=block_w*up_scale, outstep_h=block_h*up_scale, # type: ignore
-                padding=pad[0]-crop[0]//up_scale if use_plugins_padding else 0, # type: ignore
                 ctx=2 if dev_id >= 0 else 1, dev_id=max(dev_id, 0))
 
         else: # Y model, YUV input that may have subsampling, need to upscale uv
@@ -4548,7 +4539,7 @@ def super_resolution(clip: vs.VideoNode, model_filename: str, epoch: int = 0, up
             for i in range(num_planes):
                 w, h = yuv_list[i].width, yuv_list[i].height
 
-                if not use_plugins_padding and (pad[0]-crop[0]//up_scale > 0 or pad[1]-crop[1]//up_scale > 0 or # type: ignore
+                if (pad[0]-crop[0]//up_scale > 0 or pad[1]-crop[1]//up_scale > 0 or # type: ignore
                     pad[2]-crop[2]//up_scale > 0 or pad[3]-crop[3]//up_scale > 0): # type: ignore
 
                     yuv_list[i] = haf.Padding(yuv_list[i], pad[2]-crop[2]//up_scale, pad[3]-crop[3]//up_scale, # type: ignore
@@ -4559,7 +4550,6 @@ def super_resolution(clip: vs.VideoNode, model_filename: str, epoch: int = 0, up
                     output_w=block_w*up_scale+crop[2]+crop[3], output_h=block_h*up_scale+crop[0]+crop[1], # type: ignore # crop[0] == crop[2] == 0
                     frame_w=w*up_scale, frame_h=h*up_scale, step_w=block_w, step_h=block_h, 
                     outstep_w=block_w*up_scale, outstep_h=block_h*up_scale, # type: ignore
-                    padding=pad[0]-crop[0]//up_scale if use_plugins_padding else 0, # type: ignore
                     ctx=2 if dev_id >= 0 else 1, dev_id=max(dev_id, 0))
 
             super_res = core.std.ShufflePlanes(yuv_list, [0] * num_planes, clip.format.color_family)

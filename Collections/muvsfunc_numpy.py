@@ -1507,7 +1507,7 @@ def SigmaFilter_core(img_2D, radius=3, thr=0.01):
 
 def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, block_h=None, is_rgb_model=True, pad=None, crop=None, 
     pre_upscale=False, upscale_uv=False, merge_source=False, use_fmtc=False, resample_kernel=None, resample_args=None, pad_mode=None, 
-    framework=None, data_format=None, device_id=0, use_plugins_padding=None):
+    framework=None, data_format=None, device_id=0):
     """Use MXNet to accelerated Image-Processing in VapourSynth using Python interface
 
     Wrapper function for super resolution algorithms.
@@ -1597,8 +1597,6 @@ def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, blo
         device_id: (int) Which device to use. Starting with 0. If it is smaller than 0, CPU will be used.
             Default is 0.
 
-        use_plugins_padding: INVALID. Please switch to muvsfunc's implementation.
-
     """
 
     # initialize internal parameters
@@ -1640,9 +1638,6 @@ def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, blo
     if isinstance(device_id, list):
         raise ValueError(('super_resolution: \'device_id\' is a list but multi-GPU data parallelism is invalid!'
             'Please switch to muvsfunc\'s implementation.'))
-
-    if use_plugins_padding is not None:
-        raise ValueError('super_resolution: \'use_plugins_padding\' is invalid! Please switch to muvsfunc\'s implementation.')
 
     # color space conversion
     if is_rgb_model and not isRGB:
