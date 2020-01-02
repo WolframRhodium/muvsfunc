@@ -5603,20 +5603,29 @@ def VFRSplice(clips: Sequence[vs.VideoNode], tcfile: Optional[str] = None, v2: b
     return core.std.Splice(clips, mismatch=True)
 
 
-def MSR(clip: vs.VideoNode, *sigmas: numbers.Real, planes: PlanesType = None) -> vs.VideoNode:
+def MSR(clip: vs.VideoNode, *passes: numbers.Real, radius=1, planes: PlanesType = None) -> vs.VideoNode:
     """Multiscale Retinex
 
     Multiscale retinex is a local contrast enhancement algorithm, 
     which could be useful as a pre-processing step for texture detection.
 
-    Args:
-        clip: Floating-point input clip.
+    The output will always be in floating-point format.
 
-        sigmas: (float, args) List of sigmas for gaussian filtering.
+    Args:
+        clip: Input clip.
+
+        passes: (int, args) List of passes for box filtering.
+
+        radius: (int) Radius of box filtering.
+            Default is 1.
 
         planes: (int []) Specify which planes to process.
             Unprocessed planes will be copied from the first clip "clip".
             By default, all planes will be processed.
+
+    Examples:
+        mask1 = muf.MSR(clip, 3).tcanny.TCanny(mode=1)
+        mask2 = muf.MSR(clip, 2, 7, 15).tcanny.TCanny(mode=1)
 
     Ref:
         [1] Petro, A. B., Sbert, C., & Morel, J. M. (2014). Multiscale Retinex. Image Processing On Line, 71-88.
@@ -5627,32 +5636,45 @@ def MSR(clip: vs.VideoNode, *sigmas: numbers.Real, planes: PlanesType = None) ->
     # check
     if not isinstance(clip, vs.VideoNode):
         raise TypeError(f'{funcName}: "clip" must be a clip!')
-    elif clip.format.sample_type == vs.INTEGER:
-        raise TypeError(f'{funcName}: Floating-point format is required.')
 
-    is_positive = lambda x: isinstance(x, numbers.Real) and x > 0
-    assert 1 <= len(sigmas) <= 25 and all(map(is_positive, sigmas))
+    assert 1 <= len(passes) <= 25
 
     if planes is None:
         planes = list(range(clip.format.num_planes))
     elif isinstance(planes, int):
         planes = [planes]
 
+    in_format = clip.format
+    out_format = core.register_format(
+        color_family=in_format.color_family, 
+        sample_type=vs.FLOAT, 
+        bits_per_sample=32, 
+        subsampling_w=in_format.subsampling_w, 
+        subsampling_h=in_format.subsampling_h
+    )
+
     # process
-    sigmas = sorted(sigmas)
+    passes = sorted(passes)
 
-    # gaussian(sigma=a).gaussian(sigma=b) == gaussian(sigma=sqrt(a * a + b * b))
-    sigma_diffs = [math.sqrt(y * y - x * x) for x, y in zip([0] + sigmas[:-1], sigmas)]
+    pass_diffs = [(y - x) for x, y in zip([0] + passes[:-1], passes)]
 
-    gauss = lambda clip, sigma: clip.tcanny.TCanny(sigma=sigma, planes=planes, mode=-1)
-    flts = list(itertools.accumulate([clip] + sigma_diffs, gauss))
-    # flts = list(itertools.accumulate(sigma_diffs, gauss, initial=clip)) # Python 3.8 is required
+    def blur(clip, num_pass):
+        if clip.format.sample_type == vs.INTEGER and radius == 1:
+            for _ in range(num_pass):
+                clip = clip.rgvs.RemoveGrain([(20 if i in planes else 0) for i in range(clip.format.num_planes)])
+            return clip
+        else:
+            return clip.std.BoxBlur(hpasses=num_pass, hradius=radius, vpasses=num_pass, vradius=radius, planes=planes)
 
-    var = (chr((i + ord('y') - ord('a')) % 26 + ord('a')) for i in range(len(sigmas)))
+    flts = list(itertools.accumulate([clip] + pass_diffs, blur))
+    # flts = list(itertools.accumulate(sigma_diffs, blur, initial=clip)) # Python 3.8 is required
+
+    var = (chr((i + ord('y') - ord('a')) % 26 + ord('a')) for i in range(len(passes)))
     expr = 'x'
+    expr += f" {next(var)} "
     expr += ''.join(f" {v} *" for v in var)
-    if len(sigmas) > 1:
-        expr += f" {1/len(sigmas)} pow"
+    if len(passes) > 1:
+        expr += f" {1/len(passes)} pow"
     expr += " 0.00001 + / log"
 
-    return core.std.Expr(flts, [(expr if i in planes else '') for i in range(clip.format.num_planes)])
+    return core.std.Expr(flts, [(expr if i in planes else '') for i in range(clip.format.num_planes)], format=out_format)
