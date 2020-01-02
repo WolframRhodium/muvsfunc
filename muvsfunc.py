@@ -58,6 +58,7 @@ Functions:
     Cdeblend
     S_BoxFilter
     VFRSplice
+    MSR
 '''
 
 import functools
@@ -5600,3 +5601,59 @@ def VFRSplice(clips: Sequence[vs.VideoNode], tcfile: Optional[str] = None, v2: b
 
     # Output spliced clip
     return core.std.Splice(clips, mismatch=True)
+
+
+def MSR(clip: vs.VideoNode, *sigmas: numbers.Real, planes: Optional[Sequence[int]] = None) -> vs.VideoNode:
+    """Multiscale Retinex
+
+    Multiscale retinex is a local contrast enhancement algorithm, 
+    which could be useful as a pre-processing step for texture detection.
+
+    Args:
+        clip: Floating-point input clip.
+
+        sigmas: (float, args) List of sigmas for gaussian filtering.
+
+        planes: (int []) Specify which planes to process.
+            Unprocessed planes will be copied from the first clip "clip".
+            By default, all planes will be processed.
+
+    Ref:
+        [1] Petro, A. B., Sbert, C., & Morel, J. M. (2014). Multiscale Retinex. Image Processing On Line, 71-88.
+    """
+
+    funcName = "MSR"
+
+    # check
+    if not isinstance(clip, vs.VideoNode):
+        raise TypeError(f'{funcName}: "clip" must be a clip!')
+    elif clip.format.sample_type == vs.INTEGER:
+        raise TypeError(f'{funcName}: Floating-point format is required.')
+
+    is_positive = lambda x: isinstance(x, numbers.Real) and x > 0
+    assert 1 <= len(sigmas) <= 25 and all(map(is_positive, sigmas))
+
+    if planes is None:
+        planes = list(range(clip.format.num_planes))
+    elif isinstance(planes, int):
+        planes = [planes]
+
+    # process
+    sigmas = sorted(sigmas)
+
+    # gaussian(sigma=a).gaussian(sigma=b) == gaussian(sigma=sqrt(a * a + b * b))
+    sigma_diffs = [math.sqrt(y * y - x * x) for x, y in zip([0] + sigmas[:-1], sigmas)]
+
+    gauss = lambda clip, sigma: clip.tcanny.TCanny(sigma=sigma, planes=planes, mode=-1)
+    flts = list(itertools.accumulate([clip] + sigma_diffs, gauss))
+    # flts = list(itertools.accumulate(sigma_diffs, gauss, initial=clip)) # Python 3.8 is required
+
+    var = (chr((i + ord('y') - ord('a')) % 26 + ord('a')) for i in range(len(sigmas)))
+    expr = 'x'
+    expr += f" {next(var)} "
+    expr += ' * '.join(var)
+    if len(sigmas) > 1:
+        expr += f" * {1/len(sigmas)} pow"
+    expr += f" 0.00001 + / log"
+
+    return core.std.Expr(flts, [(expr if i in planes else '') for i in range(clip.format.num_planes)])
