@@ -5603,7 +5603,7 @@ def VFRSplice(clips: Sequence[vs.VideoNode], tcfile: Optional[str] = None, v2: b
     return core.std.Splice(clips, mismatch=True)
 
 
-def MSR(clip: vs.VideoNode, *sigmas: numbers.Real, planes: Optional[Sequence[int]] = None) -> vs.VideoNode:
+def MSR(clip: vs.VideoNode, *sigmas: numbers.Real, planes: PlanesType = None) -> vs.VideoNode:
     """Multiscale Retinex
 
     Multiscale retinex is a local contrast enhancement algorithm, 
@@ -5650,10 +5650,9 @@ def MSR(clip: vs.VideoNode, *sigmas: numbers.Real, planes: Optional[Sequence[int
 
     var = (chr((i + ord('y') - ord('a')) % 26 + ord('a')) for i in range(len(sigmas)))
     expr = 'x'
-    expr += f" {next(var)} "
-    expr += ' * '.join(var)
+    expr += ''.join(f" {v} *" for v in var)
     if len(sigmas) > 1:
-        expr += f" * {1/len(sigmas)} pow"
-    expr += f" 0.00001 + / log"
+        expr += f" {1/len(sigmas)} pow"
+    expr += " 0.00001 + / log"
 
     return core.std.Expr(flts, [(expr if i in planes else '') for i in range(clip.format.num_planes)])
