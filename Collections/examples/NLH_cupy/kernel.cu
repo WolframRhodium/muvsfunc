@@ -14,34 +14,41 @@
 #define SearchSize Square(2 * NLM_A + 1)
 
 extern "C" __global__ 
-void compute(const float * srcp, float * dstp) {
+void compute(const float * __restrict__ srcp, float * __restrict__ dstp) {
     int x = blockDim.x * blockIdx.x + threadIdx.x;
     int y = blockDim.y * blockIdx.y + threadIdx.y;
 
     if (x >= WIDTH || y >= HEIGHT)
         return;
 
-    float PositionWeights[PatchSize];
+    float PatchWeights[SearchSize];
 
-    // CalculatePositionWeights
-    for (int i = 0; i < PatchSize; i++) {
+    // CalculatePatchWeights
+    float NormalizingConstant = 0.f;
+    for (int i = 0; i < SearchSize; i++) {
         float SSE = 0.f;
-        for (int j = 0; j < SearchSize; j++)
-            SSE += Square(PatchMatrix(j, i) - PatchMatrix(j, PatchSize / 2));
-        PositionWeights[i] = expf(-SSE / Square(NLM_H2));
+        for (int j = 0; j < PatchSize; j++)
+            SSE += Square(PatchMatrix(i, j) - PatchMatrix(SearchSize / 2, j));
+        float Weight = expf(-SSE / Square(NLM_H));
+        PatchWeights[i] = Weight;
+        NormalizingConstant += Weight;
     }
 
-    // CalculatePatchWeights & Aggregate
-    float res = 0.f;
-    float NormalizingConstant = 0.f;
-    for (int j = 0; j < SearchSize; j++) {
+    for (int i = 0; i < SearchSize; i++) {
+        PatchWeights[i] /= NormalizingConstant;
+    }
+
+    // CalculatePositionWeights & Aggregate
+    float Result = 0.f;
+    NormalizingConstant = 0.f;
+    for (int j = 0; j < PatchSize; j++) {
         float SSE = 0.f;
-        for (int i = 0; i < PatchSize; i++)
-            SSE += PositionWeights[i] * Square(PatchMatrix(j, i) - PatchMatrix(SearchSize / 2, i));
-        float weight = expf(-SSE / Square(NLM_H));
-        res += weight * PatchMatrix(j, PatchSize / 2);
-        NormalizingConstant += weight;
+        for (int i = 0; i < SearchSize; i++)
+            SSE += PatchWeights[i] * Square(PatchMatrix(i, j) - PatchMatrix(i, PatchSize / 2));
+        float Weight = expf(-SSE / Square(NLM_H2));
+        Result += Weight * PatchMatrix(j, PatchSize / 2);
+        NormalizingConstant += Weight;
     }
     
-    GET(dstp, y, x) = res / NormalizingConstant;
+    GET(dstp, y, x) = Result / NormalizingConstant;
 }

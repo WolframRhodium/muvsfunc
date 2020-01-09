@@ -2,7 +2,9 @@
 Implementation of NLH (NLH: A Blind Pixel-level Non-local Method for Real-world Image Denoising) in CuPy
 
 Ref:
-    [1] Hou, Y., Xu, J., Liu, M., Liu, G., Liu, L., Zhu, F., & Shao, L. (2019). NLH: A Blind Pixel-level Non-local Method for Real-world Image Denoising. arXiv preprint arXiv:1906.06834.
+    [1] Hou, Y., Xu, J., Liu, M., Liu, G., Liu, L., Zhu, F., & Shao, L. (2019). 
+        NLH: A Blind Pixel-level Non-local Method for Real-world Image Denoising. 
+        arXiv preprint arXiv:1906.06834.
 
 """
 
@@ -22,15 +24,15 @@ src = core.std.BlankClip(format=vs.GRAYS)
 # d = 0 # only spatial processing is implemented.
 a = 2
 s = 4
-h = 30.
-h2 = 12.
+h = 1.6
+h2 = 1.6
 
 # whether to enable '--use_fast_math' in NVRTC runtime compilation
 # to make use of fast math operations
 fast = False
 
 # CUDA kernel execution configuration
-work_block = (32, 32, 1)
+work_block = (16, 16, 1)
 
 
 # pre-processing
@@ -68,8 +70,8 @@ def nlm_core(h_src, compute):
 # process
 res = mufnp.numpy_process(src, nlm_core, compute=compute)
 
-# feisty2's CPU implementation (https://github.com/IFeelBloated/NLMeans-PM)
-# "ref", "sdev" are not currently implemented on the CUDA version
+# feisty2's CPU implementation (https://github.com/IFeelBloated/NLMeans-PM/tree/f2539968e3ded41588cc18b3c2a984f42b79e4a9)
+# "ref" is not currently implemented on the CUDA version
 # res = core.test.Test(src, a=a, s=s, h=h, h2=h2, sdev=1000000000)
 
 
