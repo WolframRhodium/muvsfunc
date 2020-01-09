@@ -46,7 +46,7 @@ void compute(const float * __restrict__ srcp, float * __restrict__ dstp) {
         for (int i = 0; i < SearchSize; i++)
             SSE += PatchWeights[i] * Square(PatchMatrix(i, j) - PatchMatrix(i, PatchSize / 2));
         float Weight = expf(-SSE / Square(NLM_H2));
-        Result += Weight * PatchMatrix(j, PatchSize / 2);
+        Result += Weight * PatchMatrix(SearchSize / 2, j);
         NormalizingConstant += Weight;
     }
     
