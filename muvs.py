@@ -196,7 +196,7 @@ _repr = _build_repr()
 
 
 class _Plugin:
-    def __init__(self, plugin: vs.Plugin, injected_clip: Optional[vs.VideoNode]=None):
+    def __init__(self, plugin: vs.Plugin, injected_clip: Optional[vs.VideoNode] = None):
         if isinstance(plugin, vs.Plugin):
             self._plugin = plugin
         else:
@@ -389,7 +389,7 @@ class _ArithmeticExpr:
                     return stack[:-2] + (f"({stack[-2]} {next_val} {stack[-1]})",)
                 elif next_val == '=':
                     return stack[:-2] + (f"({stack[-2]} == {stack[-1]})",)
-                elif next_val == '= not':
+                elif next_val == '= not': # not triggered by current implementation
                     return stack[:-2] + (f"({stack[-2]} != {stack[-1]})",)
                 elif next_val == 'pow':
                     return stack[:-2] + (f"({stack[-2]} ** {stack[-1]})",)
@@ -431,7 +431,7 @@ class _ArithmeticExpr:
         return _LambdaFunction(lut_str)
 
     def _operate(self, op: str, *operands, position=0) -> '_ArithmeticExpr':
-        # accpted operands: Union[numbers.Real, _VideoNode, _ArithmeticExpr]
+        # accepted operands: Union[numbers.Real, _VideoNode, _ArithmeticExpr]
 
         def to_element(obj):
             if isinstance(obj, numbers.Real):
@@ -446,7 +446,7 @@ class _ArithmeticExpr:
         _expr = [to_element(operand) for operand in operands]
         _expr.insert(position, self._expr)
 
-        # "X X *"" -> "X dup *"
+        # "X X *" -> "X dup *"
         # _expr[i] == self._expr cannot be used since == is overloaded to return non-boolean value
         for i in range(position + 1, len(_expr)):
             if len(_expr[i]) == len(self._expr) and all((hash(x) == hash(y)) for x, y in zip(_expr[i], self._expr)):
@@ -748,8 +748,7 @@ def _build_VideoNode():
         else:
             raise TypeError(f"indices must be integers or slices, not {type(val)}")
 
-    _dict = dict(__init__=__init__, __getattr__=__getattr__, __len__=__len__, __bool__=__bool__, 
-        __dir__=__dir__,__hash__=__hash__, __iter__=__iter__, __getitem__=__getitem__)
+    _dict = locals().copy()
 
     _create_method = (lambda name: 
                         lambda self, *args: 
@@ -761,7 +760,7 @@ def _build_VideoNode():
         "__pow__", "__rpow__", "__and__", "__rand__", "__xor__", "__rxor__", "__or__", "__ror__", 
         "__min__", "__rmin__", "__max__", "__rmax__", "__conditional__", "__rconditional__", "__rrconditional__"])
 
-    return type("_VideoNode", (object,), _dict)
+    return type("_VideoNode", (), _dict)
 
 _VideoNode = _build_VideoNode()
 

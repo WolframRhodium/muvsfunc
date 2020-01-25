@@ -72,7 +72,7 @@ res = mufnp.numpy_process(src, nlm_core, compute=compute)
 
 # feisty2's CPU implementation (https://github.com/IFeelBloated/NLMeans-PM/tree/f2539968e3ded41588cc18b3c2a984f42b79e4a9)
 # "ref" is not currently implemented on the CUDA version
-# res = core.test.Test(src, a=a, s=s, h=h, h2=h2, sdev=1000000000)
+# res = core.test.Test(src, a=a, s=s, h=h, h2=h2)
 
 
 res.set_output()
