@@ -22,12 +22,16 @@ from contextlib import contextmanager
 import functools
 import inspect
 import itertools
-from math import exp, log, sqrt
+import math
 import numbers
 from typing import Union, Optional, Dict, List, Callable
 
 import vapoursynth as vs
 from vapoursynth import core as _vscore
+
+
+__all__ = ["core", "options", "pollute", "Abs", "Exp", "Not", "Log", 
+           "Sqrt", "Min", "Max", "Conditional"]
 
 
 class _Core:
@@ -781,7 +785,7 @@ Abs = abs
 
 @functools.singledispatch
 def Exp(x):
-    return exp(x)
+    return math.exp(x)
 
 @Exp.register(_ArithmeticExpr)
 @Exp.register(_VideoNode)
@@ -801,7 +805,7 @@ def _(x) -> _ArithmeticExpr:
 
 @functools.singledispatch
 def Log(x):
-    return log(x)
+    return math.log(x)
 
 @Log.register(_ArithmeticExpr)
 @Log.register(_VideoNode)
@@ -811,7 +815,7 @@ def _(x) -> _ArithmeticExpr:
 
 @functools.singledispatch
 def Sqrt(x):
-    return sqrt(x)
+    return math.sqrt(x)
 
 @Sqrt.register(_ArithmeticExpr)
 @Sqrt.register(_VideoNode)
