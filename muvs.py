@@ -93,12 +93,12 @@ def pollute(*modules):
                 getattr(module, "core", None) is not core and
                 ((getattr(module, "vs", None) is vs) or (getattr(module, "core", None) is _vscore))
                 ):
-                module.__dict__['core'] = core
-                module.__dict__['vs'] = _vs
+                module.core = core
+                module.vs = _vs
     else:
         for module in modules:
-            module.__dict__['core'] = core
-            module.__dict__['vs'] = _vs
+            module.core = core
+            module.vs = _vs
 
 
 class _Options:
