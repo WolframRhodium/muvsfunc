@@ -86,9 +86,19 @@ def pollute(*modules):
     _vs = _FakeVS()
 
     # modify symbol table of each module
-    for module in modules:
-        module.__dict__['core'] = core
-        module.__dict__['vs'] = _vs
+    if len(modules) == 0:
+        import sys
+        for name, module in sys.modules.items():
+            if (name not in ("__vapoursynth__", "__main__") and
+                getattr(module, "core", None) is not core and
+                ((getattr(module, "vs", None) is vs) or (getattr(module, "core", None) is _vscore))
+                ):
+                module.__dict__['core'] = core
+                module.__dict__['vs'] = _vs
+    else:
+        for module in modules:
+            module.__dict__['core'] = core
+            module.__dict__['vs'] = _vs
 
 
 class _Options:
@@ -751,8 +761,8 @@ def _build_VideoNode():
     _dict = locals().copy()
 
     _create_method = (lambda name: 
-                        lambda self, *args: 
-                            getattr(_ArithmeticExpr, name)(_ArithmeticExpr(self), *args))
+                          lambda self, *args: 
+                              getattr(_ArithmeticExpr, name)(_ArithmeticExpr(self), *args))
 
     _dict.update((attr, _create_method(attr)) for attr in ["__neg__", "__pos__", "__abs__", "__exp__", 
         "__log__", "__not__", "__sqrt__", "__lt__", "__le__", "__eq__", "__ne__", "__gt__", "__ge__", 
