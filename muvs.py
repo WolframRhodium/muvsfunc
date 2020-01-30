@@ -510,16 +510,20 @@ class _ArithmeticExpr:
 
                         expr = [
                             (self.expr if i in planes else "") 
-                            for i in range(clips[0]._node.format.num_planes)]
+                            for i in range(clips[0].format.num_planes)]
 
-                    in_format = clips[0]._node.format
-                    out_format = core.register_format(
-                        color_family=in_format.color_family, 
-                        sample_type=in_format.sample_type, 
-                        bits_per_sample=bits, 
-                        subsampling_w=in_format.subsampling_w, 
-                        subsampling_h=in_format.subsampling_h
-                    )
+                    in_format = clips[0].format
+
+                    if bits == in_format.bits_per_sample:
+                        out_format = None
+                    else:
+                        out_format = core.register_format(
+                            color_family=in_format.color_family, 
+                            sample_type=vs.INTEGER if bits <= 16 else vs.FLOAT, 
+                            bits_per_sample=bits, 
+                            subsampling_w=in_format.subsampling_w, 
+                            subsampling_h=in_format.subsampling_h
+                        )
 
                     return core.std.Expr(clips=clips, expr=expr, format=out_format)
                 
@@ -766,7 +770,7 @@ def _build_VideoNode():
 
     _create_method = (lambda name: 
                           lambda self, *args: 
-                              getattr(_ArithmeticExpr, name)(_ArithmeticExpr(self), *args))
+                              getattr(_ArithmeticExpr(self), name)(*args))
 
     _dict.update((attr, _create_method(attr)) for attr in ["__neg__", "__pos__", "__abs__", "__exp__", 
         "__log__", "__not__", "__sqrt__", "__lt__", "__le__", "__eq__", "__ne__", "__gt__", "__ge__", 
