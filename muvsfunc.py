@@ -59,9 +59,11 @@ Functions:
     S_BoxFilter
     VFRSplice
     MSR
+    getnative
 '''
 
 import functools
+import importlib
 import itertools
 import math
 import operator
@@ -5678,3 +5680,133 @@ def MSR(clip: vs.VideoNode, *passes: numbers.Real, radius=1, planes: PlanesType 
     expr += " 0.00001 + / log"
 
     return core.std.Expr(flts, [(expr if i in planes else '') for i in range(clip.format.num_planes)], format=out_format)
+
+
+def getnative(clip: vs.VideoNode, dh_sequence: Sequence[int] = tuple(range(500, 1001)), 
+    kernel: str = "bicubic", b: Optional[numbers.Real] = None, c: numbers.Real = 0.5, 
+    crop_size: int = 5, save_filename: Optional[str] = None, 
+    rt_eval: bool = True) -> vs.VideoNode:
+    """Find the native resolution(s) of upscaled material (mostly anime)
+
+    Modifyed from getnative 1.3.0 (https://github.com/Infiziert90/getnative/tree/ea08405f34a23dc681ff38a45e840ca21379a14d) and 
+    descale_verify (https://github.com/himesaka-noa/descale-verifier/blob/master/descale_verify.py).
+
+    The result is generated after all frames have been evaluated, which can be done through vspipe or "benchmark" of vsedit.
+
+    Args:
+        clip: Input clip, vs.GRAYS, single frame.
+
+        dh_sequence: (int []) List of heights to be evaluated.
+            Default is [500 ... 1000].
+
+        kernel: (str, any of ["bicubic", "bilinear", "lanczos", "spline36", "spline64"]) Resize kernel to be used.
+            Default is "bicubic".
+
+        b, c: (int or float) Parameters of parametric kernel.
+            Default is (0, 0.5) for "bicubic", 3 for "lanczos".
+
+        crop_size: (int) Range of pixels around the border to be excluded in calculation.
+            Default is 5.
+
+        save_filename: (str) Filename of saved image.
+            Default is "{kernel}_{b}_{c}_%H-%M-%S.png".
+
+        aot_eval: (bool) Wheter to build the processing graph in runtime to reduce overhead.
+            Default is True.
+
+    Example:
+        # It is trival to generate multiple results with no overhead in loading modules by evaluating:
+        result1 = muf.getnative(clip, kernel="bicubic")
+        result2 = muf.getnative(clip, kernel="lanczos")
+        result3 = muf.getnative(clip, kernel="spline36")
+        last = core.std.Splice([result1, result2, result3])
+        last.set_output()
+
+    Requirments:
+        descale, matplotlib
+    """
+
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+
+    # check
+    assert isinstance(clip, vs.VideoNode) and clip.format.id == vs.GRAYS and clip.num_frames == 1
+
+    if save_filename is None:
+        from datetime import datetime
+        save_filename = f"{kernel}_{b}_{c}_{datetime.now().strftime('%H-%M-%S')}.png"
+
+    kernel = kernel.lower()
+    if b is None:
+        if kernel == "bicubic":
+            b = 0
+        elif kernel == "lanczos":
+            b = 3
+
+    # internal functions
+    def rescale(clip: vs.VideoNode, dh: int, kernel: str, b: int, c: int) -> vs.VideoNode:
+        w, h = clip.width, clip.height
+        dw = round(w / h * dh)
+
+        if kernel == 'bicubic':
+            descaled = core.descale.Debicubic(clip, dw, dh, b=b, c=c)
+            rescaled = core.resize.Bicubic(descaled, w, h, filter_param_a=b, filter_param_b=c)
+        elif kernel == 'bilinear':
+            descaled = core.descale.Debilinear(clip, dw, dh)
+            rescaled = core.resize.Bilinear(descaled, w, h)
+        elif kernel == 'lanczos':
+            descaled = core.descale.Delanczos(clip, dw, dh, taps=int(b))
+            rescaled = core.resize.Lanczos(descaled, w, h, filter_param_a=int(b))
+        elif kernel == 'spline16':
+            descaled = core.descale.Despline16(clip, dw, dh)
+            rescaled = core.resize.Spline16(descaled, w, h)
+        elif kernel == 'spline36':
+            descaled = core.descale.Despline36(clip, dw, dh)
+            rescaled = core.resize.Spline36(descaled, w, h)
+        else:
+            raise NotImplementedError(f"Kernel {kernel} is not implemented.")
+
+        return rescaled
+
+    def output_statistics(clip: vs.VideoNode, save_filename: str, dh_sequence: Sequence[int]):
+        data = [0] * clip.num_frames
+        remaining_frames = clip.num_frames # mutable
+
+        def func_core(n, f, clip):
+            data[n] = f.props.PlaneStatsAverage
+
+            nonlocal remaining_frames
+            remaining_frames -= 1
+
+            if remaining_frames == 0:
+                create_plot(data, save_filename, dh_sequence)
+
+            return clip
+
+        return core.std.FrameEval(clip, functools.partial(func_core, clip=clip), clip)
+
+    def create_plot(data: Sequence[float], save_filename: str, dh_sequence: Sequence[int]):
+        plt.style.use("dark_background")
+        fig, ax = plt.subplots()
+        ax.plot(dh_sequence, data, ".w-")
+        ax.set(xlabel="Height", ylabel="Relative error", title=save_filename, yscale="log")
+        fig.savefig(f"{save_filename}")
+        plt.close()
+
+    # process
+    if rt_eval:
+        clip = clip.std.Loop(len(dh_sequence))
+        rescaled = core.std.FrameEval(clip, (lambda clip: lambda n: rescale(clip, dh_sequence[n], kernel, b, c))(clip))
+    else:
+        rescaled = core.std.Splice([rescale(clip, dh, kernel, b, c) for dh in dh_sequence])
+        clip = clip.std.Loop(rescaled.num_frames)
+
+    clip = core.std.Expr([clip, rescaled], ["x y - abs dup 0.015 > swap 0 ?"])
+
+    if crop_size > 0:
+        clip = core.std.CropRel(clip, *([crop_size] * 4))
+
+    clip = core.std.PlaneStats(clip)
+
+    return output_statistics(clip, save_filename, dh_sequence)
