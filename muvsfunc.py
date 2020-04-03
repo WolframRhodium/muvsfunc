@@ -5732,16 +5732,22 @@ def getnative(clip: vs.VideoNode, dh_sequence: Sequence[int] = tuple(range(500, 
     # check
     assert isinstance(clip, vs.VideoNode) and clip.format.id == vs.GRAYS and clip.num_frames == 1
 
-    if save_filename is None:
-        from datetime import datetime
-        save_filename = f"{kernel}_{b}_{c}_{datetime.now().strftime('%H-%M-%S')}.png"
-
     kernel = kernel.lower()
     if b is None:
         if kernel == "bicubic":
             b = 0
         elif kernel == "lanczos":
             b = 3
+
+    if save_filename is None:
+        from datetime import datetime
+
+        if kernel == "bicubic"
+            save_filename = f"{kernel}_{b}_{c}_{datetime.now().strftime('%H-%M-%S')}.png"
+        elif kernel == "lanczos":
+            save_filename = f"{kernel}_{b}taps_{datetime.now().strftime('%H-%M-%S')}.png"
+        else:
+            save_filename = f"{kernel}_{datetime.now().strftime('%H-%M-%S')}.png"
 
     # internal functions
     def rescale(clip: vs.VideoNode, dh: int, kernel: str, b: int, c: int) -> vs.VideoNode:
@@ -5768,7 +5774,7 @@ def getnative(clip: vs.VideoNode, dh_sequence: Sequence[int] = tuple(range(500, 
 
         return rescaled
 
-    def output_statistics(clip: vs.VideoNode, save_filename: str, dh_sequence: Sequence[int]):
+    def output_statistics(clip: vs.VideoNode, save_filename: str, dh_sequence: Sequence[int]) -> vs.VideoNode:
         data = [0] * clip.num_frames
         remaining_frames = clip.num_frames # mutable
 
@@ -5795,17 +5801,17 @@ def getnative(clip: vs.VideoNode, dh_sequence: Sequence[int] = tuple(range(500, 
 
     # process
     if rt_eval:
-        clip = clip.std.Loop(len(dh_sequence))
+        clip = core.std.Loop(clip, len(dh_sequence))
         rescaled = core.std.FrameEval(clip, (lambda clip: lambda n: rescale(clip, dh_sequence[n], kernel, b, c))(clip))
     else:
         rescaled = core.std.Splice([rescale(clip, dh, kernel, b, c) for dh in dh_sequence])
-        clip = clip.std.Loop(rescaled.num_frames)
+        clip = core.std.Loop(clip, len(dh_sequence))
 
-    clip = core.std.Expr([clip, rescaled], ["x y - abs dup 0.015 > swap 0 ?"])
+    diff = core.std.Expr([clip, rescaled], ["x y - abs dup 0.015 > swap 0 ?"])
 
     if crop_size > 0:
-        clip = core.std.CropRel(clip, *([crop_size] * 4))
+        diff = core.std.CropRel(diff, *([crop_size] * 4))
 
-    clip = core.std.PlaneStats(clip)
+    stats = core.std.PlaneStats(diff)
 
-    return output_statistics(clip, save_filename, dh_sequence)
+    return output_statistics(stats, save_filename, dh_sequence)
