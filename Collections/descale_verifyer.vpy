@@ -60,7 +60,7 @@ def create_plot(data, save_filename):
     fig, ax = plt.subplots()
     t = np.arange(data.shape[0])
     ax.plot(t, data)
-    ax.set(xlabel='frames', ylabel='difference', title='Descale Error')
+    ax.set(xlabel='frames', ylabel='relative difference', title='Descale Error')
     ax.grid()
     fig.savefig(f"{save_filename}.png")
 

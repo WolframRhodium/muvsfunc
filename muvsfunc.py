@@ -5714,7 +5714,7 @@ def getnative(clip: vs.VideoNode, dh_sequence: Sequence[int] = tuple(range(500, 
             Default is True.
 
     Example:
-        # It is trival to generate multiple results:
+        # It is trivial to generate multiple results:
         result1 = muf.getnative(clip, kernel="bicubic")
         result2 = muf.getnative(clip, kernel="lanczos")
         result3 = muf.getnative(clip, kernel="spline36")
