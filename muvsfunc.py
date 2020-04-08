@@ -5721,6 +5721,17 @@ def getnative(clip: vs.VideoNode, dh_sequence: Sequence[int] = tuple(range(500, 
         last = core.std.Splice([result1, result2, result3])
         last.set_output()
 
+        # https://github.com/LittlePox/getnative/tree/f2fef4a5ebbed3cf88e972c14693b75102a0ee29
+        scalers = [
+            ["Bilinear"], ["Bicubic", 1/3, 1/3], ["Bicubic", 0, 0.5], ["Bicubic", 0.5, 0.5],
+            ["Lanczos", 2], ["Lanczos", 3], ["Lanczos", 4], 
+            ["Spline16"], ["Spline36"]
+        ]
+
+        last = core.std.Splice([muf.getnative(clip, tuple(range(480, 960+1, 12)), *args) for args in scalers])
+        last.set_output()
+
+
     Requirments:
         descale, matplotlib
     """
@@ -5743,7 +5754,7 @@ def getnative(clip: vs.VideoNode, dh_sequence: Sequence[int] = tuple(range(500, 
         from datetime import datetime
 
         if kernel == "bicubic":
-            save_filename = f"{kernel}_{b}_{c}_{datetime.now().strftime('%H-%M-%S')}.png"
+            save_filename = f"{kernel}_{b:.3}_{c:.3}_{datetime.now().strftime('%H-%M-%S')}.png"
         elif kernel == "lanczos":
             save_filename = f"{kernel}_{b}taps_{datetime.now().strftime('%H-%M-%S')}.png"
         else:
