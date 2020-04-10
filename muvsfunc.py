@@ -5754,8 +5754,10 @@ def getnative(clip: vs.VideoNode, dh_sequence: Sequence[int] = tuple(range(500, 
         from datetime import datetime
 
         if kernel == "bicubic":
+            b, c = float(b), float(c)
             save_filename = f"{kernel}_{b:.3}_{c:.3}_{datetime.now().strftime('%H-%M-%S')}.png"
         elif kernel == "lanczos":
+            b = int(b)
             save_filename = f"{kernel}_{b}taps_{datetime.now().strftime('%H-%M-%S')}.png"
         else:
             save_filename = f"{kernel}_{datetime.now().strftime('%H-%M-%S')}.png"
