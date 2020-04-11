@@ -5792,7 +5792,7 @@ def getnative(clip: vs.VideoNode, dh_sequence: Sequence[int] = tuple(range(500, 
         remaining_frames = clip.num_frames # mutable
 
         def func_core(n, f, clip):
-            data[n] = f.props.PlaneStatsAverage
+            data[n] = f.props.PlaneStatsAverage + 1e-9 # add eps to avoid getting 0 diff, which later messes up the graph.
 
             nonlocal remaining_frames
             remaining_frames -= 1
@@ -5806,9 +5806,10 @@ def getnative(clip: vs.VideoNode, dh_sequence: Sequence[int] = tuple(range(500, 
 
     def create_plot(data: Sequence[float], save_filename: str, dh_sequence: Sequence[int]):
         plt.style.use("dark_background")
-        fig, ax = plt.subplots()
+        fig, ax = plt.subplots(figsize=(12, 8))
         ax.plot(dh_sequence, data, ".w-")
-        ax.set(xlabel="Height", ylabel="Relative error", title=save_filename, yscale="log")
+        ticks = tuple(x for x in dh_sequence if x % 24 == 0) if len(dh_sequence) > 25 else dh_sequence # display full x if no more than 25 tests
+        ax.set(xlabel="Height", xticks=ticks, ylabel="Relative error", title=save_filename, yscale="log")
         fig.savefig(f"{save_filename}")
         plt.close()
 
