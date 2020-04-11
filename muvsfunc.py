@@ -5808,7 +5808,8 @@ def getnative(clip: vs.VideoNode, dh_sequence: Sequence[int] = tuple(range(500, 
         plt.style.use("dark_background")
         fig, ax = plt.subplots(figsize=(12, 8))
         ax.plot(dh_sequence, data, ".w-")
-        ticks = tuple(x for x in dh_sequence if x % 24 == 0) if len(dh_sequence) > 25 else dh_sequence # display full x if no more than 25 tests
+        if len(dh_sequence) > 25
+        ticks = tuple(dh for dh in dh_sequence if dh % 24 == 0)  else dh_sequence # display full x if no more than 25 tests
         ax.set(xlabel="Height", xticks=ticks, ylabel="Relative error", title=save_filename, yscale="log")
         fig.savefig(f"{save_filename}")
         plt.close()
@@ -5816,7 +5817,7 @@ def getnative(clip: vs.VideoNode, dh_sequence: Sequence[int] = tuple(range(500, 
     # process
     if rt_eval:
         clip = core.std.Loop(clip, len(dh_sequence))
-        rescaled = core.std.FrameEval(clip, (lambda clip: lambda n: rescale(clip, dh_sequence[n], kernel, b, c))(clip))
+        rescaled = core.std.FrameEval(clip, lambda n, clip=clip: rescale(clip, dh_sequence[n], kernel, b, c))
     else:
         rescaled = core.std.Splice([rescale(clip, dh, kernel, b, c) for dh in dh_sequence])
         clip = core.std.Loop(clip, len(dh_sequence))
