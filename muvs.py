@@ -228,7 +228,7 @@ class _Plugin:
             func = attr
 
             @functools.wraps(func)
-            def closure(*args, **kwargs) -> '_VideoNode':
+            def closure(*args, **kwargs):
                 if self._injected_clip is not None:
                     args = (self._injected_clip, ) + args
 
@@ -270,13 +270,17 @@ class _Plugin:
                 kwargs = dict((get_key(key), get_node(value)) for key, value in kwargs.items())
 
                 # process
-                output = func(*args, **kwargs) # type: vs.VideoNode
-                _ = _repr(output, default_prefix="clip") # register output
+                output = func(*args, **kwargs)
 
-                if options.is_recording:
-                    options.buffer.append(self._get_str(func, args, kwargs, output) + '\n')
+                if isinstance(output, vs.VideoNode):
+                    _ = _repr(output, default_prefix="clip") # register output
 
-                return _VideoNode(output)
+                    if options.is_recording:
+                        options.buffer.append(self._get_str(func, args, kwargs, output) + '\n')
+
+                    return _VideoNode(output)
+                else:
+                    return output
 
             return closure
 
