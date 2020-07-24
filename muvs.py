@@ -189,19 +189,33 @@ options = _Options()
 
 
 def _build_repr() -> Callable[..., str]:
-    _clip_name_mapping = weakref.WeakKeyDictionary() # type: MutableMaping[vs.VideoNode, str]
+    _clip_name_mapping = weakref.WeakKeyDictionary() # type: MutableMapping[vs.VideoNode, str]
+    counter = 0
 
     def closure(obj, default_prefix="unknown") -> str:
         if isinstance(obj, vs.VideoNode):
-            return _clip_name_mapping.setdefault(obj, f"{default_prefix}{len(_clip_name_mapping)}")
+            if obj in _clip_name_mapping:
+                return _clip_name_mapping[obj]
+
+            else:
+                nonlocal counter
+                name = f"{default_prefix}{counter}"
+                _clip_name_mapping[obj] = name
+                counter += 1
+                return name
+
         elif isinstance(obj, _VideoNode):
-            return _clip_name_mapping.setdefault(obj._node, f"{default_prefix}{len(_clip_name_mapping)}")
+            return closure(obj._node, default_prefix)
+
         elif isinstance(obj, collections.abc.Sequence) and not isinstance(obj, (str, bytes, bytearray)):
             return '[' + ', '.join(closure(elem, default_prefix) for elem in obj) + ']'
+
         elif isinstance(obj, (vs.ColorFamily, vs.PresetFormat, vs.SampleType)):
             return f"vs.{obj!s}"
+
         elif isinstance(obj, vs.Format):
             return f"core.register_format({', '.join(k + '=' + closure(v) for k, v in obj._as_dict().items())})"
+
         else:
             return repr(obj)
 
