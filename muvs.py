@@ -24,7 +24,8 @@ import inspect
 import itertools
 import math
 import numbers
-from typing import Union, Optional, Dict, List, Callable
+from typing import Union, Optional, Dict, List, Callable, MutableMapping
+import weakref
 
 import vapoursynth as vs
 from vapoursynth import core as _vscore
@@ -188,7 +189,7 @@ options = _Options()
 
 
 def _build_repr() -> Callable[..., str]:
-    _clip_name_mapping = {} # type: Dict[vs.VideoNode, str]
+    _clip_name_mapping = weakref.WeakKeyDictionary() # type: MutableMaping[vs.VideoNode, str]
 
     def closure(obj, default_prefix="unknown") -> str:
         if isinstance(obj, vs.VideoNode):
