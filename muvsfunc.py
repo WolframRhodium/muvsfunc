@@ -1466,7 +1466,7 @@ def FixTelecinedFades(input: vs.VideoNode, mode: Union[int, Sequence[int]] = 0,
         threshold = [threshold]
     if not isinstance(threshold, abc.Sequence) or len(threshold) == 0:
         raise TypeError(funcName + ': \"threshold\" must be a list of floats!')
-    
+
     if isFloat:
         _threshold = [(abs(thr) / 255) for thr in threshold]
     else:
@@ -2679,88 +2679,88 @@ def dfttestMC(input: vs.VideoNode, pp: Optional[vs.VideoNode] = None, mc: int = 
     if not isinstance(input, vs.VideoNode) or input.format.color_family not in [vs.GRAY, vs.YUV, vs.YCOCG]:
         raise TypeError(funcName + ': \"input\" must be a Gray or YUV clip!')
 
-    if pp is not None:
-        if not isinstance(pp, vs.VideoNode):
-            raise TypeError(funcName + ': \"pp\" must be a clip!')
-        if input.format.id != pp.format.id:
-            raise TypeError(funcName + ': \"pp\" must be of the same format as \"input\"!')
-        if input.width != pp.width or input.height != pp.height:
-            raise TypeError(funcName + ': \"pp\" must be of the same size as \"input\"!')
+    mc = min(max(int(mc), 0), 5)
 
-    # Set default options. Most external parameters are passed valueless.
-    if dfttest_params is None:
-        dfttest_params = {}
-
-    mc = min(mc, 5)
-
-    # Set chroma parameters.
-    if planes is None:
-        planes = list(range(input.format.num_planes))
-    elif isinstance(planes, int):
-        planes = [planes]
-
-    Y = 0 in planes
-    U = 1 in planes
-    V = 2 in planes
-
-    chroma = U or V
-
-    if not Y and U and not V:
-        plane = 1
-    elif not Y and not U and V:
-        plane = 2
-    elif not Y and chroma:
-        plane = 3
-    elif Y and chroma:
-        plane = 4
+    if mc == 0:
+        return core.dfttest.DFTTest(input, sigma=sigma, sbsize=sbsize, sosize=sosize, tbsize=tbsize, **dfttest_params)
     else:
-        plane = 0
+        if pp is not None:
+            if not isinstance(pp, vs.VideoNode):
+                raise TypeError(funcName + ': \"pp\" must be a clip!')
+            if input.format.id != pp.format.id:
+                raise TypeError(funcName + ': \"pp\" must be of the same format as \"input\"!')
+            if input.width != pp.width or input.height != pp.height:
+                raise TypeError(funcName + ': \"pp\" must be of the same size as \"input\"!')
 
-    # Prepare supersampled clips.
-    pp_enabled = pp is not None
-    pp_super = haf.DitherLumaRebuild(pp if pp_enabled else input, s0=1, chroma=chroma).mv.Super(pel=pel, chroma=chroma)
-    super = haf.DitherLumaRebuild(input, s0=1, chroma=chroma).mv.Super(pel=pel, chroma=chroma) if pp_enabled and input != pp else pp_super
+        # Set chroma parameters.
+        if planes is None:
+            planes = list(range(input.format.num_planes))
+        elif isinstance(planes, int):
+            planes = [planes]
 
-    # Motion vector search.
-    analysis_args = dict(chroma=chroma, search=search, searchparam=searchparam, overlap=overlap, blksize=blksize, dct=dct)
-    bvec = []
-    fvec = []
+        Y = 0 in planes
+        U = 1 in planes
+        V = 2 in planes
 
-    for i in range(1, mc+1):
-        bvec.append(core.mv.Analyse(pp_super, delta=i, isb=True, **analysis_args))
-        fvec.append(core.mv.Analyse(pp_super, delta=i, isb=False, **analysis_args))
+        chroma = U or V
 
-    # Optional MDegrain.
-    if mdg:
-        degrain_args = dict(thsad=mdgSAD, plane=plane, thscd1=thSCD1, thscd2=thSCD2)
-        if mc >= 3:
-            degrained = core.mv.Degrain3(input, super, bvec[0], fvec[0], bvec[1], fvec[1], bvec[2], fvec[2], **degrain_args)
-        elif mc == 2:
-            degrained = core.mv.Degrain2(input, super, bvec[0], fvec[0], bvec[1], fvec[1], **degrain_args)
-        elif mc == 1:
-            degrained = core.mv.Degrain1(input, super, bvec[0], fvec[0], **degrain_args)
+        if not Y and U and not V:
+            plane = 1
+        elif not Y and not U and V:
+            plane = 2
+        elif not Y and chroma:
+            plane = 3
+        elif Y and chroma:
+            plane = 4
+        else:
+            plane = 0
+
+        # Prepare supersampled clips.
+        pp_super = (
+            haf.DitherLumaRebuild(pp if pp is not None else input, s0=1, chroma=chroma)
+            .mv.Super(pel=pel, chroma=chroma))
+
+        super = core.mv.Super(input, levels=1, pel=pel, chroma=chroma)
+
+        # Motion vector search.
+        analyse = functools.partial(
+            core.mv.Analyse, 
+            super=pp_super, chroma=chroma, search=search, searchparam=searchparam, 
+            overlap=overlap, blksize=blksize, dct=dct)
+
+        bvecs = [analyse(delta=i, isb=True) for i in range(1, mc+1)]
+        fvecs = [analyse(delta=i, isb=False) for i in range(1, mc+1)]
+
+        # Optional MDegrain.
+        if mdg:
+            r = min(mc, 3) # radius
+
+            degrain = functools.partial(
+                eval(f"core.mv.Degrain{r}"), 
+                thsad=mdgSAD, plane=plane, thscd1=thSCD1, thscd2=thSCD2)
+
+            degrained = degrain(input, super, *itertools.chain.from_iterable(zip(bvecs[:r], fvecs[:r])))
+            degrained_super = core.mv.Super(degrained, levels=1, pel=pel, chroma=chroma)
         else:
             degrained = input
-    else:
-        degrained = input
+            degrained_super = super
 
-    # Motion Compensation.
-    degrained_super = haf.DitherLumaRebuild(degrained, s0=1, chroma=chroma).mv.Super(pel=pel, levels=1, chroma=chroma) if mdg else super
-    compensate_args = dict(thsad=thSAD, thscd1=thSCD1, thscd2=thSCD2)
-    bclip = []
-    fclip = []
-    for i in range(1, mc+1):
-        bclip.append(core.mv.Compensate(degrained, degrained_super, bvec[i-1], **compensate_args))
-        fclip.append(core.mv.Compensate(degrained, degrained_super, fvec[i-1], **compensate_args))
+        # Motion Compensation.
+        compensate = functools.partial(
+            core.mv.Compensate, 
+            clip=degrained, super=degrained_super, thsad=thSAD, thscd1=thSCD1, thscd2=thSCD2)
 
-    # Create compensated clip.
-    fclip.reverse()
-    interleaved = core.std.Interleave(fclip + [degrained] + bclip) if mc >= 1 else degrained
+        bclips = [compensate(vectors=bvec) for bvec in bvecs]
+        fclips = [compensate(vectors=fvec) for fvec in fvecs]
 
-    # Perform dfttest.
-    filtered = core.dfttest.DFTTest(interleaved, sigma=sigma, sbsize=sbsize, sosize=sosize, tbsize=tbsize, **dfttest_params)
+        # Create compensated clip.
+        interleaved = core.std.Interleave([*fclips[::-1], degrained, *bclips])
 
-    return core.std.SelectEvery(filtered, mc * 2 + 1, mc) if mc > 1 else filtered
+        # Perform dfttest.
+        filtered = core.dfttest.DFTTest(
+            interleaved, sigma=sigma, sbsize=sbsize, sosize=sosize, tbsize=tbsize, **dfttest_params)
+
+        return core.std.SelectEvery(filtered, mc * 2 + 1, mc)
 
 
 def TurnLeft(clip: vs.VideoNode) -> vs.VideoNode:
@@ -5604,7 +5604,7 @@ def VFRSplice(clips: Sequence[vs.VideoNode], tcfile: Optional[str] = None, v2: b
     return core.std.Splice(clips, mismatch=True)
 
 
-def MSR(clip: vs.VideoNode, *passes: numbers.Real, radius=1, planes: PlanesType = None) -> vs.VideoNode:
+def MSR(clip: vs.VideoNode, *passes: numbers.Real, radius: int = 1, planes: PlanesType = None) -> vs.VideoNode:
     """Multiscale Retinex
 
     Multiscale retinex is a local contrast enhancement algorithm, 
