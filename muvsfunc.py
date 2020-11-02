@@ -2754,7 +2754,7 @@ def dfttestMC(input: vs.VideoNode, pp: Optional[vs.VideoNode] = None, mc: int = 
         fclips = [compensate(vectors=fvec) for fvec in fvecs]
 
         # Create compensated clip.
-        interleaved = core.std.Interleave([*fclips[::-1], degrained, *bclips])
+        interleaved = core.std.Interleave(fclips[::-1] + [degrained] + bclips)
 
         # Perform dfttest.
         filtered = core.dfttest.DFTTest(
@@ -3175,9 +3175,15 @@ def GuidedFilter(input: vs.VideoNode, guidance: Optional[vs.VideoNode] = None, r
             a = core.std.FrameEval(weight, functools.partial(FLT2, cov_Ip=cov_Ip, weight_in=weight_in, weight=weight, 
                 var_I=var_I, core=core, eps=eps), prop_src=[weight_in])
     else: # regulation_mode == 0, Original Guided Filter
-        a = core.std.Expr([cov_Ip, var_I], ['x y {} + /'.format(eps)])
+        if cov_Ip is var_I:
+            a = core.std.Expr([cov_Ip], ['x x {} + /'.format(eps)])
+        else:
+            a = core.std.Expr([cov_Ip, var_I], ['x y {} + /'.format(eps)])
 
-    b = core.std.Expr([mean_p, a, mean_I], ['x y z * -'])
+    if mean_p is mean_I:
+        b = core.std.Expr([mean_p, a], ['x y x * -'])
+    else:
+        b = core.std.Expr([mean_p, a, mean_I], ['x y z * -'])
 
     mean_a = Filter(a)
     mean_b = Filter(b)
