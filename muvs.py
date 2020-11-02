@@ -359,6 +359,8 @@ class _ArithmeticExpr:
         else:
             raise RuntimeError("Arithmetic expression is disabled.")
 
+        self._cached = None # type: Optional[_VideoNode]
+
     def __getattr__(self, name):
         if hasattr(_vscore, name) or hasattr(self.clips[0], name):
             return getattr(self.compute(), name)
@@ -403,7 +405,7 @@ class _ArithmeticExpr:
             return ' '.join(_to_var(item) for item in self._expr).strip()
         else:
             return ""
-    
+
     @property
     def lut_func(self) -> Callable[..., numbers.Integral]:
         clips = self.clips
@@ -454,10 +456,10 @@ class _ArithmeticExpr:
             def __init__(self, func_str: str):
                 self.func = eval(func_str)
                 self.func_str = func_str
-            
+
             def __call__(self, *args, **kwargs):
                 return self.func(*args, **kwargs)
-            
+
             def __repr__(self):
                 return self.func_str
 
@@ -466,18 +468,24 @@ class _ArithmeticExpr:
     def _operate(self, op: str, *operands, position=0) -> '_ArithmeticExpr':
         # accepted operands: Union[numbers.Real, _VideoNode, _ArithmeticExpr]
 
+        def expr_to_element(expr):
+            if expr._cached is not None:
+                return (expr._cached,)
+            else:
+                return expr._expr
+
         def to_element(obj):
             if isinstance(obj, numbers.Real):
                 return (repr(float(obj)),)
             elif isinstance(obj, _VideoNode):
                 return (obj,)
             elif isinstance(obj, _ArithmeticExpr):
-                return obj._expr
+                return expr_to_element(obj)
             else:
                 raise TypeError(f"{type(self).__name__!r}: Unknown input ({type(obj)})")
 
         _expr = [to_element(operand) for operand in operands]
-        _expr.insert(position, self._expr)
+        _expr.insert(position, expr_to_element(self))
 
         # "X X *" -> "X dup *"
         # _expr[i] == self._expr cannot be used since == is overloaded to return non-boolean value
@@ -491,6 +499,11 @@ class _ArithmeticExpr:
 
     def compute(self, planes=None, bits=None, use_lut=None) -> '_VideoNode':
         if options.arithmetic_expr:
+            cacheable = planes is None and bits is None and use_lut is None
+
+            if cacheable and self._cached is not None:
+                return self._cached
+
             if self.expr in ['', 'x']: # empty expr
                 return _VideoNode(clips[0]._node)
             else:
@@ -544,8 +557,13 @@ class _ArithmeticExpr:
                             subsampling_h=in_format.subsampling_h
                         )
 
-                    return core.std.Expr(clips=clips, expr=expr, format=out_format)
-                
+                    res = core.std.Expr(clips=clips, expr=expr, format=out_format)
+
+                    if cacheable:
+                        self._cached = res
+
+                    return res
+
         else:
             raise RuntimeError("Arithmetic expression is disabled.")
 
