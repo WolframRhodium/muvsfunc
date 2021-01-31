@@ -513,7 +513,7 @@ class _ArithmeticExpr:
                 return self._cached
 
             if self.expr in ['', 'x']: # empty expr
-                return _VideoNode(clips[0]._node)
+                return _VideoNode(self.clips[0]._node)
             else:
                 clips = self.clips
 
