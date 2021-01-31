@@ -107,7 +107,7 @@ def pollute(*modules):
 
 class _Options:
     def __init__(self):
-        self._file = ""
+        self._filename_or_stream = ""
         self._mode = 'a'
         self._open_kwargs = {}
         self._arithmetic_expr = False
@@ -144,8 +144,8 @@ class _Options:
     def is_recording(self) -> bool:
         return self._record
 
-    def start_recording(self, file, mode='a', **open_kwargs):
-        self._file = file
+    def start_recording(self, filename_or_stream, mode='a', **open_kwargs):
+        self._filename_or_stream = filename_or_stream
         self._mode = mode
         self._open_kwargs = open_kwargs
         self._buffer.clear()
@@ -165,19 +165,23 @@ class _Options:
 
     def end_recording(self):
         if self._buffer:
-            with open(file=self._file, mode=self._mode, **self._open_kwargs) as f:
-                f.writelines(self._buffer)
-                f.writelines(['\n'] * 5)
+            if isinstance(self._filename_or_stream, str):
+                with open(file=self._filename_or_stream, mode=self._mode, **self._open_kwargs) as f:
+                    f.writelines(self._buffer)
+                    f.writelines(['\n'] * 5)
+            else:
+                stream = self._filename_or_stream
+                stream.writelines(self._buffer)
 
-        self._file = ""
+        self._filename_or_stream = ""
         self._mode = 'a'
         self._open_kwargs.clear()
         self._buffer.clear()
         self._record = False
 
     @contextmanager
-    def record(self, file, mode='a', **open_kwargs):
-        self.start_recording(file=file, mode=mode, **open_kwargs)
+    def record(self, filename_or_stream, mode='a', **open_kwargs):
+        self.start_recording(filename_or_stream=filename_or_stream, mode=mode, **open_kwargs)
 
         try:
             yield None
