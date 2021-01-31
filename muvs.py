@@ -16,7 +16,6 @@ functions for expression:
 
 """
 
-from collections import OrderedDict
 import collections.abc
 from contextlib import contextmanager
 import functools
@@ -382,7 +381,7 @@ class _ArithmeticExpr:
     @property
     def clips(self):
         """Ordered _VideoNode(s)"""
-        return tuple(OrderedDict((obj, None) for obj in self._expr if isinstance(obj, _VideoNode)).keys())
+        return tuple(obj for obj in self._expr if isinstance(obj, _VideoNode))
 
     @property
     def expr(self) -> str:
@@ -492,6 +491,8 @@ class _ArithmeticExpr:
         for i in range(position + 1, len(_expr)):
             if len(_expr[i]) == len(self._expr) and all((hash(x) == hash(y)) for x, y in zip(_expr[i], self._expr)):
                 _expr[i] = ("dup",)
+            else:
+                break
 
         _expr.append((op,))
 
