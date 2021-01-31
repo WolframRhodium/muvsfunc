@@ -460,7 +460,7 @@ class _ArithmeticExpr:
 
         class _LambdaFunction:
             def __init__(self, func_str: str):
-                self.func = eval(func_str)
+                self.func = eval(func_str, {"exp": math.exp, "log": math.log, "sqrt": math.sqrt})
                 self.func_str = func_str
 
             def __call__(self, *args, **kwargs):
