@@ -31,8 +31,8 @@ import vapoursynth as vs
 from vapoursynth import core as _vscore
 
 
-__all__ = ["core", "options", "pollute", "Abs", "Exp", "Not", "Log", 
-           "Sqrt", "Min", "Max", "Conditional"]
+__all__ = ["core", "options", "pollute", "Abs", "Exp", "Expr", "Not", 
+           "Log", "Sqrt", "Min", "Max", "Conditional"]
 
 
 class _Core:
@@ -412,6 +412,9 @@ class _ArithmeticExpr:
         else:
             return ""
 
+    def get_expr(self, namer) -> str:
+        return ' '.join(namer(item) for item in self._expr).strip()
+
     @property
     def lut_func(self) -> Callable[..., numbers.Integral]:
         clips = self.clips
@@ -761,6 +764,9 @@ def _build_VideoNode():
     def __len__(self):
         return self.num_frames
 
+    def __str__(self):
+        return "muvs " + str(self._node)
+
     def __bool__(self):
         return NotImplemented
 
@@ -826,6 +832,50 @@ def _build_VideoNode():
     return type("_VideoNode", (), _dict)
 
 _VideoNode = _build_VideoNode()
+
+
+def Expr(exprs) -> '_VideoNode':
+    if isinstance(exprs, _VideoNode):
+        exprs = [_ArithmeticExpr(exprs)]
+    elif isinstance(exprs, _ArithmeticExpr):
+        exprs = [exprs]
+    elif isinstance(exprs, collections.abc.Sequence):
+        if len(exprs) == 0:
+            raise ValueError("Empty expression")
+
+        for i in range(len(exprs)):
+            if isinstance(exprs[i], _VideoNode):
+                exprs[i] = _ArithmeticExpr(exprs[i])
+            if not isinstance(exprs[i], _ArithmeticExpr):
+                raise TypeError(f"Invalid type ({type(expr[i])})")
+
+    def _to_var_factory() -> Callable[..., str]:
+        _clip_var_mapping = {} # type: Dict[_VideoNode, str]
+        _vars = "xyzabcdefghijklmnopqrstuvw"
+        def closure(obj):
+            if isinstance(obj, _VideoNode):
+                if obj in _clip_var_mapping or len(_clip_var_mapping) < len(_vars):
+                    return _clip_var_mapping.setdefault(obj, f"{_vars[len(_clip_var_mapping)]}")
+                else:
+                    raise RuntimeError(f"{type(self).__name__!r}: Too many nodes")
+            else:
+                return obj
+        return closure
+
+    _to_var = _to_var_factory()
+
+    num_planes = exprs[0].clips[0].format.num_planes
+    for i in range(len(exprs), num_planes):
+        exprs.append(exprs[-1])
+
+    expr_strs = []
+    for i in range(num_planes):
+        expr_strs.append(exprs[i].get_expr(_to_var))
+
+    clips = tuple(OrderedDict((obj, None) for obj in itertools.chain.from_iterable(expr.clips for expr in exprs)).keys())
+
+    return core.std.Expr(clips, expr_strs)
+
 
 
 # custom operations
