@@ -846,8 +846,8 @@ def Expr(exprs) -> '_VideoNode':
         for i in range(len(exprs)):
             if isinstance(exprs[i], _VideoNode):
                 exprs[i] = _ArithmeticExpr(exprs[i])
-            if not isinstance(exprs[i], _ArithmeticExpr):
-                raise TypeError(f"Invalid type ({type(expr[i])})")
+            elif exprs[i] is not None and not isinstance(exprs[i], (_ArithmeticExpr, numbers.Real)):
+                raise TypeError(f"Invalid type ({type(exprs[i])})")
 
     def _to_var_factory() -> Callable[..., str]:
         _clip_var_mapping = {} # type: Dict[_VideoNode, str]
@@ -870,9 +870,18 @@ def Expr(exprs) -> '_VideoNode':
 
     expr_strs = []
     for i in range(num_planes):
-        expr_strs.append(exprs[i].get_expr(_to_var))
+        if exprs[i] is None:
+            expr_strs.append("")
+        elif isinstance(exprs[i], numbers.Real):
+            expr_strs.append(str(exprs[i]))
+        else:
+            expr_strs.append(exprs[i].get_expr(_to_var))
 
-    clips = tuple(OrderedDict((obj, None) for obj in itertools.chain.from_iterable(expr.clips for expr in exprs)).keys())
+    clips = (
+        tuple(OrderedDict((obj, None) for obj in itertools.chain.from_iterable(
+            expr.clips for expr in exprs 
+            if isinstance(expr, _ArithmeticExpr)
+        )).keys()))
 
     return core.std.Expr(clips, expr_strs)
 
