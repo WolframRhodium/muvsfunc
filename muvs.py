@@ -834,7 +834,7 @@ def _build_VideoNode():
 _VideoNode = _build_VideoNode()
 
 
-def Expr(exprs) -> '_VideoNode':
+def Expr(exprs, format=None) -> '_VideoNode':
     if isinstance(exprs, _VideoNode):
         exprs = [_ArithmeticExpr(exprs)]
     elif isinstance(exprs, _ArithmeticExpr):
@@ -882,7 +882,12 @@ def Expr(exprs) -> '_VideoNode':
         elif isinstance(exprs[i], numbers.Real):
             expr_strs.append(str(exprs[i]))
         else:
-            expr_strs.append(exprs[i].get_expr(_to_var))
+            expr_str = exprs[i].get_expr(_to_var)
+
+            if expr_str == 'x':
+                expr_strs.append('')
+            else:
+                expr_strs.append(expr_str)
 
     clips = (
         tuple(OrderedDict((obj, None) for obj in itertools.chain.from_iterable(
@@ -890,7 +895,7 @@ def Expr(exprs) -> '_VideoNode':
             if isinstance(expr, _ArithmeticExpr)
         )).keys()))
 
-    return core.std.Expr(clips, expr_strs)
+    return core.std.Expr(clips, expr_strs, format)
 
 
 
