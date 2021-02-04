@@ -849,6 +849,17 @@ def Expr(exprs) -> '_VideoNode':
             elif exprs[i] is not None and not isinstance(exprs[i], (_ArithmeticExpr, numbers.Real)):
                 raise TypeError(f"Invalid type ({type(exprs[i])})")
 
+    for expr in exprs:
+        if isinstance(expr, _ArithmeticExpr):
+            num_planes = expr.clips[0].format.num_planes
+
+            for i in range(len(exprs), num_planes):
+                exprs.append(exprs[-1])
+
+            break
+    else:
+        raise ValueError("No clip is given")
+
     def _to_var_factory() -> Callable[..., str]:
         _clip_var_mapping = {} # type: Dict[_VideoNode, str]
         _vars = "xyzabcdefghijklmnopqrstuvw"
@@ -863,10 +874,6 @@ def Expr(exprs) -> '_VideoNode':
         return closure
 
     _to_var = _to_var_factory()
-
-    num_planes = exprs[0].clips[0].format.num_planes
-    for i in range(len(exprs), num_planes):
-        exprs.append(exprs[-1])
 
     expr_strs = []
     for i in range(num_planes):
