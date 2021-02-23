@@ -292,11 +292,9 @@ class _Plugin:
                 for arg_name, arg_value in zip(func_arg_names, args):
                     if arg_name in kwargs:
                         raise TypeError(f"{func.name}() got multiple values for argument \'{arg_name}\'")
-                    else:
-                        kwargs[arg_name] = arg_value
 
                 # process
-                output = func(**kwargs)
+                output = func(*args, **kwargs)
 
                 if isinstance(output, vs.VideoNode):
                     _ = _repr(output, default_prefix="clip") # register output
