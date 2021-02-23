@@ -288,8 +288,15 @@ class _Plugin:
                 args = get_node(args)
                 kwargs = dict((get_key(key), get_node(value)) for key, value in kwargs.items())
 
+                func_arg_names = (key[:key.find(':')] for key in func.signature.split(';') if key != '')
+                for arg_name, arg_value in zip(func_arg_names, args):
+                    if arg_name in kwargs:
+                        raise TypeError(f"{func.name}() got multiple values for argument \'{arg_name}\'")
+                    else:
+                        kwargs[arg_name] = arg_value
+
                 # process
-                output = func(*args, **kwargs)
+                output = func(**kwargs)
 
                 if isinstance(output, vs.VideoNode):
                     _ = _repr(output, default_prefix="clip") # register output
