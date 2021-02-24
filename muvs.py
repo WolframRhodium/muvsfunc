@@ -289,7 +289,7 @@ class _Plugin:
                 kwargs = dict((get_key(key), get_node(value)) for key, value in kwargs.items())
 
                 func_arg_names = (key[:key.find(':')] for key in func.signature.split(';') if key != '')
-                for arg_name in func_arg_names:
+                for _, arg_name in zip(args, func_arg_names):
                     if arg_name in kwargs:
                         raise TypeError(f"{func.name}() got multiple values for argument \'{arg_name}\'")
 
