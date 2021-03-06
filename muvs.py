@@ -381,8 +381,8 @@ def _postfix2infix(expr: str) -> str:
         elif next_val.startswith("dup") and next_val[3:].isdecimal():
             elem = stack[-int(next_val[3:]) - 1]
             stack.append(elem)
-        elif next_val.startswith("swap") and next_val[3:].isdecimal():
-            index = -int(next_val[3:]) - 1
+        elif next_val.startswith("swap") and next_val[4:].isdecimal():
+            index = -int(next_val[4:]) - 1
             elem = stack[index]
             stack = stack[:index] + [stack[-1]] + stack[index+1:-1] + [elem]
         elif next_val.islower(): # vars
