@@ -1015,7 +1015,7 @@ def Max(x, y):
 def Conditional(condition, condition_if_true, condition_if_false):
     try:
         return condition_if_true if condition else condition_if_false
-    except TypeError:
+    except RuntimeError:
         if isinstance(condition, (_ArithmeticExpr, _VideoNode)):
             return condition.__conditional__(condition_if_true, condition_if_false)
         elif isinstance(condition_if_true, (_ArithmeticExpr, _VideoNode)):

@@ -13,6 +13,7 @@ Miscellaneous functions:
     XDoG
     sbr_detail
     fade
+    fast_mandelbrot
 """
 
 import functools
@@ -564,3 +565,65 @@ def fade(clip, start=0, end=None, mode='in', base=None):
                 return core.std.Expr([clip, base], ['x {} * y {} * +'.format(i, 1 - i)])
 
     return core.std.FrameEval(clip, functools.partial(fade_core, clip=clip, start=start, end=end, mode=mode, base=base))
+
+
+def fast_mandelbrot(width=1920, height=1280, iterations=50, 
+    real_range=(-2, 1), imag_range=(-1, 1), c=0+0j, julia_set=False):
+
+    import array
+
+    def meshgrid_core(n, f, low, high, horizontal):
+        assert low < high, f"{low} < {high}"
+
+        f = f.copy()
+        mem_view = f.get_write_array(0)
+        height, width = mem_view.shape
+
+        if horizontal:
+            data = array.array('f', (((high - low) * j / (width - 1) + low) for j in range(width)))
+
+            for i in range(height):
+                mem_view[i, :] = data
+        else:
+            for i in range(height):
+                mem_view[i, :] = array.array('f', [(low - high) * i / (height - 1) + high]) * width
+
+        return f
+
+    c = complex(c)
+
+    ones = core.std.BlankClip(format=vs.GRAYS, width=width, height=height, length=1, color=1)
+
+    z_real = core.std.ModifyFrame(
+        ones, ones, 
+        functools.partial(meshgrid_core, horizontal=True, low=real_range[0], high=real_range[1]))
+
+    z_imag = core.std.ModifyFrame(
+        ones, ones, 
+        functools.partial(meshgrid_core, horizontal=False, low=imag_range[0], high=imag_range[1]))
+
+    if julia_set:
+        inner = (
+            f"dup2 dup2 * dup0 + {c.imag} + " # new z_imag
+            f"dup3 dup0 * dup3 dup0 * - {c.real} + " # new z_real
+            "dup1 dup0 * dup1 dup0 * + 4 < " # mask
+            "swap1 dup1 swap6 ? " # update z_real
+            "swap4 swap1 dup1 swap4 ? " # update z_imag
+            f"swap2 swap1 dup0 {1/iterations} - swap1 ? " # update counter
+        )
+
+        expr = f"x y z {inner * iterations} 1 swap2 ? 1 swap2 ?"
+
+    else:
+        inner = (
+            "dup2 dup2 * dup0 + y + " # new z_imag
+            "dup3 dup0 * dup3 dup0 * - x + " # new z_real
+            "dup1 dup0 * dup1 dup0 * + 4 < " # mask
+            "swap1 dup1 swap6 ? " # update z_real
+            "swap4 swap1 dup1 swap4 ? " # update z_imag
+            f"swap2 swap1 dup0 {1/iterations} - swap1 ? " # update counter
+        )
+
+        expr = f"{c.real} {c.imag} z {inner * iterations} 1 swap2 ? 1 swap2 ?"
+
+    return core.std.Expr([z_real, z_imag, ones], expr)
