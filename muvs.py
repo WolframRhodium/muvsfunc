@@ -5,14 +5,17 @@ An interface to VapourSynth
 
 objects:
     core (resembles vapoursynth.core)
-    options
 
 functions:
-    pollute
+    pollute (poisons for foreign modules)
+    expr (switch for arithmetic expression)
+    Expr (resembles core.std.Expr(), but with infix expression)
+    record (computational graph recorder, resembles open())
+    Recorder (base class for recorder)
 
-functions for expression:
-    Abs, Exp, Not, Log, Sqrt, 
-    Min, Max, Conditional
+functions for arithmetic expression:
+    Abs, Exp, Not, And, Or, Xor, Log, 
+    Sqrt, Min, Max, Conditional
 
 """
 
@@ -798,10 +801,10 @@ def _build_VideoNode():
         return "muvs " + str(self._node)
 
     def __bool__(self):
-        return NotImplemented
+        raise RuntimeError("Impossible")
 
     def __dir__(self):
-        return dir(self._node) + _plane_identifiers[self.format.color_family]
+        return dir(self._node) + list(_plane_idx_mapping[self.format.color_family].keys())
 
     def __hash__(self):
         return hash(self._node)
