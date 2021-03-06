@@ -24,15 +24,17 @@ import inspect
 import itertools
 import math
 import numbers
-from typing import Union, Optional, Dict, List, Callable, MutableMapping
+from typing import Union, Optional, Dict, List, Callable, MutableMapping, MutableSet
 import weakref
 
 import vapoursynth as vs
 from vapoursynth import core as _vscore
 
 
-__all__ = ["core", "options", "pollute", "Abs", "Exp", "Expr", "Not", 
-           "Log", "Sqrt", "Min", "Max", "Conditional"]
+__all__ = [
+    "core", "expr", "pollute", "Expr", "Recorder", 
+    "Abs", "Exp", "Not", "And", "Or", "Xor", 
+    "Log", "Sqrt", "Min", "Max", "Conditional"]
 
 
 class _Core:
@@ -49,7 +51,7 @@ class _Core:
                 else:
                     raise AttributeError("Attribute name should be capitalized")
             else:
-                self.__dict__[name] = value
+                vars(self)[name] = value
 
     def __getattr__(self, name):
         try:
@@ -83,6 +85,7 @@ def pollute(*modules):
     class _FakeVS:
         def __init__(self):
             self.VideoNode = _VideoNode
+            self.core = core
             self.get_core = lambda : core
 
         def __getattr__(self, name):
@@ -94,10 +97,12 @@ def pollute(*modules):
     if len(modules) == 0:
         import sys
         for name, module in sys.modules.items():
-            if (name not in ("__vapoursynth__", "__main__") and
+            if (
+                name not in ("__vapoursynth__", "__main__") and
                 getattr(module, "core", None) is not core and
-                ((getattr(module, "vs", None) is vs) or (getattr(module, "core", None) is _vscore))
-                ):
+                ((getattr(module, "vs", None) is vs) or 
+                 (getattr(module, "core", None) is _vscore))
+            ):
                 module.core = core
                 module.vs = _vs
     else:
@@ -106,54 +111,34 @@ def pollute(*modules):
             module.vs = _vs
 
 
-class _Options:
+arithmetic_expr : bool = False
+
+@contextmanager
+def expr():
+    global arithmetic_expr
+    prev_expr = arithmetic_expr
+
+    arithmetic_expr = True
+
+    try:
+        yield None
+    finally:
+        arithmetic_expr = prev_expr
+
+
+class Recorder:
+    _live_recorders : MutableSet["Recorder"] = weakref.WeakSet()
+
     def __init__(self):
-        self._filename_or_stream = ""
-        self._mode = 'a'
-        self._open_kwargs = {}
-        self._arithmetic_expr = False
-        self._buffer = [] # type: List[str]
-        self._record = False
-        self._include_header = True
+        self.buffer : List[str] = []
+        self.is_recording : bool = False
+        Recorder._live_recorders.add(self)
 
-    @property
-    def arithmetic_expr(self) -> bool:
-        return self._arithmetic_expr
+    def start_recording(self, include_header=False):
+        self.is_recording = True
 
-    def enable_arithmetic_expr(self):
-        self._arithmetic_expr = True
-
-    def disable_arithmetic_expr(self):
-        self._arithmetic_expr = False
-
-    @contextmanager
-    def expr(self):
-        prev_expr = self._arithmetic_expr
-
-        self.enable_arithmetic_expr()
-
-        try:
-            yield None
-        finally:
-            self._arithmetic_expr = prev_expr
-
-    @property
-    def buffer(self) -> List[str]:
-        return self._buffer
-
-    @property
-    def is_recording(self) -> bool:
-        return self._record
-
-    def start_recording(self, filename_or_stream, mode='a', **open_kwargs):
-        self._filename_or_stream = filename_or_stream
-        self._mode = mode
-        self._open_kwargs = open_kwargs
-        self._buffer.clear()
-        self._record = True
-
-        if self._include_header:
-            self._buffer.append(
+        if include_header:
+            self.buffer.append(
                 "import vapoursynth as vs\n"
                 "from vapoursynth import core\n"
                 "\n"
@@ -162,34 +147,27 @@ class _Options:
                 f"core.max_cache_size = {core.max_cache_size}\n"
                 "\n")
 
-            self._include_header = False
+    def end_recording(self, filename_or_stream, mode='a', **open_kwargs):
+        self.is_recording = False
 
-    def end_recording(self):
-        if self._buffer:
-            if isinstance(self._filename_or_stream, str):
-                with open(file=self._filename_or_stream, mode=self._mode, **self._open_kwargs) as f:
-                    f.writelines(self._buffer)
-                    f.writelines(['\n'] * 5)
+        if self.buffer:
+            if isinstance(filename_or_stream, str):
+                with open(filename_or_stream, mode=mode, **open_kwargs) as f:
+                    f.writelines(self.buffer)
             else:
-                stream = self._filename_or_stream
-                stream.writelines(self._buffer)
+                stream = filename_or_stream
+                stream.writelines(self.buffer)
 
-        self._filename_or_stream = ""
-        self._mode = 'a'
-        self._open_kwargs.clear()
-        self._buffer.clear()
-        self._record = False
+            self.buffer.clear()
 
     @contextmanager
-    def record(self, filename_or_stream, mode='a', **open_kwargs):
-        self.start_recording(filename_or_stream=filename_or_stream, mode=mode, **open_kwargs)
+    def record(self, filename_or_stream, mode='a', include_header=False, **open_kwargs):
+        self.start_recording(include_header)
 
         try:
             yield None
         finally:
-            self.end_recording()
-
-options = _Options()
+            self.end_recording(filename_or_stream=filename_or_stream, mode=mode, **open_kwargs)
 
 
 def _build_repr() -> Callable[..., str]:
@@ -212,13 +190,14 @@ def _build_repr() -> Callable[..., str]:
             return closure(obj._node, default_prefix)
 
         elif isinstance(obj, collections.abc.Sequence) and not isinstance(obj, (str, bytes, bytearray)):
-            return '[' + ', '.join(closure(elem, default_prefix) for elem in obj) + ']'
+            return f"[{', '.join(closure(elem, default_prefix) for elem in obj)}]"
 
         elif isinstance(obj, (vs.ColorFamily, vs.PresetFormat, vs.SampleType)):
             return f"vs.{obj!s}"
 
         elif isinstance(obj, vs.Format):
-            return f"core.register_format({', '.join(k + '=' + closure(v) for k, v in obj._as_dict().items())})"
+            arg_str = ', '.join(f"{k}={closure(v)}" for k, v in obj._as_dict().items())
+            return f"core.register_format({arg_str})"
 
         else:
             return repr(obj)
@@ -258,7 +237,10 @@ class _Plugin:
                         return obj._node
                     elif isinstance(obj, _ArithmeticExpr):
                         return obj.compute()._node
-                    elif isinstance(obj, collections.abc.Sequence) and not isinstance(obj, (str, bytes, bytearray)):
+                    elif (
+                        isinstance(obj, collections.abc.Sequence) and 
+                        not isinstance(obj, (str, bytes, bytearray))
+                    ):
                         return type(obj)(get_node(item) for item in obj)
                     elif callable(obj):
                         class _remove_wrap:
@@ -288,10 +270,16 @@ class _Plugin:
                 args = get_node(args)
                 kwargs = dict((get_key(key), get_node(value)) for key, value in kwargs.items())
 
-                func_arg_names = (key[:key.find(':')] for key in func.signature.split(';') if key != '')
+                func_arg_names = (
+                    key[:key.find(':')] 
+                    for key in func.signature.split(';') 
+                    if key != '')
+
                 for _, arg_name in zip(args, func_arg_names):
                     if arg_name in kwargs:
-                        raise TypeError(f"{func.name}() got multiple values for argument \'{arg_name}\'")
+                        raise TypeError(
+                            f"{func.plugin.namespace}.{func.name}() "
+                            f"got multiple values for argument \'{arg_name}\'")
 
                 # process
                 output = func(*args, **kwargs)
@@ -299,8 +287,9 @@ class _Plugin:
                 if isinstance(output, vs.VideoNode):
                     _ = _repr(output, default_prefix="clip") # register output
 
-                    if options.is_recording:
-                        options.buffer.append(self._get_str(func, args, kwargs, output) + '\n')
+                    for recorder in Recorder._live_recorders:
+                        if recorder.is_recording:
+                            recorder.buffer.append(self._get_str(func, args, kwargs, output) + '\n')
 
                     return _VideoNode(output)
                 else:
@@ -354,9 +343,61 @@ class _Plugin:
         return output_str
 
 
+def _postfix2infix(expr: str) -> str:
+    stack = []
+
+    for next_val in expr.split():
+        if next_val in ["abs", "exp", "log", "sqrt"]:
+            stack[-1] = f"{next_val}({stack[-1]})"
+        elif next_val == "not":
+            stack[-1] = f"(not {stack[-1]})"
+        elif next_val == 'dup':
+            stack.append(stack[-1])
+        elif next_val in ['<', '<=', '>', '>=', '+', '-', '*', '/', 'and', 'or']:
+            stack = stack[:-2] + [f"({stack[-2]} {next_val} {stack[-1]})"]
+        elif next_val == '=':
+            stack = stack[:-2] + [f"({stack[-2]} == {stack[-1]})"]
+        elif next_val == 'pow':
+            stack = stack[:-2] + [f"({stack[-2]} ** {stack[-1]})"]
+        elif next_val == 'xor':
+            stack = stack[:-2] + [f"(({stack[-2]} and not {stack[-1]}) or "
+                                  f"(not {stack[-2]} and {stack[-1]}))"]
+        elif next_val in ['min', 'max']:
+            stack = stack[:-2] + [f"{next_val}({stack[-2]}, {stack[-1]})"]
+        elif next_val == '?':
+            stack = stack[:-3] + [f"({stack[-2]} if {stack[-3]} else {stack[-1]})"]
+        elif next_val == "swap":
+            stack = stack[:-2] + [stack[-1], stack[-2]]
+        elif next_val.startswith("dup") and next_val[3:].isdecimal():
+            elem = stack[-int(next_val[3:]) - 1]
+            stack.append(elem)
+        elif next_val.startswith("swap") and next_val[3:].isdecimal():
+            index = -int(next_val[3:]) - 1
+            elem = stack[index]
+            stack = stack[:index] + [stack[-1]] + stack[index+1:-1] + [elem]
+        elif next_val.islower(): # vars
+            stack.append(next_val)
+        else:
+            try:
+                val = float(next_val)
+            except ValueError:
+                raise ValueError(f"Unknown node in expr ({type(next_val)})")
+            else:
+                if val in [float("nan"), float("inf")]:
+                    raise ValueError(f"Invalid value ({val})")
+                else:
+                    stack.append(next_val)
+
+    if len(stack) == 1:
+        return stack[0]
+    else:
+        raise ValueError("Stack unbalanced at end of expression. "
+                         "Need to have exactly one value on the stack to return.")
+
+
 class _ArithmeticExpr:
     def __init__(self, obj): 
-        if options.arithmetic_expr:
+        if arithmetic_expr:
             if isinstance(obj, _VideoNode):
                 self._expr = (obj,)
             elif isinstance(obj, type(self)):
@@ -368,7 +409,7 @@ class _ArithmeticExpr:
         else:
             raise RuntimeError("Arithmetic expression is disabled.")
 
-        self._cached = None # type: Optional[_VideoNode]
+        self._cached_clip = None # type: Optional[_VideoNode]
 
     def __getattr__(self, name):
         if hasattr(_vscore, name) or hasattr(self.clips[0], name):
@@ -377,7 +418,7 @@ class _ArithmeticExpr:
             raise AttributeError(f"{type(self).__name__!r} object has no attribute {name!r}")
 
     def __bool__(self):
-        return NotImplemented
+        raise RuntimeError("Impossible")
 
     def __repr__(self):
         if len(self._expr) > 1:
@@ -426,39 +467,7 @@ class _ArithmeticExpr:
 
         assert len(clips) in [1, 2]
 
-        def rpn_parser(stack, next_val: str):
-            if isinstance(next_val, str): # operators or constants
-                if next_val in ["abs", "exp", "log", "sqrt"]:
-                    return stack[:-1] + (f"{next_val}({stack[-1]})",)
-                elif next_val == "not":
-                    return stack[:-1] + (f"(not {stack[-1]})",)
-                elif next_val == 'dup':
-                    return stack + (stack[-1],)
-                elif next_val in ['<', '<=', '>', '>=', '+', '-', '*', '/', 'and', 'or']:
-                    return stack[:-2] + (f"({stack[-2]} {next_val} {stack[-1]})",)
-                elif next_val == '=':
-                    return stack[:-2] + (f"({stack[-2]} == {stack[-1]})",)
-                elif next_val == '= not': # not triggered by current implementation
-                    return stack[:-2] + (f"({stack[-2]} != {stack[-1]})",)
-                elif next_val == 'pow':
-                    return stack[:-2] + (f"({stack[-2]} ** {stack[-1]})",)
-                elif next_val == 'xor':
-                    return stack[:-2] + (f"(({stack[-2]} and not {stack[-1]}) or (not {stack[-2]} and {stack[-1]}))",)
-                elif next_val in ['min', 'max']:
-                    return stack[:-2] + (f"{next_val}({stack[-2]}, {stack[-1]})",)
-                elif next_val == '?':
-                    return stack[:-3] + (f"({stack[-2]} if {stack[-3]} else {stack[-1]})",)
-                else: # vars, constants
-                    return stack + (next_val,)
-            else:
-                raise TypeError(f"Unknown node in expr ({type(next_val)})")
-
-        # postfix2infix
-        func_expr = functools.reduce(rpn_parser, self.expr.split(), ())
-
-        assert len(func_expr) == 1, str(func_exp)
-
-        func_impl = func_expr[0]
+        func_impl = _postfix2infix(self.expr)
         func_impl = f"min(max(int({func_impl} + 0.5), 0), {(2 ** clips[0].format.bits_per_sample) - 1})" # clamp
 
         if len(clips) == 1:
@@ -483,8 +492,8 @@ class _ArithmeticExpr:
         # accepted operands: Union[numbers.Real, _VideoNode, _ArithmeticExpr]
 
         def expr_to_element(expr):
-            if expr._cached is not None:
-                return (expr._cached,)
+            if expr._cached_clip is not None:
+                return (expr._cached_clip,)
             else:
                 return expr._expr
 
@@ -498,27 +507,30 @@ class _ArithmeticExpr:
             else:
                 raise TypeError(f"{type(self).__name__!r}: Unknown input ({type(obj)})")
 
-        _expr = [to_element(operand) for operand in operands]
-        _expr.insert(position, expr_to_element(self))
+        expr = [to_element(operand) for operand in operands]
+        expr.insert(position, expr_to_element(self))
 
         # "X X *" -> "X dup *"
         # _expr[i] == self._expr cannot be used since == is overloaded to return non-boolean value
-        for i in range(position + 1, len(_expr)):
-            if len(_expr[i]) == len(self._expr) and all((hash(x) == hash(y)) for x, y in zip(_expr[i], self._expr)):
-                _expr[i] = ("dup",)
+        for i in range(position + 1, len(expr)):
+            if (
+                len(expr[i]) == len(self._expr) and 
+                all((hash(x) == hash(y)) for x, y in zip(expr[i], self._expr))
+            ):
+                expr[i] = ("dup",)
             else:
                 break
 
-        _expr.append((op,))
+        expr.append((op,))
 
-        return type(self)(tuple(itertools.chain(*_expr)))
+        return type(self)(tuple(itertools.chain(*expr)))
 
     def compute(self, planes=None, bits=None, use_lut=None) -> '_VideoNode':
-        if options.arithmetic_expr:
+        if arithmetic_expr:
             cacheable = planes is None and bits is None and use_lut is None
 
-            if cacheable and self._cached is not None:
-                return self._cached
+            if cacheable and self._cached_clip is not None:
+                return self._cached_clip
 
             if self.expr in ['', 'x']: # empty expr
                 return _VideoNode(self.clips[0]._node)
@@ -526,7 +538,9 @@ class _ArithmeticExpr:
                 clips = self.clips
 
                 if bits is None:
-                    not_equal_bits = lambda clip1, clip2: clip1.format.bits_per_sample != clip2.format.bits_per_sample
+                    not_equal_bits = (
+                        lambda clip1, clip2: 
+                            clip1.format.bits_per_sample != clip2.format.bits_per_sample)
 
                     if len(clips) >= 2 and any(not_equal_bits(clips[0], clip) for clip in clips[1:]):
                         raise ValueError('"bits" must be specified.')
@@ -535,7 +549,9 @@ class _ArithmeticExpr:
 
                 is_int = lambda clip: clip.format.sample_type == vs.INTEGER
                 get_bits = lambda clip: clip.format.bits_per_sample
-                lut_available = lambda clips: len(clips) <= 2 and all(map(is_int, clips)) and sum(map(get_bits, clips)) <= 20
+                lut_available = (
+                    lambda clips: 
+                        len(clips) <= 2 and all(map(is_int, clips)) and sum(map(get_bits, clips)) <= 20)
 
                 if use_lut is None:
                     use_lut = lut_available(clips) and len(self._expr) >= 15
@@ -547,7 +563,8 @@ class _ArithmeticExpr:
                     if len(clips) == 1:
                         return core.std.Lut(clips[0], planes=planes, bits=bits, function=self.lut_func)
                     else: # len(clips) == 2
-                        return core.std.Lut2(clips[0], clips[1], planes=planes, bits=bits, function=self.lut_func)
+                        return core.std.Lut2(
+                            clips[0], clips[1], planes=planes, bits=bits, function=self.lut_func)
 
                 else: # std.Expr()
                     if planes is None:
@@ -576,7 +593,7 @@ class _ArithmeticExpr:
                     res = core.std.Expr(clips=clips, expr=expr, format=out_format)
 
                     if cacheable:
-                        self._cached = res
+                        self._cached_clip = res
 
                     return res
 
@@ -602,7 +619,7 @@ class _ArithmeticExpr:
     def __log__(self):
         return self._operate('log')
 
-    def __not__(self):
+    def __invert__(self):
         return self._operate('not')
 
     def __sqrt__(self):
@@ -753,11 +770,12 @@ def _build_VideoNode():
             if callable(attr): # set_output(), etc
                 @functools.wraps(attr)
                 def closure(*args, **kwargs):
-                    if options.is_recording:
-                        args_str = ', '.join(args)
-                        kwargs_str = ', '.join(f"{k}={_repr(v)}" for k, v in kwargs)
-                        call_str = ', '.join(s for s in [args_str, kwargs_str] if s != '')
-                        options.buffer.append(f"{_repr(self)}.{name}({call_str})\n")
+                    for recorder in Recorder._live_recorders:
+                        if recorder.is_recording:
+                            args_str = ', '.join(args)
+                            kwargs_str = ', '.join(f"{k}={_repr(v)}" for k, v in kwargs)
+                            call_str = ', '.join(s for s in [args_str, kwargs_str] if s != '')
+                            recorder.buffer.append(f"{_repr(self)}.{name}({call_str})\n")
 
                     return attr(*args, **kwargs)
 
@@ -822,19 +840,23 @@ def _build_VideoNode():
         else:
             raise TypeError(f"indices must be integers or slices, not {type(val)}")
 
-    _dict = locals().copy()
+    methods = locals().copy()
 
-    _create_method = (lambda name: 
+    create_method = (lambda name: 
                           lambda self, *args: 
                               getattr(_ArithmeticExpr(self), name)(*args))
 
-    _dict.update((attr, _create_method(attr)) for attr in ["__neg__", "__pos__", "__abs__", "__exp__", 
-        "__log__", "__not__", "__sqrt__", "__lt__", "__le__", "__eq__", "__ne__", "__gt__", "__ge__", 
-        "__add__", "__radd__", "__sub__", "__rsub__", "__mul__", "__rmul__", "__truediv__", "__rtruediv__", 
-        "__pow__", "__rpow__", "__and__", "__rand__", "__xor__", "__rxor__", "__or__", "__ror__", 
-        "__min__", "__rmin__", "__max__", "__rmax__", "__conditional__", "__rconditional__", "__rrconditional__"])
+    magic_methods = [
+        "__neg__", "__pos__", "__abs__", "__exp__", "__log__", "__invert__", "__sqrt__", "__lt__", 
+        "__le__", "__eq__", "__ne__", "__gt__", "__ge__", "__add__", "__radd__", "__sub__", 
+        "__rsub__", "__mul__", "__rmul__", "__truediv__", "__rtruediv__", "__pow__", "__rpow__", 
+        "__and__", "__rand__", "__xor__", "__rxor__", "__or__", "__ror__", "__min__", "__rmin__", 
+        "__max__", "__rmax__", "__conditional__", "__rconditional__", "__rrconditional__"
+    ]
 
-    return type("_VideoNode", (), _dict)
+    methods.update((name, create_method(name)) for name in magic_methods)
+
+    return type("_VideoNode", (), methods)
 
 _VideoNode = _build_VideoNode()
 
@@ -907,78 +929,88 @@ def Expr(exprs, format=None) -> '_VideoNode':
 # custom operations
 Abs = abs
 
-
-@functools.singledispatch
 def Exp(x):
-    return math.exp(x)
-
-@Exp.register(_ArithmeticExpr)
-@Exp.register(_VideoNode)
-def _(x) -> _ArithmeticExpr:
-    return x.__exp__()
+    if isinstance(x, (_ArithmeticExpr, _VideoNode)):
+        return x.__exp__()
+    else:
+        return math.exp(x)
 
 
-@functools.singledispatch
 def Not(x):
-    return not x
-
-@Not.register(_ArithmeticExpr)
-@Not.register(_VideoNode)
-def _(x) -> _ArithmeticExpr:
-    return x.__not__()
+    if isinstance(x, (_ArithmeticExpr, _VideoNode)):
+        return x.__invert__()
+    else:
+        return not x
 
 
-@functools.singledispatch
+def And(x, y):
+    if isinstance(x, (_ArithmeticExpr, _VideoNode)):
+        return x.__and__(y)
+    elif isinstance(y, (_ArithmeticExpr, _VideoNode)):
+        return y.__rand__(x)
+    else:
+        return x and y
+
+
+def Or(x, y):
+    if isinstance(x, (_ArithmeticExpr, _VideoNode)):
+        return x.__or__(y)
+    elif isinstance(y, (_ArithmeticExpr, _VideoNode)):
+        return y.__ror__(x)
+    else:
+        return x or y
+
+
+def Xor(x, y):
+    if isinstance(x, (_ArithmeticExpr, _VideoNode)):
+        return x.__xor__(y)
+    elif isinstance(y, (_ArithmeticExpr, _VideoNode)):
+        return y.__rxor__(x)
+    else:
+        return (x and not y) or (not x and y)
+
+
 def Log(x):
-    return math.log(x)
-
-@Log.register(_ArithmeticExpr)
-@Log.register(_VideoNode)
-def _(x) -> _ArithmeticExpr:
-    return x.__log__()
+    if isinstance(x, (_ArithmeticExpr, _VideoNode)):
+        return x.__log__()
+    else:
+        return math.log(x)
 
 
-@functools.singledispatch
 def Sqrt(x):
-    return math.sqrt(x)
-
-@Sqrt.register(_ArithmeticExpr)
-@Sqrt.register(_VideoNode)
-def _(x) -> _ArithmeticExpr:
-    return x.__sqrt__()
+    if isinstance(x, (_ArithmeticExpr, _VideoNode)):
+        return x.__sqrt__()
+    else:
+        return math.sqrt(x)
 
 
 def Min(x, y):
-    if isinstance(x, numbers.Real) and isinstance(y, numbers.Real):
-        return min(x, y)
-    elif hasattr(x, "__min__"):
+    if isinstance(x, (_ArithmeticExpr, _VideoNode)):
         return x.__min__(y)
-    elif hasattr(y, "__rmin__"):
+    elif isinstance(y, (_ArithmeticExpr, _VideoNode)):
         return y.__rmin__(x)
     else:
-        raise TypeError(f"'Min': Unknown input ({type(x)}, {type(y)})")
+        return min(x, y)
 
 
 def Max(x, y):
-    if isinstance(x, numbers.Real) and isinstance(y, numbers.Real):
-        return max(x, y)
-    elif hasattr(x, "__max__"):
+    if isinstance(x, (_ArithmeticExpr, _VideoNode)):
         return x.__max__(y)
-    elif hasattr(y, "__rmax__"):
+    elif isinstance(y, (_ArithmeticExpr, _VideoNode)):
         return y.__rmax__(x)
     else:
-        raise TypeError(f"'Max': Unknown input ({type(x)}, {type(y)})")
+        return max(x, y)
 
 
 def Conditional(condition, condition_if_true, condition_if_false):
     try:
-        return condition_if_true if bool(condition) else condition_if_false
+        return condition_if_true if condition else condition_if_false
     except TypeError:
-        if hasattr(condition, "__conditional__"):
+        if isinstance(condition, (_ArithmeticExpr, _VideoNode)):
             return condition.__conditional__(condition_if_true, condition_if_false)
-        elif hasattr(condition_if_true, "__rconditional__"):
+        elif isinstance(condition_if_true, (_ArithmeticExpr, _VideoNode)):
             return condition_if_true.__rconditional__(condition, condition_if_false)
-        elif hasattr(condition_if_false, "__rrconditional__"):
+        elif isinstance(condition_if_false, (_ArithmeticExpr, _VideoNode)):
             return condition_if_false.__rrconditional__(condition, condition_if_true)
         else:
             raise TypeError(f"'Conditional': Unknown input ({type(condition)}, "
