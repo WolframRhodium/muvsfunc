@@ -32,9 +32,9 @@ from vapoursynth import core as _vscore
 
 
 __all__ = [
-    "core", "expr", "pollute", "Expr", "Recorder", 
-    "Abs", "Exp", "Not", "And", "Or", "Xor", 
-    "Log", "Sqrt", "Min", "Max", "Conditional"]
+    "core", "expr", "pollute", "Expr", "record", "Recorder", 
+    "Abs", "Exp", "Not", "And", "Or", "Xor", "Log", "Sqrt", 
+    "Min", "Max", "Conditional"]
 
 
 class _Core:
@@ -160,14 +160,21 @@ class Recorder:
 
             self.buffer.clear()
 
-    @contextmanager
-    def record(self, filename_or_stream, mode='a', include_header=False, **open_kwargs):
-        self.start_recording(include_header)
+    def write(self, text):
+        assert isinstance(text, str)
+        self.buffer.append(text)
 
-        try:
-            yield None
-        finally:
-            self.end_recording(filename_or_stream=filename_or_stream, mode=mode, **open_kwargs)
+
+@contextmanager
+def record(filename_or_stream, mode='a', include_header=False, **open_kwargs):
+    recorder = Recorder()
+
+    recorder.start_recording(include_header)
+
+    try:
+        yield recorder
+    finally:
+        recorder.end_recording(filename_or_stream=filename_or_stream, mode=mode, **open_kwargs)
 
 
 def _build_repr() -> Callable[..., str]:
