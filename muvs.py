@@ -374,9 +374,11 @@ def _postfix2infix(expr: str, long_var_name=False) -> str:
         raise ValueError("Stack unbalanced at end of expression. "
                          "Need to have exactly one value on the stack to return.")
 
+
 class _Fake_VideoNode:
     """ Fake VideoNode used to bypass instance check in other scripts """
     pass
+
 
 class _ArithmeticExpr(_Fake_VideoNode):
     def __init__(self, obj): 
@@ -1002,6 +1004,7 @@ def Conditional(condition, condition_if_true, condition_if_false):
         else:
             raise TypeError(f"'Conditional': Unknown input ({type(condition)}, "
                             f"{type(condition_if_true)}, {type(condition_if_false)})")
+
 
 def pollute(*modules):
     class _FakeVS:
