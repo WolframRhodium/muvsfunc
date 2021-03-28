@@ -84,36 +84,6 @@ class _Core:
 core = _Core()
 
 
-def pollute(*modules):
-    class _FakeVS:
-        def __init__(self):
-            self.VideoNode = _VideoNode
-            self.core = core
-            self.get_core = lambda : core
-
-        def __getattr__(self, name):
-            return getattr(vs, name)
-
-    _vs = _FakeVS()
-
-    # modify symbol table of each module
-    if len(modules) == 0:
-        import sys
-        for name, module in sys.modules.items():
-            if (
-                name not in ("__vapoursynth__", "__main__") and
-                getattr(module, "core", None) is not core and
-                ((getattr(module, "vs", None) is vs) or 
-                 (getattr(module, "core", None) is _vscore))
-            ):
-                module.core = core
-                module.vs = _vs
-    else:
-        for module in modules:
-            module.core = core
-            module.vs = _vs
-
-
 arithmetic_expr : bool = False
 
 @contextmanager
@@ -353,7 +323,7 @@ class _Plugin:
         return output_str
 
 
-def _postfix2infix(expr: str) -> str:
+def _postfix2infix(expr: str, long_var_name=False) -> str:
     stack = []
 
     for next_val in expr.split():
@@ -385,13 +355,13 @@ def _postfix2infix(expr: str) -> str:
             index = -int(next_val[4:]) - 1
             elem = stack[index]
             stack = stack[:index] + [stack[-1]] + stack[index+1:-1] + [elem]
-        elif next_val.islower(): # vars
+        elif next_val.islower() and (long_var_name or len(next_val) == 1): # vars
             stack.append(next_val)
         else:
             try:
                 val = float(next_val)
             except ValueError:
-                raise ValueError(f"Unknown node in expr ({type(next_val)})")
+                raise ValueError(f"Unknown node in expr ({next_val})")
             else:
                 if val in [float("nan"), float("inf")]:
                     raise ValueError(f"Invalid value ({val})")
@@ -404,8 +374,11 @@ def _postfix2infix(expr: str) -> str:
         raise ValueError("Stack unbalanced at end of expression. "
                          "Need to have exactly one value on the stack to return.")
 
+class _Fake_VideoNode:
+    """ Fake VideoNode used to bypass instance check in other scripts """
+    pass
 
-class _ArithmeticExpr:
+class _ArithmeticExpr(_Fake_VideoNode):
     def __init__(self, obj): 
         if arithmetic_expr:
             if isinstance(obj, _VideoNode):
@@ -501,39 +474,43 @@ class _ArithmeticExpr:
     def _operate(self, op: str, *operands, position=0) -> '_ArithmeticExpr':
         # accepted operands: Union[numbers.Real, _VideoNode, _ArithmeticExpr]
 
-        def expr_to_element(expr):
-            if expr._cached_clip is not None:
-                return (expr._cached_clip,)
-            else:
-                return expr._expr
+        if arithmetic_expr:
+            def expr_to_element(expr):
+                if expr._cached_clip is not None:
+                    return (expr._cached_clip,)
+                else:
+                    return expr._expr
 
-        def to_element(obj):
-            if isinstance(obj, numbers.Real):
-                return (repr(float(obj)),)
-            elif isinstance(obj, _VideoNode):
-                return (obj,)
-            elif isinstance(obj, _ArithmeticExpr):
-                return expr_to_element(obj)
-            else:
-                raise TypeError(f"{type(self).__name__!r}: Unknown input ({type(obj)})")
+            def to_element(obj):
+                if isinstance(obj, numbers.Real):
+                    return (repr(float(obj)),)
+                elif isinstance(obj, _VideoNode):
+                    return (obj,)
+                elif isinstance(obj, _ArithmeticExpr):
+                    return expr_to_element(obj)
+                else:
+                    raise TypeError(f"{type(self).__name__!r}: Unknown input ({type(obj)})")
 
-        expr = [to_element(operand) for operand in operands]
-        expr.insert(position, expr_to_element(self))
+            expr = [to_element(operand) for operand in operands]
+            expr.insert(position, expr_to_element(self))
 
-        # "X X *" -> "X dup *"
-        # _expr[i] == self._expr cannot be used since == is overloaded to return non-boolean value
-        for i in range(position + 1, len(expr)):
-            if (
-                len(expr[i]) == len(self._expr) and 
-                all((hash(x) == hash(y)) for x, y in zip(expr[i], self._expr))
-            ):
-                expr[i] = ("dup",)
-            else:
-                break
+            # "X X *" -> "X dup *"
+            # _expr[i] == self._expr cannot be used since == is overloaded to return non-boolean value
+            for i in range(position + 1, len(expr)):
+                if (
+                    len(expr[i]) == len(self._expr) and 
+                    all((hash(x) == hash(y)) for x, y in zip(expr[i], self._expr))
+                ):
+                    expr[i] = ("dup",)
+                else:
+                    break
 
-        expr.append((op,))
+            expr.append((op,))
 
-        return type(self)(tuple(itertools.chain(*expr)))
+            return type(self)(tuple(itertools.chain(*expr)))
+
+        else:
+            raise RuntimeError("Arithmetic expression is disabled.")
 
     def compute(self, planes=None, bits=None, use_lut=None) -> '_VideoNode':
         if arithmetic_expr:
@@ -744,7 +721,7 @@ class _ArithmeticExpr:
         return self._operate('?', other_condition, other_true, position=2)
 
 
-def _build_VideoNode():
+def _build_VideoNode(fake_vn=None):
     _plane_idx_mapping = {
         vs.YUV: {'Y': 0, 'U': 1, 'V': 2}, 
         vs.RGB: {'R': 0, 'G': 1, 'B': 2}, 
@@ -866,9 +843,9 @@ def _build_VideoNode():
 
     methods.update((name, create_method(name)) for name in magic_methods)
 
-    return type("_VideoNode", (), methods)
+    return type("_VideoNode", (fake_vn,) if fake_vn is not None else (), methods)
 
-_VideoNode = _build_VideoNode()
+_VideoNode = _build_VideoNode(_Fake_VideoNode)
 
 
 def Expr(exprs, format=None) -> '_VideoNode':
@@ -1025,3 +1002,32 @@ def Conditional(condition, condition_if_true, condition_if_false):
         else:
             raise TypeError(f"'Conditional': Unknown input ({type(condition)}, "
                             f"{type(condition_if_true)}, {type(condition_if_false)})")
+
+def pollute(*modules):
+    class _FakeVS:
+        def __init__(self):
+            self.VideoNode = _Fake_VideoNode
+            self.core = core
+            self.get_core = lambda : core
+
+        def __getattr__(self, name):
+            return getattr(vs, name)
+
+    _vs = _FakeVS()
+
+    # modify symbol table of each module
+    if len(modules) == 0:
+        import sys
+        for name, module in sys.modules.items():
+            if (
+                name not in ("__vapoursynth__", "__main__") and
+                getattr(module, "core", None) is not core and
+                ((getattr(module, "vs", None) is vs) or 
+                 (getattr(module, "core", None) is _vscore))
+            ):
+                module.core = core
+                module.vs = _vs
+    else:
+        for module in modules:
+            module.core = core
+            module.vs = _vs
