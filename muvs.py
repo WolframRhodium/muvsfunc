@@ -363,7 +363,7 @@ def _postfix2infix(expr: str, long_var_name=False) -> str:
             except ValueError:
                 raise ValueError(f"Unknown node in expr ({next_val})")
             else:
-                if val in [float("nan"), float("inf")]:
+                if math.isnan(val) or math.isinf(val):
                     raise ValueError(f"Invalid value ({val})")
                 else:
                     stack.append(next_val)
