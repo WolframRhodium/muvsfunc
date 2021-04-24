@@ -1615,7 +1615,7 @@ def TCannyHelper(input: vs.VideoNode, t_h: float = 8.0, t_l: float = 1.0, plane:
     strongEdge = core.tcanny.TCanny(input, t_h=t_h+1e-4, t_l=t_h, mode=0, **canny_args)
     weakEdge = core.tcanny.TCanny(input, t_h=t_l+1e-4, t_l=t_l, mode=0, **canny_args)
 
-    view = core.std.Expr([strongEdge, weakEdge], ["x y + 0.5 *"])
+    view = core.std.Merge(strongEdge, weakEdge)
 
     if returnAll:
         tcannyOutput = core.tcanny.TCanny(input, t_h=t_h, t_l=t_l, mode=0, **canny_args)
