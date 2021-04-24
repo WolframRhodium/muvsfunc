@@ -1615,8 +1615,7 @@ def TCannyHelper(input: vs.VideoNode, t_h: float = 8.0, t_l: float = 1.0, plane:
     strongEdge = core.tcanny.TCanny(input, t_h=t_h+1e-4, t_l=t_h, mode=0, **canny_args)
     weakEdge = core.tcanny.TCanny(input, t_h=t_l+1e-4, t_l=t_l, mode=0, **canny_args)
 
-    expr = "x y and {peak} y {neutral} 0 ? ?".format(peak=1.0 if isFloat else (1 << bits) - 1, neutral=0.5 if isFloat else 1 << (bits - 1))
-    view = core.std.Expr([strongEdge, weakEdge], [expr])
+    view = core.std.Expr([strongEdge, weakEdge], ["x y + 0.5 *"])
 
     if returnAll:
         tcannyOutput = core.tcanny.TCanny(input, t_h=t_h, t_l=t_l, mode=0, **canny_args)
@@ -1927,7 +1926,6 @@ def SmoothGrad(input: vs.VideoNode, radius: int = 9, thr: float = 0.25,
     return mvf.LimitFilter(smooth, input, ref, thr, elast, planes=planes, **limit_filter_args)
 
 
-def DeFilter(clip: vs.VideoNode, func: VSFuncType, iteration: int = 10, planes: PlanesType = None, 
              step_size: float = 1., **func_args: Any) -> vs.VideoNode:
     '''Zero-order reverse filter
 
