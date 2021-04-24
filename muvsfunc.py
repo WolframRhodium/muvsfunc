@@ -1926,6 +1926,7 @@ def SmoothGrad(input: vs.VideoNode, radius: int = 9, thr: float = 0.25,
     return mvf.LimitFilter(smooth, input, ref, thr, elast, planes=planes, **limit_filter_args)
 
 
+def DeFilter(clip: vs.VideoNode, func: Callable[..., vs.VideoNode], iteration: int = 10, planes: PlanesType = None, 
              step_size: float = 1., **func_args: Any) -> vs.VideoNode:
     '''Zero-order reverse filter
 
