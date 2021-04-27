@@ -583,7 +583,7 @@ def _simplify(expr: ExprIR) -> ExprIR:
         if isinstance(expr, SqrtN):
             x = _simplify(expr.x)
             if isinstance(x, MulN) and isinstance(x.y, DupN):
-                # x x * sqrt -> x abs
+                # x dup * sqrt -> x abs
                 expr = AbsN(x.x)
             else:
                 expr = SqrtN(x)
@@ -678,7 +678,7 @@ def _simplify(expr: ExprIR) -> ExprIR:
                         expr = type(expr)(expr.x, type(expr.y)(expr.x))
                 elif isinstance(expr.y, BinaryOp):
                     if isinstance(expr.y.x, DupN):
-                        # num1 dup x op1 op2 -> num1 num1 x op1 op2
+                        # num dup x op1 op2 -> num num1 x op1 op2
                         expr = type(expr)(expr.x, type(expr.y)(expr.x, expr.y.y))
             elif isinstance(expr.y, BinaryOp) and expr.x == expr.y.x:
                 # x x y op1 op2 -> x dup y op1 op2
@@ -717,7 +717,7 @@ def postfix(expr: ExprIR, namer: Optional[Callable[[VarN], str]] = None) -> str:
 
 
 def infix(expr: ExprIR, namer: Optional[Callable[[VarN], str]] = None, 
-    top: Optional[ExprIR] = None
+    top: Optional[str] = None
 ) -> str:
     assert isinstance(expr, ExprIR)
 
@@ -954,7 +954,7 @@ class _ArithmeticExpr(_Fake_VideoNode):
         return self._operate(AbsN, self)
 
     def __invert__(self):
-        return self._operate(AbsN, self)
+        return self._operate(NotN, self)
 
     # binary operations
     def __lt__(self, other):
