@@ -19,6 +19,7 @@ functions for arithmetic expression:
 
 """
 
+from abc import ABC, abstractmethod, abstractstaticmethod
 from collections import OrderedDict
 import collections.abc
 from contextlib import contextmanager
@@ -27,7 +28,9 @@ import inspect
 import itertools
 import math
 import numbers
-from typing import Union, Optional, Dict, List, Callable, MutableMapping, MutableSet
+import operator as op
+from typing import Callable, Dict, List, MutableMapping, MutableSet
+from typing import Optional, Sequence, Union
 import weakref
 
 import vapoursynth as vs
@@ -323,56 +326,439 @@ class _Plugin:
         return output_str
 
 
-def _postfix2infix(expr: str, long_var_name=False) -> str:
-    stack = []
+########################## Expr IR Start ##########################
+class ExprIR(ABC):
+    """ AST-style expression """
 
-    for next_val in expr.split():
-        if next_val in ["abs", "exp", "log", "sqrt"]:
-            stack[-1] = f"{next_val}({stack[-1]})"
-        elif next_val == "not":
-            stack[-1] = f"(not {stack[-1]})"
-        elif next_val == 'dup':
-            stack.append(stack[-1])
-        elif next_val in ['<', '<=', '>', '>=', '+', '-', '*', '/', 'and', 'or']:
-            stack = stack[:-2] + [f"({stack[-2]} {next_val} {stack[-1]})"]
-        elif next_val == '=':
-            stack = stack[:-2] + [f"({stack[-2]} == {stack[-1]})"]
-        elif next_val == 'pow':
-            stack = stack[:-2] + [f"({stack[-2]} ** {stack[-1]})"]
-        elif next_val == 'xor':
-            stack = stack[:-2] + [f"(({stack[-2]} and not {stack[-1]}) or "
-                                  f"(not {stack[-2]} and {stack[-1]}))"]
-        elif next_val in ['min', 'max']:
-            stack = stack[:-2] + [f"{next_val}({stack[-2]}, {stack[-1]})"]
-        elif next_val == '?':
-            stack = stack[:-3] + [f"({stack[-2]} if {stack[-3]} else {stack[-1]})"]
-        elif next_val == "swap":
-            stack = stack[:-2] + [stack[-1], stack[-2]]
-        elif next_val.startswith("dup") and next_val[3:].isdecimal():
-            elem = stack[-int(next_val[3:]) - 1]
-            stack.append(elem)
-        elif next_val.startswith("swap") and next_val[4:].isdecimal():
-            index = -int(next_val[4:]) - 1
-            elem = stack[index]
-            stack = stack[:index] + [stack[-1]] + stack[index+1:-1] + [elem]
-        elif next_val.islower() and (long_var_name or len(next_val) == 1): # vars
-            stack.append(next_val)
-        else:
-            try:
-                val = float(next_val)
-            except ValueError:
-                raise ValueError(f"Unknown node in expr ({next_val})")
-            else:
-                if math.isnan(val) or math.isinf(val):
-                    raise ValueError(f"Invalid value ({val})")
-                else:
-                    stack.append(next_val)
+    @abstractmethod
+    def __eq__(self, other):
+        pass
 
-    if len(stack) == 1:
-        return stack[0]
+    @abstractmethod
+    def __repr__(self):
+        """ Infix and function call style """
+        pass
+
+    @abstractmethod
+    def __str__(self):
+        """ Postfix style """
+        pass
+
+class DupN(ExprIR):
+    def __eq__(self, other):
+        return isinstance(other, DupN)
+        
+    def __repr__(self):
+        return "DupN()"
+
+    def __str__(self):
+        return "dup"
+dup = DupN()
+
+class UnaryBaseOp(ExprIR):
+    @abstractstaticmethod
+    def cast(x):
+        pass
+
+    def __init__(self, x):
+        self.x = self.cast(x)
+
+    def __eq__(self, other):
+        return isinstance(other, type(self)) and self.x == other.x
+
+    def __repr__(self):
+        return f"{type(self).__name__}({self.x!r})"
+
+    def __str__(self):
+        return f"{self.x!s} {type(self).__name__.lower()}"
+
+class ConstantN(UnaryBaseOp):
+    def __str__(self):
+        return f"{self.x!s}"
+
+    @staticmethod
+    def cast(x):
+        assert isinstance(x, numbers.Real)
+        return x
+ConstantN_0 = ConstantN(0)
+ConstantN_1 = ConstantN(1)
+
+class VarN(UnaryBaseOp):
+    def __eq__(self, other):
+        return isinstance(other, VarN) and hash(self.x) == hash(other.x)
+
+    def __str__(self):
+        return f"{self.x!s}"
+
+    @staticmethod
+    def cast(x):
+        assert isinstance(x, _VideoNode)
+        return x
+
+def Cast(x):
+    if isinstance(x, ExprIR):
+        return x
+    elif isinstance(x, numbers.Real):
+        return ConstantN(x)
+    elif isinstance(x, _VideoNode):
+        return VarN(x)
+    elif isinstance(x, vs.VideoNode):
+        return VarN(_VideoNode(x))
     else:
-        raise ValueError("Stack unbalanced at end of expression. "
-                         "Need to have exactly one value on the stack to return.")
+        raise TypeError(f"Unkonwn input ({type(x)})")
+
+class UnaryOp(UnaryBaseOp):
+    @abstractstaticmethod
+    def compute(x):
+        pass
+
+    def __str__(self):
+        return f"{self.x!s} {self.op_name}"
+
+    @staticmethod
+    def cast(x):
+        return Cast(x)
+
+class NotN(UnaryOp):
+    op_name = "not"
+    compute = op.not_
+
+class AbsN(UnaryOp):
+    op_name = "abs"
+    compute = abs
+
+class SqrtN(UnaryOp):
+    op_name = "sqrt"
+    compute = math.sqrt
+
+class LogN(UnaryOp):
+    op_name = "log"
+    compute = math.log
+
+class ExpN(UnaryOp):
+    op_name = "exp"
+    compute = math.exp
+
+class BinaryOp(ExprIR):
+    @abstractstaticmethod
+    def compute(x, y):
+        pass
+
+    def __init__(self, x, y):
+        self.x, self.y = self.cast(x, y)
+
+    def __eq__(self, other):
+        return (
+            isinstance(other, type(self)) and 
+            self.x == other.x and 
+            self.y == other.y
+        )
+
+    def __repr__(self):
+        return f"{type(self).__name__}({self.x!r}, {self.y!r})"
+
+    def __str__(self):
+        return f"{self.x!s} {self.y!s} {self.op_name}"
+
+    @staticmethod
+    def cast(x, y):
+        return Cast(x), Cast(y)
+
+class AddN(BinaryOp):
+    op_name = "+"
+    compute = op.add
+
+class SubN(BinaryOp):
+    op_name = "-"
+    compute = op.sub
+
+class MulN(BinaryOp):
+    op_name = "*"
+    compute = op.mul
+
+class DivN(BinaryOp):
+    op_name = "/"
+    compute = op.truediv
+
+class PowN(BinaryOp):
+    op_name = "pow"
+    compute = op.pow
+
+class AndN(BinaryOp):
+    op_name = "and"
+    compute = op.and_
+
+class OrN(BinaryOp):
+    op_name = "or"
+    compute = op.or_
+
+class XorN(BinaryOp):
+    op_name = "xor"
+    compute = op.xor
+
+class LtN(BinaryOp):
+    op_name = "<"
+    compute = op.lt
+
+class LeN(BinaryOp):
+    op_name = "<="
+    compute = op.le
+
+class EqN(BinaryOp):
+    op_name = "="
+    compute = op.eq
+
+class NeN(BinaryOp):
+    op_name = "= not"
+    compute = op.ne
+
+class GeN(BinaryOp):
+    op_name = ">="
+    compute = op.ge
+
+class GtN(BinaryOp):
+    op_name = ">"
+    compute = op.gt
+
+class MaxN(BinaryOp):
+    op_name = "max"
+    compute = max
+
+class MinN(BinaryOp):
+    op_name = "min"
+    compute = min
+
+class ConditionalN(ExprIR):
+    def __init__(self, x, y, z):
+        self.x, self.y, self.z = self.cast(x, y, z)
+
+    def __eq__(self, other):
+        return (
+            isinstance(other, ConditionalN) and 
+            self.x == other.x and 
+            self.y == other.y and 
+            self.z == other.z
+        )
+
+    def __repr__(self):
+        return f"ConditionalN({self.x!r}, {self.y!r}, {self.z!r})"
+
+    def __str__(self):
+        return f"{self.x!s} {self.y!s} {self.z!s} ?"
+
+    @staticmethod
+    def cast(x, y, z):
+        return Cast(x), Cast(y), Cast(z)
+
+    @staticmethod
+    def compute(x, y, z):
+        return y if x else z
+
+def _simplify(expr: ExprIR) -> ExprIR:
+    assert isinstance(expr, ExprIR)
+
+    while True:
+        prev_expr = expr
+
+        # early skipping
+        if isinstance(expr, (DupN, ConstantN, VarN)):
+            return expr
+        # constant foldings and universal eliminations
+        elif isinstance(expr, UnaryOp) and isinstance(expr.x, ConstantN):
+            # num op -> op(num)
+            return ConstantN(expr.compute(expr.x.x))
+        elif isinstance(expr, BinaryOp):
+            if isinstance(expr.x, ConstantN):
+                if isinstance(expr.y, ConstantN):
+                    # num1 num2 op -> op(num1, num2)
+                    return ConstantN(expr.compute(expr.x.x, expr.y.x))
+                elif expr.y == DupN:
+                    # num dup op -> op(num, num)
+                    return ConstantN(expr.compute(expr.x.x, expr.x.x))
+            elif expr.x == expr.y:
+                # x x op -> x dup op
+                expr = type(expr)(expr.x, dup)
+
+        # operator specific simplifications
+        if isinstance(expr, SqrtN):
+            x = _simplify(expr.x)
+            if isinstance(x, MulN) and isinstance(x.y, DupN):
+                # x x * sqrt -> x abs
+                expr = AbsN(x.x)
+            else:
+                expr = SqrtN(x)
+        elif isinstance(expr, LogN):
+            x = _simplify(expr.x)
+            if isinstance(x, ExpN):
+                # x exp log -> x
+                expr = x.x
+            else:
+                expr = LogN(x)
+        elif isinstance(expr, ExpN):
+            x = _simplify(expr.x)
+            if isinstance(x, LogN):
+                # x log exp -> x
+                expr = x.x
+            else:
+                expr = ExpN(x)
+        elif isinstance(expr, AddN):
+            if expr.x == ConstantN_0:
+                # 0 x + -> x
+                expr = expr.y
+            elif expr.y == ConstantN_0:
+                # x 0 + -> x
+                expr = expr.x
+        elif isinstance(expr, SubN):
+            if isinstance(expr.y, DupN):
+                # x dup - -> 0
+                return ConstantN_0
+            elif expr.y == ConstantN_0:
+                # x 0 - -> x
+                expr = expr.x
+        elif isinstance(expr, MulN):
+            if expr.x == ConstantN_1:
+                # 1 x * -> x
+                expr = expr.y
+            elif expr.y == ConstantN_1:
+                # x 1 * -> x
+                expr = expr.x
+        elif isinstance(expr, DivN):
+            if isinstance(expr.y, DupN):
+                # x dup / -> 1
+                return ConstantN_1
+            elif expr.y == ConstantN_1:
+                # x 1 / -> x
+                expr = expr.x
+        elif isinstance(expr, PowN):
+            if isinstance(expr.x, ConstantN):
+                if expr.x == ConstantN_0:
+                    # 0 x pow -> 0
+                    expr = ConstantN_0
+                elif expr.x == ConstantN_1:
+                    # 1 x pow -> 1
+                    expr = ConstantN_1
+                elif expr.x == ConstantN(math.e):
+                    # math.e x pow -> x exp
+                    expr = ExpN(expr.y)
+            elif isinstance(expr.y, ConstantN):
+                if expr.y == ConstantN_0:
+                    # x 0 pow -> 1
+                    expr = ConstantN_1
+                elif expr.y == ConstantN_1:
+                    # x 1 pow -> x
+                    expr = expr.x
+                elif expr.y == ConstantN(2):
+                    # x 2 pow -> x dup *
+                    expr = MulN(expr.x, dup)
+                elif expr.y == ConstantN(0.5):
+                    # x 0.5 pow -> x sqrt
+                    expr = SqrtN(expr.x)
+                elif expr.y == ConstantN(-0.5):
+                    # x -0.5 pow -> x dup sqrt /
+                    expr = DivN(expr.x, SqrtN(dup))
+        elif isinstance(expr, (MaxN, MinN)) and isinstance(expr.y, DupN):
+            # x dup {max/min} -> x
+            expr = expr.x
+        elif isinstance(expr, ConditionalN):
+            if isinstance(expr.x, ConstantN):
+                # num x y ? -> (num ? x : y)
+                expr = ConditionalN.compute(expr.x, expr.y, expr.z)
+            elif expr.y == expr.z:
+                # _ x x ? -> x
+                expr = expr.y
+
+        # non-local simplification of binary operations
+        if isinstance(expr, BinaryOp):
+            expr = type(expr)(_simplify(expr.x), _simplify(expr.y))
+
+            if isinstance(expr.x, ConstantN):
+                if isinstance(expr.y, UnaryOp):
+                    if isinstance(expr.y.x, DupN):
+                        # num dup op1 op2 -> num num op1 op2
+                        expr = type(expr)(expr.x, type(expr.y)(expr.x))
+                elif isinstance(expr.y, BinaryOp):
+                    if isinstance(expr.y.x, DupN):
+                        # num1 dup x op1 op2 -> num1 num1 x op1 op2
+                        expr = type(expr)(expr.x, type(expr.y)(expr.x, expr.y.y))
+            elif isinstance(expr.y, BinaryOp) and expr.x == expr.y.x:
+                # x x y op1 op2 -> x dup y op1 op2
+                expr = type(expr)(expr.x, type(expr.y)(dup, expr.y.y))
+
+        if expr == prev_expr:
+            # no progress
+            return expr
+        else:
+            prev_expr = expr
+            # continue
+
+def postfix(expr: ExprIR, namer: Optional[Callable[[VarN], str]] = None) -> str:
+    assert isinstance(expr, ExprIR)
+
+    if isinstance(expr, ConstantN):
+        return str(expr)
+    elif isinstance(expr, VarN):
+        if namer is None:
+            return str(expr)
+        else:
+            return namer(expr)
+    elif isinstance(expr, DupN):
+        return "dup"
+    elif isinstance(expr, UnaryOp):
+        return f"{postfix(expr.x, namer)} {expr.op_name}"
+    elif isinstance(expr, BinaryOp):
+        first = postfix(expr.x, namer)
+        return f"{first} {postfix(expr.y, namer)} {expr.op_name}"
+    elif isinstance(expr, ConditionalN):
+        first = postfix(expr.x, namer)
+        second = postfix(expr.y, namer)
+        return f"{first} {second} {postfix(expr.z, namer)} ?"
+    else:
+        raise TypeError(f"Unknwon type {type(expr)}")
+
+
+def infix(expr: ExprIR, namer: Optional[Callable[[VarN], str]] = None, 
+    top: Optional[ExprIR] = None
+) -> str:
+    assert isinstance(expr, ExprIR)
+
+    if isinstance(expr, ConstantN):
+        return str(expr)
+    elif isinstance(expr, VarN):
+        if namer is None:
+            return str(expr)
+        else:
+            return namer(expr)
+    elif isinstance(expr, DupN):
+        if top:
+            return top
+        else:
+            raise ValueError("Empty dup node")
+    elif isinstance(expr, UnaryOp):
+        return f"{expr.op_name}({infix(expr.x, namer, top=top)})"
+    elif isinstance(expr, BinaryOp):
+        first = infix(expr.x, namer, top=top)
+        return f"({first} {expr.op_name} {infix(expr.y, namer, top=first)})"
+    elif isinstance(expr, ConditionalN):
+        first = infix(expr.x, namer, top=top)
+        second = infix(expr.y, namer, top=first)
+        return f"({second} if {first} else {infix(expr.z, namer, top=second)})"
+    else:
+        raise TypeError(f"Unknwon type {type(expr)}")
+
+########################## Expr IR End ##########################
+
+def namer_factory():
+    alphabet = "xyzabcdefghijklmnopqrstuvw"
+    mapping = OrderedDict() # type: MutableMapping[_VideoNode, str]
+
+    def namer(obj: VarN) -> str:
+        x = obj.x
+        if x in mapping or len(mapping) < len(alphabet):
+            return mapping.setdefault(x, f"{alphabet[len(mapping)]}")
+        else:
+            raise RuntimeError(f"{type(self).__name__!r}: Too many nodes")
+
+    return namer
 
 
 class _Fake_VideoNode:
@@ -382,18 +768,7 @@ class _Fake_VideoNode:
 
 class _ArithmeticExpr(_Fake_VideoNode):
     def __init__(self, obj): 
-        if arithmetic_expr:
-            if isinstance(obj, _VideoNode):
-                self._expr = (obj,)
-            elif isinstance(obj, type(self)):
-                self._expr = obj._expr
-            elif isinstance(obj, tuple):
-                self._expr = obj
-            else:
-                raise TypeError(f"{type(self).__name__!r}: Unknown initializer ({type(obj)})")
-        else:
-            raise RuntimeError("Arithmetic expression is disabled.")
-
+        self._expr = Cast(obj) # type: ExprIR
         self._cached_clip = None # type: Optional[_VideoNode]
 
     def __getattr__(self, name):
@@ -405,46 +780,43 @@ class _ArithmeticExpr(_Fake_VideoNode):
     def __bool__(self):
         raise RuntimeError("Impossible")
 
-    def __repr__(self):
-        if len(self._expr) > 1:
-            return ' '.join(_repr(item) for item in self._expr)
-        else:
-            return ""
-
     def __hash__(self):
         return hash(self.clips + (self.expr,))
 
+    def __str__(self):
+        def namer(x: VarN):
+            return _repr(x.x)
+        return infix(self._expr, namer=namer).strip("()")
+
     @property
     def clips(self):
-        """Ordered _VideoNode(s)"""
+        from collections import deque, OrderedDict
 
-        # eliminate duplicate clips
-        return tuple(OrderedDict((obj, None) for obj in self._expr if isinstance(obj, _VideoNode)).keys())
+        clips_dict = OrderedDict()
+        exprs = deque([self._expr])
+
+        while exprs:
+            expr = exprs.popleft()
+            if isinstance(expr, VarN):
+                clips_dict.setdefault(expr.x, None)
+            elif isinstance(expr, UnaryOp):
+                exprs.append(expr.x)
+            elif isinstance(expr, BinaryOp):
+                exprs.append(expr.x)
+                exprs.append(expr.y)
+            elif isinstance(expr, ConditionalN):
+                exprs.append(expr.x)
+                exprs.append(expr.y)
+                exprs.append(expr.z)
+
+        return tuple(clips_dict.keys())
+
+    def get_expr(self, namer) -> str:
+        return postfix(self._expr, namer=namer)
 
     @property
     def expr(self) -> str:
-        def _to_var_factory() -> Callable[..., str]:
-            _clip_var_mapping = {} # type: Dict[_VideoNode, str]
-            _vars = "xyzabcdefghijklmnopqrstuvw"
-            def closure(obj):
-                if isinstance(obj, _VideoNode):
-                    if obj in _clip_var_mapping or len(_clip_var_mapping) < len(_vars):
-                        return _clip_var_mapping.setdefault(obj, f"{_vars[len(_clip_var_mapping)]}")
-                    else:
-                        raise RuntimeError(f"{type(self).__name__!r}: Too many nodes")
-                else:
-                    return obj
-            return closure
-
-        _to_var = _to_var_factory()
-
-        if len(self._expr) > 1:
-            return ' '.join(_to_var(item) for item in self._expr).strip()
-        else:
-            return ""
-
-    def get_expr(self, namer) -> str:
-        return ' '.join(namer(item) for item in self._expr).strip()
+        return self.get_expr(namer=namer_factory())
 
     @property
     def lut_func(self) -> Callable[..., numbers.Integral]:
@@ -452,7 +824,7 @@ class _ArithmeticExpr(_Fake_VideoNode):
 
         assert len(clips) in [1, 2]
 
-        func_impl = _postfix2infix(self.expr)
+        func_impl = infix(self._expr, namer=namer_factory())
         func_impl = f"min(max(int({func_impl} + 0.5), 0), {(2 ** clips[0].format.bits_per_sample) - 1})" # clamp
 
         if len(clips) == 1:
@@ -473,58 +845,31 @@ class _ArithmeticExpr(_Fake_VideoNode):
 
         return _LambdaFunction(lut_str)
 
-    def _operate(self, op: str, *operands, position=0) -> '_ArithmeticExpr':
-        # accepted operands: Union[numbers.Real, _VideoNode, _ArithmeticExpr]
+    def compute(self, planes=None, bits=None, use_lut=None, 
+        simplify: Union[bool, Callable[[ExprIR], ExprIR]] = True
+    ) -> '_VideoNode':
 
-        if arithmetic_expr:
-            def expr_to_element(expr):
-                if expr._cached_clip is not None:
-                    return (expr._cached_clip,)
-                else:
-                    return expr._expr
-
-            def to_element(obj):
-                if isinstance(obj, numbers.Real):
-                    return (repr(float(obj)),)
-                elif isinstance(obj, _VideoNode):
-                    return (obj,)
-                elif isinstance(obj, _ArithmeticExpr):
-                    return expr_to_element(obj)
-                else:
-                    raise TypeError(f"{type(self).__name__!r}: Unknown input ({type(obj)})")
-
-            expr = [to_element(operand) for operand in operands]
-            expr.insert(position, expr_to_element(self))
-
-            # "X X *" -> "X dup *"
-            # _expr[i] == self._expr cannot be used since == is overloaded to return non-boolean value
-            for i in range(position + 1, len(expr)):
-                if (
-                    len(expr[i]) == len(self._expr) and 
-                    all((hash(x) == hash(y)) for x, y in zip(expr[i], self._expr))
-                ):
-                    expr[i] = ("dup",)
-                else:
-                    break
-
-            expr.append((op,))
-
-            return type(self)(tuple(itertools.chain(*expr)))
-
-        else:
-            raise RuntimeError("Arithmetic expression is disabled.")
-
-    def compute(self, planes=None, bits=None, use_lut=None) -> '_VideoNode':
         if arithmetic_expr:
             cacheable = planes is None and bits is None and use_lut is None
 
             if cacheable and self._cached_clip is not None:
                 return self._cached_clip
 
+            if simplify:
+                if callable(simplify):
+                    self._expr = simplify(self._expr)
+                else:
+                    self._expr = _simplify(self._expr)
+
+                if len(self.clips) == 0:
+                    raise ValueError("ArithmeticExpr becomes empty")
+
             if self.expr in ['', 'x']: # empty expr
                 return _VideoNode(self.clips[0]._node)
             else:
                 clips = self.clips
+                if len(clips) > 26:
+                    raise RuntimeError("Too many clips.")
 
                 if bits is None:
                     not_equal_bits = (
@@ -543,16 +888,16 @@ class _ArithmeticExpr(_Fake_VideoNode):
                         len(clips) <= 2 and all(map(is_int, clips)) and sum(map(get_bits, clips)) <= 20)
 
                 if use_lut is None:
-                    use_lut = lut_available(clips) and len(self._expr) >= 15
+                    use_lut = lut_available(clips) and len(self.expr.split()) >= 15
                 elif use_lut and not lut_available(clips):
                     raise ValueError("Lut computation is not available")
 
                 # process
                 if use_lut: # std.Lut() / std.Lut2()
                     if len(clips) == 1:
-                        return core.std.Lut(clips[0], planes=planes, bits=bits, function=self.lut_func)
+                        res = core.std.Lut(clips[0], planes=planes, bits=bits, function=self.lut_func)
                     else: # len(clips) == 2
-                        return core.std.Lut2(
+                        res = core.std.Lut2(
                             clips[0], clips[1], planes=planes, bits=bits, function=self.lut_func)
 
                 else: # std.Expr()
@@ -581,146 +926,128 @@ class _ArithmeticExpr(_Fake_VideoNode):
 
                     res = core.std.Expr(clips=clips, expr=expr, format=out_format)
 
-                    if cacheable:
-                        self._cached_clip = res
+                if cacheable:
+                    self._cached_clip = res
 
-                    return res
+                return res
 
         else:
             raise RuntimeError("Arithmetic expression is disabled.")
 
     # Arithmetic methods
+    def _operate(self, 
+        op: Union[UnaryOp, BinaryOp, ConditionalN], 
+        *operands: Sequence[Union[numbers.Real, vs.VideoNode, "_VideoNode", ExprIR]]
+    ) -> "_ArithmeticExpr":
+        unwrap = lambda x: x._expr if isinstance(x, type(self)) else x
+        result = op(*map(unwrap, operands))
+        return type(self)(result)
 
     # unary operations
     def __neg__(self):
-        return self._operate('-', 0, position=1)
+        return self._operate(SubN, 0, self)
 
     def __pos__(self):
-        return type(self)(self)
+        return self
 
     def __abs__(self):
-        return self._operate('abs')
-
-    # custom unary operations
-    def __exp__(self):
-        return self._operate('exp')
-
-    def __log__(self):
-        return self._operate('log')
+        return self._operate(AbsN, self)
 
     def __invert__(self):
-        return self._operate('not')
-
-    def __sqrt__(self):
-        return self._operate('sqrt')
+        return self._operate(AbsN, self)
 
     # binary operations
     def __lt__(self, other):
-        return self._operate('<', other, position=0)
+        return self._operate(LtN, self, other)
 
     def __le__(self, other):
-        return self._operate('<=', other, position=0)
+        return self._operate(LeN, self, other)
 
     def __eq__(self, other):
-        return self._operate('=', other, position=0)
+        return self._operate(EqN, self, other)
 
     def __ne__(self, other):
-        return self._operate('= not', other, position=0)
+        return self._operate(NeN, self, other)
 
     def __gt__(self, other):
-        return self._operate('>', other, position=0)
+        return self._operate(GtN, self, other)
 
     def __ge__(self, other):
-        return self._operate('>=', other, position=0)
+        return self._operate(GeN, self, other)
 
     def __add__(self, other):
-        return self._operate('+', other, position=0)
+        return self._operate(AddN, self, other)
 
     def __radd__(self, other):
-        return self._operate('+', other, position=1)
+        return self._operate(AddN, other, self)
 
     def __sub__(self, other):
-        return self._operate('-', other, position=0)
+        return self._operate(SubN, self, other)
 
     def __rsub__(self, other):
-        return self._operate('-', other, position=1)
+        return self._operate(SubN, other, self)
 
     def __mul__(self, other):
-        return self._operate('*', other, position=0)
+        return self._operate(MulN, self, other)
 
     def __rmul__(self, other):
-        return self._operate('*', other, position=1)
+        return self._operate(MulN, other, self)
 
     def __truediv__(self, other):
-        return self._operate('/', other, position=0)
+        return self._operate(DivN, self, other)
 
     def __rtruediv__(self, other):
-        return self._operate('/', other, position=1)
+        return self._operate(DivN, other, self)
 
     def __pow__(self, other, module=None):
         if module is None:
-            if isinstance(other, numbers.Integral) and int(other) > 0:
-                # exponentiation by squaring
-                binary = format(int(other), 'b')
-                _pre_expr = ""
-                _post_expr = ""
-
-                for b in reversed(binary[1:]):
-                    if b == '0':
-                        _pre_expr += "dup * "
-                    else: # b == '1'
-                        _pre_expr += "dup dup * "
-                        _post_expr += "* "
-
-                return self._operate((_pre_expr + _post_expr).strip())
-            else:
-                return self._operate('pow', other, position=0)
+            return self._operate(PowN, self, other)
         else:
-            return NotImplemented
+            raise NotImplemented
 
     def __rpow__(self, other):
-        return self._operate('pow', other, position=1)
+        return self._operate(PowN, other, self)
 
     def __and__(self, other):
-        return self._operate('and', other, position=0)
+        return self._operate(AndN, self, other)
 
     def __rand__(self, other):
-        return self._operate('and', other, position=1)
+        return self._operate(AndN, other, self)
 
     def __or__(self, other):
-        return self._operate('or', other, position=0)
+        return self._operate(OrN, self, other)
 
     def __ror__(self, other):
-        return self._operate('or', other, position=1)
+        return self._operate(OrN, other, self)
 
     def __xor__(self, other):
-        return self._operate('xor', other, position=0)
+        return self._operate(XorN, self, other)
 
     def __rxor__(self, other):
-        return self._operate('xor', other, position=1)
+        return self._operate(XorN, other, self)
 
     # custom binary operations
-    def __min__(self, other):
-        return self._operate('min', other, position=0)
-
-    def __rmin__(self, other):
-        return self._operate('min', other, position=1)
-
     def __max__(self, other):
-        return self._operate('max', other, position=0)
+        return self._operate(MaxN, self, other)
 
     def __rmax__(self, other):
-        return self._operate('max', other, position=1)
+        return self._operate(MaxN, other, self)
+
+    def __min__(self, other):
+        return self._operate(MinN, self, other)
+
+    def __rmin__(self, other):
+        return self._operate(MinN, other, self)
 
     # custom ternary operation
     def __conditional__(self, other_true, other_false):
-        return self._operate('?', other_true, other_false, position=0)
+        return self._operate(ConditionalN, self, other_true, other_false)
 
     def __rconditional__(self, other_condition, other_false):
-        return self._operate('?', other_condition, other_false, position=1)
+        return self._operate(ConditionalN, other_true, self, other_false)
 
     def __rrconditional__(self, other_condition, other_true):
-        return self._operate('?', other_condition, other_true, position=2)
+        return self._operate(ConditionalN, other_true, other_false, self)
 
 
 def _build_VideoNode(fake_vn=None):
@@ -777,7 +1104,7 @@ def _build_VideoNode(fake_vn=None):
         return self.num_frames
 
     def __str__(self):
-        return "muvs " + str(self._node)
+        return f"muvs {self._node!s}"
 
     def __bool__(self):
         raise RuntimeError("Impossible")
@@ -850,7 +1177,9 @@ def _build_VideoNode(fake_vn=None):
 _VideoNode = _build_VideoNode(_Fake_VideoNode)
 
 
-def Expr(exprs, format=None) -> '_VideoNode':
+def Expr(exprs, format=None, 
+    simplify: Union[bool, Callable[[ExprIR], ExprIR]] = True
+) -> '_VideoNode':
     if isinstance(exprs, _VideoNode):
         exprs = [_ArithmeticExpr(exprs)]
     elif isinstance(exprs, _ArithmeticExpr):
@@ -865,6 +1194,14 @@ def Expr(exprs, format=None) -> '_VideoNode':
             elif exprs[i] is not None and not isinstance(exprs[i], (_ArithmeticExpr, numbers.Real)):
                 raise TypeError(f"Invalid type ({type(exprs[i])})")
 
+    if simplify:
+        for i in range(len(exprs)):
+            if isinstance(exprs[i], _ArithmeticExpr):
+                if callable(simplify):
+                    exprs[i] = _ArithmeticExpr(simplify(exprs[i]._expr))
+                else:
+                    exprs[i] = _ArithmeticExpr(_simplify(exprs[i]._expr))
+
     for expr in exprs:
         if isinstance(expr, _ArithmeticExpr):
             num_planes = expr.clips[0].format.num_planes
@@ -876,20 +1213,7 @@ def Expr(exprs, format=None) -> '_VideoNode':
     else:
         raise ValueError("No clip is given")
 
-    def _to_var_factory() -> Callable[..., str]:
-        _clip_var_mapping = {} # type: Dict[_VideoNode, str]
-        _vars = "xyzabcdefghijklmnopqrstuvw"
-        def closure(obj):
-            if isinstance(obj, _VideoNode):
-                if obj in _clip_var_mapping or len(_clip_var_mapping) < len(_vars):
-                    return _clip_var_mapping.setdefault(obj, f"{_vars[len(_clip_var_mapping)]}")
-                else:
-                    raise RuntimeError(f"{type(self).__name__!r}: Too many nodes")
-            else:
-                return obj
-        return closure
-
-    _to_var = _to_var_factory()
+    namer = namer_factory()
 
     expr_strs = []
     for i in range(num_planes):
@@ -898,7 +1222,7 @@ def Expr(exprs, format=None) -> '_VideoNode':
         elif isinstance(exprs[i], numbers.Real):
             expr_strs.append(str(exprs[i]))
         else:
-            expr_str = exprs[i].get_expr(_to_var)
+            expr_str = exprs[i].get_expr(namer=namer)
 
             if expr_str == 'x':
                 expr_strs.append('')
@@ -912,7 +1236,6 @@ def Expr(exprs, format=None) -> '_VideoNode':
         )).keys()))
 
     return core.std.Expr(clips, expr_strs, format)
-
 
 
 # custom operations
