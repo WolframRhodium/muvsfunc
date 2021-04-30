@@ -956,6 +956,15 @@ class _ArithmeticExpr(_Fake_VideoNode):
     def __invert__(self):
         return self._operate(NotN, self)
 
+    def __exp__(self):
+        return self._operate(ExpN, self)
+
+    def __log__(self):
+        return self._operate(LogN, self)
+
+    def __sqrt__(self):
+        return self._operate(SqrtN, self)
+
     # binary operations
     def __lt__(self, other):
         return self._operate(LtN, self, other)
