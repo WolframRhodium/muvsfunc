@@ -800,14 +800,11 @@ class _ArithmeticExpr(_Fake_VideoNode):
             if isinstance(expr, VarN):
                 clips_dict.setdefault(expr.x, None)
             elif isinstance(expr, UnaryOp):
-                exprs.append(expr.x)
+                exprs.appendleft(expr.x)
             elif isinstance(expr, BinaryOp):
-                exprs.append(expr.x)
-                exprs.append(expr.y)
+                exprs.extendleft([expr.y, expr.x])
             elif isinstance(expr, ConditionalN):
-                exprs.append(expr.x)
-                exprs.append(expr.y)
-                exprs.append(expr.z)
+                exprs.extendleft([expr.z, expr.y, expr.x])
 
         return tuple(clips_dict.keys())
 
