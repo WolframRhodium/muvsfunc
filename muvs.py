@@ -790,21 +790,21 @@ class _ArithmeticExpr(_Fake_VideoNode):
 
     @property
     def clips(self):
-        from collections import deque, OrderedDict
+        from collections import OrderedDict
 
         clips_dict = OrderedDict()
-        exprs = deque([self._expr])
+        exprs = [self._expr]
 
         while exprs:
-            expr = exprs.popleft()
+            expr = exprs.pop()
             if isinstance(expr, VarN):
                 clips_dict.setdefault(expr.x, None)
             elif isinstance(expr, UnaryOp):
-                exprs.appendleft(expr.x)
+                exprs.append(expr.x)
             elif isinstance(expr, BinaryOp):
-                exprs.extendleft([expr.y, expr.x])
+                exprs.extend([expr.y, expr.x])
             elif isinstance(expr, ConditionalN):
-                exprs.extendleft([expr.z, expr.y, expr.x])
+                exprs.extend([expr.z, expr.y, expr.x])
 
         return tuple(clips_dict.keys())
 
