@@ -213,7 +213,7 @@ def Compare(src: vs.VideoNode, flt: vs.VideoNode, power: float = 1.5,
 
     if not isinstance(src, vs.VideoNode):
         raise TypeError(funcName + ': \"src\" must be a clip!')
-    if src.format.color_family not in [vs.GRAY, vs.YUV, vs.YCOCG]:
+    if src.format.color_family not in [vs.GRAY, vs.YUV]:
         raise TypeError(funcName + ': \"src\" must be a YUV clip!')
     if not isinstance(flt, vs.VideoNode):
         raise TypeError(funcName + ': \"flt\" must be a clip!')
@@ -508,8 +508,8 @@ def GradFun3(src: vs.VideoNode, thr: float = 0.35, radius: Optional[int] = None,
 
     if not isinstance(src, vs.VideoNode):
         raise TypeError(funcName + ': \"src\" must be a clip!')
-    if src.format.color_family not in [vs.YUV, vs.GRAY, vs.YCOCG]:
-        raise TypeError(funcName + ': \"src\" must be YUV, GRAY or YCOCG color family!')
+    if src.format.color_family not in [vs.YUV, vs.GRAY]:
+        raise TypeError(funcName + ': \"src\" must be YUV or GRAY color family!')
 
     if not isinstance(thr, (float, int)):
         raise TypeError(funcName + ': \"thr\" must be an int or a float!')
@@ -573,8 +573,8 @@ def GradFun3(src: vs.VideoNode, thr: float = 0.35, radius: Optional[int] = None,
         ref = src
     elif not isinstance(ref, vs.VideoNode):
         raise TypeError(funcName + ': \"ref\" must be a clip!')
-    elif ref.format.color_family not in [vs.YUV, vs.GRAY, vs.YCOCG]:
-        raise TypeError(funcName + ': \"ref\" must be YUV, GRAY or YCOCG color family!')
+    elif ref.format.color_family not in [vs.YUV, vs.GRAY]:
+        raise TypeError(funcName + ': \"ref\" must be YUV or GRAY color family!')
     elif src.width != ref.width or src.height != ref.height:
         raise TypeError(funcName + ': \"ref\" must be of the same size as \"src\"!')
 
@@ -2148,7 +2148,7 @@ def SeeSaw(clp: vs.VideoNode, denoised: Optional[vs.VideoNode] = None, NRlimit: 
 
     funcName = 'SeeSaw'
 
-    if not isinstance(clp, vs.VideoNode) or clp.format.color_family not in [vs.GRAY, vs.YUV, vs.YCOCG]:
+    if not isinstance(clp, vs.VideoNode) or clp.format.color_family not in [vs.GRAY, vs.YUV]:
         raise TypeError(funcName + ': \"clp\" must be a Gray or YUV clip!')
 
     isGray = clp.format.color_family == vs.GRAY
@@ -2255,7 +2255,7 @@ def _SeeSaw_sharpen2(clp: vs.VideoNode, strength: float, power: float, zp: float
 
     funcName = '_SeeSaw_sharpen2'
 
-    if not isinstance(clp, vs.VideoNode) or clp.format.color_family not in [vs.GRAY, vs.YUV, vs.YCOCG]:
+    if not isinstance(clp, vs.VideoNode) or clp.format.color_family not in [vs.GRAY, vs.YUV]:
         raise TypeError(funcName + ': \"clp\" must be a Gray or YUV clip!')
 
     isGray = clp.format.color_family == vs.GRAY
@@ -2304,7 +2304,7 @@ def _SeeSaw_SootheSS(sharp: vs.VideoNode, orig: vs.VideoNode, sootheT: float = 2
 
     funcName = '_SeeSaw_SootheSS'
 
-    if not isinstance(sharp, vs.VideoNode) or sharp.format.color_family not in [vs.GRAY, vs.YUV, vs.YCOCG]:
+    if not isinstance(sharp, vs.VideoNode) or sharp.format.color_family not in [vs.GRAY, vs.YUV]:
         raise TypeError(funcName + ': \"sharp\" must be a Gray or YUV clip!')
 
     if not isinstance(orig, vs.VideoNode):
@@ -2365,7 +2365,7 @@ def abcxyz(clp: vs.VideoNode, rad: float = 3.0, ss: float = 1.5) -> vs.VideoNode
 
     funcName = 'abcxyz'
 
-    if not isinstance(clp, vs.VideoNode) or clp.format.color_family not in [vs.GRAY, vs.YUV, vs.YCOCG]:
+    if not isinstance(clp, vs.VideoNode) or clp.format.color_family not in [vs.GRAY, vs.YUV]:
         raise TypeError(funcName + ': \"clp\" must be a Gray or YUV clip!')
 
     ox = clp.width
@@ -2675,7 +2675,7 @@ def dfttestMC(input: vs.VideoNode, pp: Optional[vs.VideoNode] = None, mc: int = 
 
     funcName = 'dfttestMC'
 
-    if not isinstance(input, vs.VideoNode) or input.format.color_family not in [vs.GRAY, vs.YUV, vs.YCOCG]:
+    if not isinstance(input, vs.VideoNode) or input.format.color_family not in [vs.GRAY, vs.YUV]:
         raise TypeError(funcName + ': \"input\" must be a Gray or YUV clip!')
 
     mc = min(max(int(mc), 0), 5)
@@ -2795,7 +2795,7 @@ def BalanceBorders(c: vs.VideoNode, cTop: int = 0, cBottom: int = 0, cLeft: int 
             There will not be anything very terrible if you specify values that are greater than the minimum required in your case,
             but to achieve a good result, "it is better not to" ...
             Range: 0 will skip the processing. For RGB input, the range is 2~inf.
-                For YUV or YCoCg input, the minimum accepted value depends on chroma subsampling.
+                For YUV input, the minimum accepted value depends on chroma subsampling.
                 Specifically, for YV24, the range is also 2~inf. For YV12, the range is 4~inf.
             Default is 0.
 
@@ -4056,7 +4056,7 @@ def BMAFilter(clip: vs.VideoNode, guidance: Optional[vs.VideoNode] = None, radiu
     sampleType = clip.format.sample_type
     clip_src = clip
     clip = mvf.Depth(clip, depth=32, **depth_args)
-    guidance = mvf.Depth(guidance, depth=32, **depth_args) if guidance != clip_src else clip
+    guidance = mvf.Depth(guidance, depth=32, **depth_args) if guidance is not clip_src else clip
 
     if mode in (2, 4):
         def Filter(clip: vs.VideoNode) -> vs.VideoNode:
@@ -4078,7 +4078,7 @@ def BMAFilter(clip: vs.VideoNode, guidance: Optional[vs.VideoNode] = None, radiu
         alpha_scale = Expectation(unscaled_alpha)
 
         if mode == 1:
-            mean_clip = Filter(clip) if clip != guidance else mean_guidance
+            mean_clip = Filter(clip) if clip is not guidance else mean_guidance
             res = Expectation(core.std.Expr([unscaled_alpha, mean_clip], ['x y *'])) # Eqn. 11
         else: # mode == 2
             median_clip = Filter(clip_src)
@@ -4096,7 +4096,7 @@ def BMAFilter(clip: vs.VideoNode, guidance: Optional[vs.VideoNode] = None, radiu
         tmp1 = core.std.Expr([unscaled_alpha, beta], ['x y *'])
 
         if mode == 3:
-            mean_clip = Filter(clip) if clip != guidance else mean_guidance
+            mean_clip = Filter(clip) if clip is not guidance else mean_guidance
             tmp2 = Expectation(core.std.Expr([tmp1, mean_clip], ['x y *'])) # Eqn. 19, left
         else: # mode == 4
             median_clip = Filter(clip_src)
@@ -4170,7 +4170,7 @@ def LLSURE(clip: vs.VideoNode, guidance: Optional[vs.VideoNode] = None, radius: 
 
     clip_src = clip
     clip = mvf.Depth(clip, depth=32, sample=vs.FLOAT, **depth_args)
-    guidance = mvf.Depth(guidance, depth=32, **depth_args) if guidance != clip_src else clip
+    guidance = mvf.Depth(guidance, depth=32, **depth_args) if guidance is not clip_src else clip
 
     mean_guidance = Expectation(guidance)
     guidance_square = core.std.Expr([guidance], ['x dup *'])
@@ -4193,7 +4193,7 @@ def LLSURE(clip: vs.VideoNode, guidance: Optional[vs.VideoNode] = None, radius: 
         else:
             sigma = core.std.BlankClip(clip, color=[sigma**2] * clip.format.num_planes)
 
-    if guidance == clip:
+    if guidance is clip:
         a_star = core.std.Expr([var_guidance, sigma, inv_var], ['x y - 0 max z *']) # Eqn. 10 (a)
         b_star = core.std.Expr([a_star, mean_guidance], ['1 x - y *']) # Eqn. 10 (b)
     else: # Joint LLSURE
@@ -4739,7 +4739,7 @@ def MaskedLimitFilter(flt: vs.VideoNode, src: vs.VideoNode, ref: Optional[vs.Vid
 
     Args:
         flt: Filtered clip, to compute the filtering difference.
-            Can be of YUV/RGB/Gray/YCoCg color family, can be of 8-16 bit integer or 16/32 bit float.
+            Can be of YUV/RGB/Gray color family, can be of 8-16 bit integer or 16/32 bit float.
 
         src: Source clip, to apply the filtering difference.
             Must be of the same format and dimension as "flt"
@@ -5240,7 +5240,7 @@ def Cdeblend(input: vs.VideoNode, omode: int = 0, bthresh: float = 0.1, mthresh:
 
     Args:
         input: Input clip.
-            If "dclip" is None, input must be a YUV/YCoCg/Gray clip.
+            If "dclip" is None, input must be a YUV/Gray clip.
 
         omode: (int, 0~4) Stands for the output mode. There are five different omodes: 
             omode 0 -> The previous frame will be duplicated to avoid a blend. 
@@ -5274,7 +5274,7 @@ def Cdeblend(input: vs.VideoNode, omode: int = 0, bthresh: float = 0.1, mthresh:
 
         dclip: (clip) The detectionclip can be set to improve the blend detection (cleaning the clip before). 
             This clip is only used for the blend detection and not for output. 
-            Must be a YUV/YCoCg/Gray clip and must be of the same number of frames as "input".
+            Must be a YUV/Gray clip and must be of the same number of frames as "input".
             Default: "input".
     """
 
@@ -5285,11 +5285,11 @@ def Cdeblend(input: vs.VideoNode, omode: int = 0, bthresh: float = 0.1, mthresh:
         raise TypeError(f'{funcName}: "input" must be a clip!')
 
     if dclip is None:
-        if input.format.color_family not in [vs.YUV, vs.YCOCG, vs.GRAY]:
-            raise TypeError(f'{funcName}: "input" must be a YUV/YCoCg/Gray clip if "dclip" is not provided!')
+        if input.format.color_family not in [vs.YUV, vs.GRAY]:
+            raise TypeError(f'{funcName}: "input" must be a YUV/Gray clip if "dclip" is not provided!')
     else:
-        if not isinstance(dclip, vs.VideoNode) or dclip.format.color_family not in [vs.YUV, vs.YCOCG, vs.GRAY]:
-            raise TypeError(f'{funcName}: "dclip" must be a YUV/YCoCg/Gray clip!')
+        if not isinstance(dclip, vs.VideoNode) or dclip.format.color_family not in [vs.YUV, vs.GRAY]:
+            raise TypeError(f'{funcName}: "dclip" must be a YUV/Gray clip!')
 
         if dclip.num_frames != input.num_frames:
             raise TypeError(f'{funcName}: "dclip" must of the same number of frames as "input"!')
