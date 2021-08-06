@@ -82,6 +82,9 @@ import mvsfunc as mvf
 PlanesType = Optional[Union[int, Sequence[int]]]
 VSFuncType = Union[vs.Func, Callable[..., vs.VideoNode]]
 
+# Function alias
+nnedi3: Callable[..., vs.VideoNode] = core.nnedi3.nnedi3
+
 
 def LDMerge(flt_h: vs.VideoNode, flt_v: vs.VideoNode, src: vs.VideoNode, mrad: int = 0,
             show: bool = False, planes: PlanesType = None,
@@ -972,7 +975,7 @@ def Luma(input: vs.VideoNode, plane: int = 0, power: int = 4) -> vs.VideoNode:
 
     def calc_luma(x: int) -> int:
         p = x << power
-        return (peak - (p & peak)) if (p & (peak + 1)) else (p & peak) # type: ignore
+        return (peak - (p & peak)) if (p & (peak + 1)) else (p & peak)
 
     return core.std.Lut(clip, function=calc_luma)
 
@@ -1008,8 +1011,8 @@ def nnedi3aa(a: vs.VideoNode) -> vs.VideoNode:
     if not isinstance(a, vs.VideoNode):
         raise TypeError(funcName + ': \"a\" must be a clip!')
 
-    last = core.nnedi3.nnedi3(a, field=1, dh=True).std.Transpose()
-    last = core.nnedi3.nnedi3(last, field=1, dh=True).std.Transpose()
+    last = nnedi3(a, field=1, dh=True).std.Transpose()
+    last = nnedi3(last, field=1, dh=True).std.Transpose()
     last = core.resize.Spline36(last, a.width, a.height, src_left=-0.5, src_top=-0.5)
 
     return last
@@ -2280,7 +2283,7 @@ def _SeeSaw_sharpen2(clp: vs.VideoNode, strength: float, power: float, zp: float
             tmp1 = abs(x - neutral) / multiple
             tmp2 = tmp1 ** 2
             tmp3 = zp ** 2
-            return min(max(math.floor(neutral + (tmp1 / zp) ** power * zp * (strength * multiple) * (1 if x > neutral else -1) * # type: ignore
+            return min(max(math.floor(neutral + (tmp1 / zp) ** power * zp * (strength * multiple) * (1 if x > neutral else -1) *
                 (tmp2 * (tmp3 + lodmp) / ((tmp2 + lodmp) * tmp3)) * ((1 + (0 if hidmp == 0. else (zp / hidmp) ** 4)) /
                     (1 + (0 if hidmp == 0. else (tmp1 / hidmp) ** 4))) + 0.5), 0), peak)
 
@@ -3465,7 +3468,7 @@ def GMSD(clip1: vs.VideoNode, clip2: vs.VideoNode, plane: Optional[int] = None,
     if core.std.get_functions().__contains__('PlaneStats'):
         map_mean = core.std.PlaneStats(quality_map, plane=0, prop='PlaneStats')
     else:
-        map_mean = core.std.PlaneAverage(quality_map, plane=0, prop='PlaneStatsAverage')
+        map_mean = core.std.PlaneAverage(quality_map, plane=0, prop='PlaneStatsAverage') # type: ignore
 
     def _PlaneSDFrame(n: int, f: vs.VideoFrame, clip: vs.VideoNode, core: vs.Core) -> vs.VideoNode:
         mean = f.props['PlaneStatsAverage']
@@ -3476,7 +3479,7 @@ def GMSD(clip1: vs.VideoNode, clip2: vs.VideoNode, plane: Optional[int] = None,
     if core.std.get_functions().__contains__('PlaneStats'):
         SDclip = core.std.PlaneStats(SDclip, plane=0, prop='PlaneStats')
     else:
-        SDclip = core.std.PlaneAverage(SDclip, plane=0, prop='PlaneStatsAverage')
+        SDclip = core.std.PlaneAverage(SDclip, plane=0, prop='PlaneStatsAverage') # type: ignore
 
     def _PlaneGMSDTransfer(n: int, f: List[vs.VideoFrame]) -> vs.VideoFrame:
         fout = f[0].copy()
@@ -3607,7 +3610,7 @@ def SSIM(clip1: vs.VideoNode, clip2: vs.VideoNode, plane: Optional[int] = None,
     if core.std.get_functions().__contains__('PlaneStats'):
         map_mean = core.std.PlaneStats(ssim_map, plane=0, prop='PlaneStats')
     else:
-        map_mean = core.std.PlaneAverage(ssim_map, plane=0, prop='PlaneStatsAverage')
+        map_mean = core.std.PlaneAverage(ssim_map, plane=0, prop='PlaneStatsAverage') # type: ignore
 
     def _PlaneSSIMTransfer(n: int, f: List[vs.VideoFrame]) -> vs.VideoFrame:
         fout = f[0].copy()
@@ -5669,15 +5672,15 @@ def MSR(clip: vs.VideoNode, *passes: numbers.Real, radius: int = 1, planes: Plan
 
     pass_diffs = [(y - x) for x, y in zip([0] + passes[:-1], passes)] # type: ignore
 
-    def blur(clip, num_pass):
+    def blur(clip: vs.VideoNode, num_pass: int) -> vs.VideoNode:
         if clip.format.sample_type == vs.INTEGER and radius == 1:
             for _ in range(num_pass):
-                clip = clip.rgvs.RemoveGrain([(20 if i in planes else 0) for i in range(clip.format.num_planes)])
+                clip = clip.rgvs.RemoveGrain([(20 if i in planes else 0) for i in range(clip.format.num_planes)]) # type: ignore
             return clip
         else:
             return clip.std.BoxBlur(hpasses=num_pass, hradius=radius, vpasses=num_pass, vradius=radius, planes=planes)
 
-    flts = list(itertools.accumulate([clip] + pass_diffs, blur))
+    flts = list(itertools.accumulate([clip] + pass_diffs, blur)) # type: ignore
     # flts = list(itertools.accumulate(sigma_diffs, blur, initial=clip)) # Python 3.8 is required
 
     var = (chr((i + ord('y') - ord('a')) % 26 + ord('a')) for i in range(len(passes)))
@@ -5801,8 +5804,9 @@ def getnative(clip: vs.VideoNode, dh_sequence: Sequence[int] = tuple(range(500, 
         data = [0] * clip.num_frames
         remaining_frames = clip.num_frames # mutable
 
-        def func_core(n, f, clip):
-            data[n] = f.props.PlaneStatsAverage + 1e-9 # add eps to avoid getting 0 diff, which later messes up the graph.
+        def func_core(n: int, f: vs.VideoFrame, clip: vs.VideoNode) -> vs.VideoNode:
+            # add eps to avoid getting 0 diff, which later messes up the graph.
+            data[n] = f.props.PlaneStatsAverage + 1e-9 # type: ignore
 
             nonlocal remaining_frames
             remaining_frames -= 1
@@ -5814,7 +5818,7 @@ def getnative(clip: vs.VideoNode, dh_sequence: Sequence[int] = tuple(range(500, 
 
         return core.std.FrameEval(clip, functools.partial(func_core, clip=clip), clip)
 
-    def create_plot(data: Sequence[float], save_filename: str, dh_sequence: Sequence[int]):
+    def create_plot(data: Sequence[float], save_filename: str, dh_sequence: Sequence[int]) -> None:
         plt.style.use("dark_background")
         fig, ax = plt.subplots(figsize=(12, 8))
         ax.plot(dh_sequence, data, ".w-")
