@@ -78,6 +78,11 @@ import havsfunc as haf
 import mvsfunc as mvf
 
 
+_has_lexpr: bool = (
+    hasattr(core, "akarin") and
+    b'x.property' in core.akarin.Version()["expr_features"]
+)
+
 # Type aliases
 PlanesType = Optional[Union[int, Sequence[int]]]
 VSFuncType = Union[vs.Func, Callable[..., vs.VideoNode]]
@@ -3173,14 +3178,24 @@ def GuidedFilter(input: vs.VideoNode, guidance: Optional[vs.VideoNode] = None, r
 
         denominator = core.std.PlaneStats(denominator, plane=0)
         # equation (5) in [3], or equation (9) in [4]
-        weight = core.std.FrameEval(denominator, functools.partial(FLT, clip=weight_in, core=core, eps0=eps0), prop_src=[denominator])
+        if _has_lexpr:
+            avg = 'y.PlaneStatsAverage'
+            weight = core.akarin.Expr([weight_in, denominator], 'x {eps0} + {avg} *'.format(eps0=eps0, avg=avg))
+        else:
+            weight = core.std.FrameEval(denominator, functools.partial(FLT, clip=weight_in, core=core, eps0=eps0), prop_src=[denominator])
 
         if regulation_mode == 1: # Weighted Guided Image Filter
             a = core.std.Expr([cov_Ip, var_I, weight], ['x y {eps} z / + /'.format(eps=eps)])
         else: # regulation_mode == 2, Gradient Domain Guided Image Filter
             weight_in = core.std.PlaneStats(weight_in, plane=0)
-            a = core.std.FrameEval(weight, functools.partial(FLT2, cov_Ip=cov_Ip, weight_in=weight_in, weight=weight,
-                var_I=var_I, core=core, eps=eps), prop_src=[weight_in])
+            if _has_lexpr:
+                alpha = 'y.PlaneStatsAverage'
+                kk = '-4 y.PlaneStatsMin {alpha} - 1e-6 - /'.format(alpha=alpha)
+                a = core.akarin.Expr([cov_Ip, weight_in, weight, var_I],
+                    ['x {eps} 1 1 1 {kk} y {alpha} - * exp + / - * z / + a {eps} z / + /'.format(eps=eps, kk=kk, alpha=alpha)])
+            else:
+                a = core.std.FrameEval(weight, functools.partial(FLT2, cov_Ip=cov_Ip, weight_in=weight_in, weight=weight,
+                    var_I=var_I, core=core, eps=eps), prop_src=[weight_in])
     else: # regulation_mode == 0, Original Guided Filter
         if cov_Ip is var_I:
             a = core.std.Expr([cov_Ip], ['x x {} + /'.format(eps)])
@@ -3474,7 +3489,11 @@ def GMSD(clip1: vs.VideoNode, clip2: vs.VideoNode, plane: Optional[int] = None,
         mean = f.props['PlaneStatsAverage']
         expr = "x {mean} - dup *".format(mean=mean)
         return core.std.Expr(clip, expr)
-    SDclip = core.std.FrameEval(quality_map, functools.partial(_PlaneSDFrame, clip=quality_map, core=core), map_mean)
+    if _has_lexpr:
+        mean = "y.PlaneStatsAverage"
+        SDclip = core.akarin.Expr([quality_map, map_mean], "x {mean} - dup *".format(mean=mean))
+    else:
+        SDclip = core.std.FrameEval(quality_map, functools.partial(_PlaneSDFrame, clip=quality_map, core=core), map_mean)
 
     if core.std.get_functions().__contains__('PlaneStats'):
         SDclip = core.std.PlaneStats(SDclip, plane=0, prop='PlaneStats')
@@ -4715,7 +4734,11 @@ def MDSI(clip1: vs.VideoNode, clip2: vs.VideoNode, down_scale: int = 1, alpha: f
         mean = f.props['PlaneMean']
         expr = "x {mean} - abs".format(mean=mean)
         return core.std.Expr(clip, expr)
-    ADclip = core.std.FrameEval(gcs, functools.partial(_PlaneADFrame, clip=gcs, core=core), mean_gcs)
+    if _has_lexpr:
+        mean = "y.PlaneMean"
+        ADclip = core.akarin.Expr([gcs, mean_gcs], "x {mean} - abs".format(mean=mean))
+    else:
+        ADclip = core.std.FrameEval(gcs, functools.partial(_PlaneADFrame, clip=gcs, core=core), mean_gcs)
     ADclip = mvf.PlaneAverage(ADclip, 0, "PlaneMAD")
 
     def _FrameMDSITransfer(n: int, f: List[vs.VideoFrame]) -> vs.VideoFrame:
@@ -5843,3 +5866,4 @@ def getnative(clip: vs.VideoNode, dh_sequence: Sequence[int] = tuple(range(500, 
     stats = core.std.PlaneStats(diff)
 
     return output_statistics(stats, save_filename, dh_sequence)
+
