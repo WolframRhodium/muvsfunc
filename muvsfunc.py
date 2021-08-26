@@ -88,7 +88,7 @@ PlanesType = Optional[Union[int, Sequence[int]]]
 VSFuncType = Union[vs.Func, Callable[..., vs.VideoNode]]
 
 # Function alias
-nnedi3: Callable[..., vs.VideoNode] = core.nnedi3.nnedi3
+nnedi3: Optional[Callable[..., vs.VideoNode]] = core.nnedi3.nnedi3 if hasattr(core, "nnedi3") else None
 
 
 def LDMerge(flt_h: vs.VideoNode, flt_v: vs.VideoNode, src: vs.VideoNode, mrad: int = 0,
@@ -1016,8 +1016,11 @@ def nnedi3aa(a: vs.VideoNode) -> vs.VideoNode:
     if not isinstance(a, vs.VideoNode):
         raise TypeError(funcName + ': \"a\" must be a clip!')
 
-    last = nnedi3(a, field=1, dh=True).std.Transpose()
-    last = nnedi3(last, field=1, dh=True).std.Transpose()
+    if nnedi3 and callable(nnedi3):
+        last = nnedi3(a, field=1, dh=True).std.Transpose()
+        last = nnedi3(last, field=1, dh=True).std.Transpose()
+    else:
+        raise RuntimeError("nnedi3 not found")
     last = core.resize.Spline36(last, a.width, a.height, src_left=-0.5, src_top=-0.5)
 
     return last
