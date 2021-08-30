@@ -52,8 +52,11 @@ def build_engine(
 
     config = builder.create_builder_config()
     config.max_workspace_size = int(1.6 * 1024 ** 3)
-    with open("timing_cache.buffer", "rb") as cache_f:
-        cache = config.create_timing_cache(cache_f.read())
+    try:
+        with open("timing_cache.buffer", "rb") as cache_f:
+            cache = config.create_timing_cache(cache_f.read())
+    except FileNotFoundError:
+        cache = config.create_timing_cache(b"")
     config.set_timing_cache(cache=cache, ignore_mismatch=False)
 
     output = builder.build_serialized_network(network, config)
