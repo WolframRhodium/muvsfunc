@@ -15,6 +15,7 @@ _cuda_context = init_cuda()
 def FFDNet(
     clip: vs.VideoNode,
     sigma: float = 5.0,
+    use_cuda_graph: bool = False,
     logger: trt.Logger = trt.Logger(trt.Logger.WARNING)
 ) -> vs.VideoNode:
 
@@ -76,10 +77,7 @@ def FFDNet(
     checkError(cuda.cuMemcpyHtoDAsync(
         d_sigma.obj, h_sigma.obj, sigma_size, stream.obj))
 
-    def inference_core(n, f):
-        for i in range(3):
-            h_input_array[0, i, :, :] = np.asarray(f.get_read_array(i))
-
+    def execute():
         checkError(cuda.cuMemcpyHtoDAsync(
             d_input.obj, h_input.obj, input_size, stream.obj))
 
@@ -89,6 +87,27 @@ def FFDNet(
 
         checkError(cuda.cuMemcpyDtoHAsync(
             h_output.obj, d_output.obj, output_size, stream.obj))
+
+    if use_cuda_graph:
+        checkError(cuda.cuStreamBeginCapture(
+            stream.obj, cuda.CUstreamCaptureMode.CU_STREAM_CAPTURE_MODE_RELAXED))
+
+        execute()
+
+        graph = checkError(cuda.cuStreamEndCapture(stream.obj))
+        graphexec, error_node = checkError(cuda.cuGraphInstantiate(
+            graph, logBuffer=b"", bufferSize=0))
+        graphexec = UniqueResource(graphexec, cuda.cuGraphExecDestroy, graphexec)
+        checkError(cuda.cuGraphDestroy(graph))
+
+    def inference_core(n, f):
+        for i in range(3):
+            h_input_array[0, i, :, :] = np.asarray(f.get_read_array(i))
+
+        if use_cuda_graph:
+            checkError(cuda.cuGraphLaunch(graphexec.obj, stream.obj))
+        else:
+            execute()
 
         fout = f.copy()
         fout.get_write_array(0) # triggers COW
@@ -100,4 +119,3 @@ def FFDNet(
         return fout
 
     return core.std.ModifyFrame(clip, clips=[clip], selector=inference_core)
-

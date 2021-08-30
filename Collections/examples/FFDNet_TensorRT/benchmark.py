@@ -20,6 +20,7 @@ def benchmark(
     width: int,
     height: int,
     iter: int = 5,
+    use_cuda_graph: bool = False,
     logger: trt.Logger = trt.Logger(trt.Logger.VERBOSE)
 ) -> None:
 
@@ -44,11 +45,31 @@ def benchmark(
     end = checkError(cuda.cuEventCreate(cuda.CUevent_flags.CU_EVENT_DEFAULT.value))
     end = UniqueResource(end, cuda.cuEventDestroy, end)
 
+    def execute():
+        execution_context.execute_async_v2(bindings, stream_handle=stream.obj)
+
+    if use_cuda_graph:
+        checkError(cuda.cuStreamBeginCapture(
+            stream.obj, cuda.CUstreamCaptureMode.CU_STREAM_CAPTURE_MODE_RELAXED))
+
+        execute()
+
+        graph = checkError(cuda.cuStreamEndCapture(stream.obj))
+        graphexec, error_node = checkError(cuda.cuGraphInstantiate(
+            graph, logBuffer=b"", bufferSize=0))
+        graphexec = UniqueResource(graphexec, cuda.cuGraphExecDestroy, graphexec)
+        checkError(cuda.cuGraphDebugDotPrint(
+            graph, b"ffdnet.dot",
+            cuda.CUgraphDebugDot_flags.CU_GRAPH_DEBUG_DOT_FLAGS_VERBOSE.value))
+        checkError(cuda.cuGraphDestroy(graph))
+
     for _ in range(iter):
         checkError(cuda.cuEventRecord(start.obj, stream.obj))
 
-        # execution_context.execute_v2(bindings)
-        execution_context.execute_async_v2(bindings, stream_handle=stream.obj)
+        if use_cuda_graph:
+            checkError(cuda.cuGraphLaunch(graphexec.obj, stream.obj))
+        else:
+            execute()
 
         checkError(cuda.cuEventRecord(end.obj, stream.obj))
         checkError(cuda.cuEventSynchronize(end.obj))
@@ -59,5 +80,4 @@ def benchmark(
 
 
 if __name__ == "__main__":
-    benchmark(width=1920, height=1080, iter=10)
-
+    benchmark(width=1920, height=1080, iter=10, use_cuda_graph=False)

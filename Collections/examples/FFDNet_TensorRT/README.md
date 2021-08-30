@@ -11,5 +11,7 @@
 
 5. (Optionally) Run `benchmark.py` or `trtexec --loadEngine="ffdnet.engine" --useCudaGraph` to test the engine's raw performance.
 
+    `benchmark.py` writes a DOT file "ffdnet.dot" describing inference graph structure when `use_cuda_graph=True`. The DOT file can be visualized by running `dot -Tsvg ffdnet.dot > ffdnet.svg`.
+
 6. Run `ffdnet_test.vpy` to test in VapourSynth.
 

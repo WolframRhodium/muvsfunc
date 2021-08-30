@@ -7,6 +7,7 @@ def build_engine(
     width: int,
     height: int,
     args_dict: Dict,
+    max_workspace_size: int = int(1.6 * 1024 ** 3)
     logger: trt.Logger = trt.Logger(trt.Logger.VERBOSE)
 ) -> None:
 
@@ -51,12 +52,9 @@ def build_engine(
     network.mark_output(output)
 
     config = builder.create_builder_config()
-    config.max_workspace_size = int(1.6 * 1024 ** 3)
-    try:
-        with open("timing_cache.buffer", "rb") as cache_f:
-            cache = config.create_timing_cache(cache_f.read())
-    except FileNotFoundError:
-        cache = config.create_timing_cache(b"")
+    config.max_workspace_size = max_workspace_size
+    with open("timing_cache.buffer", "rb") as cache_f:
+        cache = config.create_timing_cache(cache_f.read())
     config.set_timing_cache(cache=cache, ignore_mismatch=False)
 
     output = builder.build_serialized_network(network, config)
@@ -75,4 +73,3 @@ if __name__ == "__main__":
     args_dict = torch.load("ffdnet_color.pth")
 
     build_engine(width=1920, height=1080, args_dict=args_dict)
-
