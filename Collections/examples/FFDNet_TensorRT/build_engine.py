@@ -7,7 +7,7 @@ def build_engine(
     width: int,
     height: int,
     args_dict: Dict,
-    max_workspace_size: int = int(1.6 * 1024 ** 3)
+    max_workspace_size: int = int(1.6 * 1024 ** 3),
     logger: trt.Logger = trt.Logger(trt.Logger.VERBOSE)
 ) -> None:
 
