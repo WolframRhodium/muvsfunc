@@ -82,6 +82,10 @@ _has_lexpr: bool = (
     hasattr(core, "akarin") and
     b'x.property' in core.akarin.Version()["expr_features"]
 )
+_has_lexpr_lutspa: bool = (
+    hasattr(core, "akarin") and
+    b'X' in core.akarin.Version()["expr_features"]
+)
 
 # Type aliases
 PlanesType = Optional[Union[int, Sequence[int]]]
@@ -2011,6 +2015,7 @@ def ColorBarsHD(clip: Optional[vs.VideoNode] = None, width: int = 1288, height: 
     By default, a 1288×720, YV24, TV range, 29.97 fps, 1 frame clip is produced.
 
     Requirment:
+        lexpr (https://github.com/AkarinVS/vapoursynth-plugin), or
         mt_lutspa by tp7 (https://gist.githubusercontent.com/tp7/1e39044e1b660ef0a02c)
 
     Args:
@@ -2029,7 +2034,6 @@ def ColorBarsHD(clip: Optional[vs.VideoNode] = None, width: int = 1288, height: 
     '''
 
     funcName = 'ColorBarsHD'
-    #from mt_lutspa import lutspa
 
     if clip is not None and not isinstance(clip, vs.VideoNode):
         raise TypeError(funcName + ': \"clip\" must be a clip!')
@@ -2065,8 +2069,11 @@ def ColorBarsHD(clip: Optional[vs.VideoNode] = None, width: int = 1288, height: 
     pattern3_colors = dict(Yellow100=[219, 16, 138], Red100=[63, 102, 240])
     Yellow100 = core.std.BlankClip(clip, d, p23, color=pattern3_colors['Yellow100'], **blkclip_args)
     Y_Ramp_tmp = core.std.BlankClip(clip, c*7, 1, color=[0, 128, 128], **blkclip_args)
-    #Y_Ramp = lutspa(Y_Ramp_tmp, mode='absolute', y_expr='220 x * {c} 7 * / 16 +'.format(c=c), chroma='copy')
-    Y_Ramp = core.akarin.Expr(Y_Ramp_tmp, ['220 X * {c} 7 * / 16 +'.format(c=c), ''])
+    if _has_lexpr_lutspa:
+        Y_Ramp = core.akarin.Expr(Y_Ramp_tmp, ['220 X * {c} 7 * / 16 +'.format(c=c), ''])
+    else:
+        from mt_lutspa import lutspa
+        Y_Ramp = lutspa(Y_Ramp_tmp, mode='absolute', y_expr='220 x * {c} 7 * / 16 +'.format(c=c), chroma='copy')
     Y_Ramp = core.resize.Point(Y_Ramp, c*7, p23)
     Red100 = core.std.BlankClip(clip, d, p23, color=pattern3_colors['Red100'], **blkclip_args)
     pattern3 = core.std.StackHorizontal([Yellow100, Y_Ramp, Red100])
