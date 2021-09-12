@@ -5745,7 +5745,7 @@ def getnative(clip: vs.VideoNode, dh_sequence: Sequence[int] = tuple(range(500, 
         dh_sequence: (int []) List of heights to be evaluated.
             Default is [500 ... 1000].
 
-        kernel: (str, any of ["bicubic", "bilinear", "lanczos", "spline36", "spline64"]) Resize kernel to be used.
+        kernel: (str, any of ["bicubic", "bilinear", "lanczos", "spline16", "spline36", "spline64"]) Resize kernel to be used.
             Default is "bicubic".
 
         b, c: (int or float) Parameters of parametric kernel.
@@ -5829,6 +5829,9 @@ def getnative(clip: vs.VideoNode, dh_sequence: Sequence[int] = tuple(range(500, 
         elif kernel == 'spline36':
             descaled = core.descale.Despline36(clip, dw, dh)
             rescaled = core.resize.Spline36(descaled, w, h)
+        elif kernel == 'spline64':
+            descaled = core.descale.Despline64(clip, dw, dh)
+            rescaled = core.resize.Spline64(descaled, w, h)
         else:
             raise NotImplementedError(f"Kernel {kernel} is not implemented.")
 
