@@ -5860,6 +5860,9 @@ def getnative(clip: vs.VideoNode, dh_sequence: Sequence[int] = tuple(range(500, 
         ax.set(xlabel="Height", xticks=ticks, ylabel="Relative error", title=save_filename, yscale="log")
         fig.savefig(f"{save_filename}")
         plt.close()
+        with open(f"{save_filename}.txt", "w") as ftxt:
+            import pprint
+            pprint.pprint(list(zip(dh_sequence, data)), stream=ftxt)
 
     # process
     if rt_eval:
