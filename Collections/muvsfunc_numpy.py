@@ -1537,7 +1537,7 @@ def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, blo
         epoch: (int) Epoch to load of MXNet model file.
             Default is 0.
 
-        up_scale: (int) Upscaling factor.
+        up_scale: (int or float) Upscaling factor.
             Should be compatiable with the model.
             Default is 2.
 
@@ -1661,15 +1661,15 @@ def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, blo
         if up_scale != 1:
             if use_fmtc:
                 if resample_kernel.lower() == 'catmull-rom':
-                    clip = core.fmtc.resample(clip, clip.width*up_scale, clip.height*up_scale, kernel='bicubic', a1=0, a2=0.5, **resample_args)
+                    clip = core.fmtc.resample(clip, int(clip.width*up_scale), int(clip.height*up_scale), kernel='bicubic', a1=0, a2=0.5, **resample_args)
                 else:
-                    clip = core.fmtc.resample(clip, clip.width*up_scale, clip.height*up_scale, kernel=resample_kernel, **resample_args)
+                    clip = core.fmtc.resample(clip, int(clip.width*up_scale), int(clip.height*up_scale), kernel=resample_kernel, **resample_args)
             else: # use vszimg
                 if resample_kernel.lower() == 'catmull-rom':
-                    clip = core.resize.Bicubic(clip, clip.width*up_scale, clip.height*up_scale, filter_param_a=0, filter_param_b=0.5, **resample_args)
+                    clip = core.resize.Bicubic(clip, int(clip.width*up_scale), int(clip.height*up_scale), filter_param_a=0, filter_param_b=0.5, **resample_args)
                 else:
                     kernel = resample_kernel.capitalize()
-                    clip = eval(f'core.resize.{kernel}')(clip, clip.width*up_scale, clip.height*up_scale, **resample_args)
+                    clip = eval(f'core.resize.{kernel}')(clip, int(clip.width*up_scale), int(clip.height*up_scale), **resample_args)
 
             up_scale = 1
 
@@ -1707,7 +1707,7 @@ def super_resolution(clip, model_filename, epoch=0, up_scale=2, block_w=128, blo
 
     # inference
     if up_scale != 1:
-        blank = core.std.BlankClip(clip, width=clip.width*up_scale, height=clip.height*up_scale)
+        blank = core.std.BlankClip(clip, width=int(clip.width*up_scale), height=int(clip.height*up_scale))
         super_res = numpy_process([blank, clip], super_resolution_core, runner=runner, framework=framework,
             input_per_plane=(not is_rgb_model), output_per_plane=(not is_rgb_model), up_scale=up_scale, block_h=block_h, block_w=block_w,
             pad=pad, crop=crop, pad_mode=pad_mode, data_format=data_format, channels_last=data_format == 'NHWC',
@@ -1780,10 +1780,10 @@ def super_resolution_core(img, runner, up_scale=2, block_h=None, block_w=None, p
     # pre-allocation
     if data_format == 'NCHW':
         _, c, h, w = img.shape
-        pred = np.empty((1, c, h * up_scale, w * up_scale), dtype=np.float32)
+        pred = np.empty((1, c, int(h * up_scale), int(w * up_scale)), dtype=np.float32)
     else:
         _, h, w, c = img.shape
-        pred = np.empty((1, h * up_scale, w * up_scale, c), dtype=np.float32)
+        pred = np.empty((1, int(h * up_scale), int(w * up_scale), c), dtype=np.float32)
 
     # framework-related operations
     if framework == 'mxnet':
@@ -1856,16 +1856,16 @@ def super_resolution_core(img, runner, up_scale=2, block_h=None, block_w=None, p
             # post-cropping
             if crop is not None:
                 if data_format == 'NCHW':
-                    pred[:, :, top*up_scale:bottom*up_scale, left*up_scale:right*up_scale] = h_out[:, :, 
+                    pred[:, :, int(top*up_scale):int(bottom*up_scale), int(left*up_scale):int(right*up_scale)] = h_out[:, :, 
                         crop[0]:(-crop[1] if crop[1] > 0 else None), crop[2]:(-crop[3] if crop[3] > 0 else None)]
                 else:
-                    pred[:, top*up_scale:bottom*up_scale, left*up_scale:right*up_scale, :] = h_out[:, 
+                    pred[:, int(top*up_scale):int(bottom*up_scale), int(left*up_scale):int(right*up_scale), :] = h_out[:, 
                         crop[0]:(-crop[1] if crop[1] > 0 else None), crop[2]:(-crop[3] if crop[3] > 0 else None), :]
             else:
                 if data_format == 'NCHW':
-                    pred[:, :, top*up_scale:bottom*up_scale, left*up_scale:right*up_scale] = h_out[:, :, :, :]
+                    pred[:, :, int(top*up_scale):int(bottom*up_scale), int(left*up_scale):int(right*up_scale)] = h_out[:, :, :, :]
                 else:
-                    pred[:, top*up_scale:bottom*up_scale, left*up_scale:right*up_scale, :] = h_out[:, :, :, :]
+                    pred[:, int(top*up_scale):int(bottom*up_scale), int(left*up_scale):int(right*up_scale), :] = h_out[:, :, :, :]
 
     if ndim == 2:
         super_res = pred.squeeze(axis=(0, 1) if data_format == 'NCHW' else (0, 3))
