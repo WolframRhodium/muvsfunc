@@ -23,6 +23,20 @@ from vapoursynth import core
 import muvsfunc as muf
 import mvsfunc as mvf
 
+_is_api4: bool = hasattr(vs, "__api_version__") and vs.__api_version__.api_major == 4
+
+def _get_array(frame, plane, read=True):
+    if not read and frame.readonly:
+        raise ValueError("Frame is readonly")
+
+    if _is_api4:
+        return frame[plane]
+    else:
+        if read:
+            return frame.get_read_array(plane)
+        else:
+            return frame.get_write_array(plane)
+
 def GPS(clip, gamma=None):
     """Get Power Spectrum
 
@@ -576,7 +590,7 @@ def fast_mandelbrot(width=1920, height=1280, iterations=50,
         assert low < high, f"{low} < {high}"
 
         f = f.copy()
-        mem_view = f.get_write_array(0)
+        mem_view = _get_array(f, plane=0, read=False)
         height, width = mem_view.shape
 
         if horizontal:

@@ -38,6 +38,20 @@ from vapoursynth import core
 import mvsfunc as mvf
 import numpy as np
 
+_is_api4: bool = hasattr(vs, "__api_version__") and vs.__api_version__.api_major == 4
+
+def _get_array(frame, plane, read=True):
+    if not read and frame.readonly:
+        raise ValueError("Frame is readonly")
+
+    if _is_api4:
+        return frame[plane]
+    else:
+        if read:
+            return frame.get_read_array(plane)
+        else:
+            return frame.get_write_array(plane)
+
 def numpy_process(clips, numpy_function, input_per_plane=True, output_per_plane=True, lock_source_array=True, omit_first_clip=False, channels_last=True, **fun_args):
     """Helper function for filtering clip in NumPy
 
@@ -97,11 +111,11 @@ def numpy_process(clips, numpy_function, input_per_plane=True, output_per_plane=
             for index, frame in enumerate(f):
                 if not input_per_plane[index]: # All planes of this clip will be passed through the function simultaneously
                     if frame.format.num_planes == 1: # It's a gray scale clip
-                        pre_stacked_clips[index] = np.asarray(frame.get_read_array(0))
+                        pre_stacked_clips[index] = np.asarray(_get_array(frame, plane=0, read=True))
                     else: # It's a clip with multiple planes
                         planes_data = []
                         for p in range(frame.format.num_planes):
-                            arr = np.asarray(frame.get_read_array(p))
+                            arr = np.asarray(_get_array(frame, plane=p, read=True))
                             planes_data.append(arr)
 
                         pre_stacked_clips[index] = np.stack(planes_data, axis=2 if channels_last else 0)
@@ -111,7 +125,7 @@ def numpy_process(clips, numpy_function, input_per_plane=True, output_per_plane=
                 inputs_data = []
                 for index, frame in enumerate(f):
                     if input_per_plane[index]: # Input the corresponding plane
-                        current_input = np.asarray(frame.get_read_array(p))
+                        current_input = np.asarray(_get_array(frame, plane=p, read=True))
                     else: # Use the pre-stacked frames
                         current_input = pre_stacked_clips[index]
 
@@ -119,7 +133,7 @@ def numpy_process(clips, numpy_function, input_per_plane=True, output_per_plane=
 
                     inputs_data.append(current_input) # Collect the inputs
 
-                output_array = np.asarray(fout.get_write_array(p))
+                output_array = np.asarray(_get_array(fout, plane=p, read=False))
 
                 output_array[:] = numpy_function(*inputs_data, **fun_args)
 
@@ -128,11 +142,11 @@ def numpy_process(clips, numpy_function, input_per_plane=True, output_per_plane=
 
             for frame in f:
                 if frame.format.num_planes == 1: # It's a gray scale clip
-                    current_input = np.asarray(frame.get_read_array(0))
+                    current_input = np.asarray(_get_array(frame, plane=0, read=True))
                 else: # It's's a clip with multiple planes
                     plane_list = []
                     for p in range(frame.format.num_planes):
-                        arr = np.asarray(frame.get_read_array(p))
+                        arr = np.asarray(_get_array(frame, plane=p, read=True))
                         plane_list.append(arr)
                     current_input = np.stack(plane_list, axis=2 if channels_last else 0)
 
@@ -144,7 +158,7 @@ def numpy_process(clips, numpy_function, input_per_plane=True, output_per_plane=
 
             # Plane-wise copying
             for p in range(fout.format.num_planes):
-                output_array = np.asarray(fout.get_write_array(p))
+                output_array = np.asarray(_get_array(frame, plane=p, read=False))
                 np.copyto(output_array, output[:, :, p] if channels_last else output[p, :, :])
 
         return fout
@@ -207,7 +221,7 @@ def numpy_process_val(clip, numpy_function, props_name, per_plane=True, lock_sou
         val = []
         if per_plane:
             for p in range(planes):
-                s = np.asarray(f.get_read_array(p))
+                s = np.asarray(_get_array(frame, plane=p, read=True))
                 if lock_source_array:
                     s.flags.writeable = False # Lock the source data, making it read-only
 
@@ -215,7 +229,7 @@ def numpy_process_val(clip, numpy_function, props_name, per_plane=True, lock_sou
         else:
             s_list = []
             for p in range(planes):
-                arr = np.asarray(f.get_read_array(p)) # This is a 2-D array
+                arr = np.asarray(_get_array(frame, plane=p, read=True)) # This is a 2-D array
                 s_list.append(arr)
             s = np.stack(s_list, axis=2) # "s" is a 3-D array
             if lock_source_array:

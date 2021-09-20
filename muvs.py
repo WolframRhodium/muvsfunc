@@ -43,12 +43,14 @@ __all__ = [
     "Min", "Max", "Conditional"]
 
 
+_is_api4: bool = hasattr(vs, "__api_version__") and vs.__api_version__.api_major == 4
+
 class _Core:
     def __init__(self):
         self._registered_funcs = {} # type: Dict[str, Callable[..., '_VideoNode']]
 
     def __setattr__(self, name, value):
-        if name in ["num_threads", "add_cache", "max_cache_size"]:
+        if name in ["num_threads", "max_cache_size"]:
             setattr(_vscore, name, value)
         else:
             if callable(value):
@@ -118,7 +120,6 @@ class Recorder:
                 "import vapoursynth as vs\n"
                 "from vapoursynth import core\n"
                 "\n"
-                f"core.add_cache = {core.add_cache}\n"
                 f"core.num_threads = {core.num_threads}\n"
                 f"core.max_cache_size = {core.max_cache_size}\n"
                 "\n")
@@ -180,7 +181,7 @@ def _build_repr() -> Callable[..., str]:
 
         elif isinstance(obj, vs.Format):
             arg_str = ', '.join(f"{k}={closure(v)}" for k, v in obj._as_dict().items())
-            return f"core.register_format({arg_str})"
+            return f"core.query_video_format({arg_str})" if _is_api4 else f"core.register_format({arg_str})"
 
         else:
             return repr(obj)
@@ -913,7 +914,8 @@ class _ArithmeticExpr(_Fake_VideoNode):
                     if bits == in_format.bits_per_sample:
                         out_format = None
                     else:
-                        out_format = core.register_format(
+                        query_video_format = core.query_video_format if _is_api4 else core.register_format
+                        out_format = query_video_format(
                             color_family=in_format.color_family, 
                             sample_type=vs.INTEGER if bits <= 16 else vs.FLOAT, 
                             bits_per_sample=bits, 

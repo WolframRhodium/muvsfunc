@@ -78,6 +78,8 @@ import havsfunc as haf
 import mvsfunc as mvf
 
 
+_is_api4: bool = hasattr(vs, "__api_version__") and vs.__api_version__.api_major == 4
+
 _has_lexpr: bool = (
     hasattr(core, "akarin") and
     b'x.property' in core.akarin.Version()["expr_features"]
@@ -5693,7 +5695,8 @@ def MSR(clip: vs.VideoNode, *passes: numbers.Real, radius: int = 1, planes: Plan
         planes = [planes]
 
     in_format = clip.format
-    out_format = core.register_format(
+    query_video_format = core.query_video_format if _is_api4 else core.register_format
+    out_format = query_video_format(
         color_family=in_format.color_family,
         sample_type=vs.FLOAT,
         bits_per_sample=32,
