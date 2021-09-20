@@ -4,10 +4,9 @@ os.environ['MXNET_CUDNN_AUTOTUNE_DEFAULT'] = '0' # 0: False 1: Default 2: Full
 import mxnet as mx
 
 import vapoursynth as vs
+from vapoursynth import core
 import muvsfunc as muf
 import muvsfunc_numpy as mufnp
-
-core = vs.get_core()
 
 # super resolution using MXNet
 

@@ -10,11 +10,10 @@ os.environ['OPENCV_OPENCL_DEVICE'] = 'NVIDIA:GPU:' # use GPU to accelerate proce
 
 
 import vapoursynth as vs
+from vapoursynth import core
 import cv2
 import mvsfunc as mvf
 import muvsfunc_numpy as mufnp
-
-core = vs.get_core()
 
 
 # global params

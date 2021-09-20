@@ -3,10 +3,9 @@
 from numba import jit, prange
 
 import vapoursynth as vs
+from vapoursynth import core
 import numpy as np
 from functools import partial
-
-core = vs.get_core()
 
 
 # Load source clip. Only GRAYS is supported
@@ -20,6 +19,22 @@ thr = 0.01
 # pre-processing
 if src.format.id != vs.GRAYS:
     raise TypeError('Only 32-bit float grayscale input is supported!')
+
+
+_is_api4: bool = hasattr(vs, "__api_version__") and vs.__api_version__.api_major == 4
+
+
+def _get_array(frame, plane, read=True):
+    if not read and frame.readonly:
+        raise ValueError("Frame is readonly")
+
+    if _is_api4:
+        return frame[plane]
+    else:
+        if read:
+            return frame.get_read_array(plane)
+        else:
+            return frame.get_write_array(plane)
 
 
 def erase_module(func):
@@ -65,8 +80,8 @@ def sigma_filter(src, dst, radius, threshold):
 def executor(n, f, radius, thr):
     fout = f.copy()
 
-    src = np.asarray(f.get_read_array(0))
-    dst = np.asarray(fout.get_write_array(0))
+    src = np.asarray(_get_array(f, 0, read=True))
+    dst = np.asarray(_get_array(fout, 0, read=False))
 
     sigma_filter(src, dst, radius, thr)
 

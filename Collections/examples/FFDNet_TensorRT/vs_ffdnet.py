@@ -9,6 +9,22 @@ import tensorrt as trt
 from utils import *
 
 
+_is_api4: bool = hasattr(vs, "__api_version__") and vs.__api_version__.api_major == 4
+
+
+def _get_array(frame, plane, read=True):
+    if not read and frame.readonly:
+        raise ValueError("Frame is readonly")
+
+    if _is_api4:
+        return frame[plane]
+    else:
+        if read:
+            return frame.get_read_array(plane)
+        else:
+            return frame.get_write_array(plane)
+
+
 _cuda_context = init_cuda()
 
 
@@ -102,7 +118,7 @@ def FFDNet(
 
     def inference_core(n, f):
         for i in range(3):
-            h_input_array[0, i, :, :] = np.asarray(f.get_read_array(i))
+            h_input_array[0, i, :, :] = np.asarray(_get_array(f, plane=i, read=True))
 
         if use_cuda_graph:
             checkError(cuda.cuGraphLaunch(graphexec.obj, stream.obj))
@@ -114,7 +130,7 @@ def FFDNet(
         checkError(cuda.cuStreamSynchronize(stream.obj))
 
         for i in range(3):
-            np.asarray(fout.get_write_array(i))[...] = h_output_array[0, i, :, :]
+            np.asarray(_get_array(fout, plane=i, read=False))[...] = h_output_array[0, i, :, :]
 
         return fout
 

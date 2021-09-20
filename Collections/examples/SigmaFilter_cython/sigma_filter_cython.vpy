@@ -1,12 +1,11 @@
 """Sigma Filter in Cython"""
 
 import vapoursynth as vs
+from vapoursynth import core
 from functools import partial
 
 # To build, run `python setup.py build_ext --inplace`
 from sigma_filter import sigma_filter
-
-core = vs.get_core()
 
 
 # Load source clip. Only GRAYS is supported

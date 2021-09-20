@@ -4,9 +4,8 @@ from string import Template
 
 import cupy as cp
 import vapoursynth as vs
+from vapoursynth import core
 import muvsfunc_numpy as mufnp
-
-core = vs.get_core()
 
 # Load source clip. Only GRAYS is supported
 src = core.std.BlankClip(format=vs.GRAYS)
