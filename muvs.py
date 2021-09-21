@@ -1062,8 +1062,7 @@ def _build_VideoNode(fake_vn=None):
     _plane_idx_mapping = {
         vs.YUV: {'Y': 0, 'U': 1, 'V': 2}, 
         vs.RGB: {'R': 0, 'G': 1, 'B': 2}, 
-        vs.GRAY: {'GRAY': 0, 'Y': 0}, 
-        vs.YCOCG: {'Y': 0, 'CO': 1, 'CG': 2}
+        vs.GRAY: {'GRAY': 0, 'Y': 0}
     }
 
     def __init__(self, node: vs.VideoNode):
