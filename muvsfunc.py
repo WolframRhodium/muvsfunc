@@ -1421,7 +1421,10 @@ def TemporalSoften(input: vs.VideoNode, radius: int = 4, scenechange: int = 15) 
         else:
             raise AttributeError('module \"havsfunc\" has no attribute \"SCDetect\"!')
 
-    return core.misc.AverageFrames(input, [1] * (2 * radius + 1), scenechange=scenechange)
+    if _is_api4:
+        return core.std.AverageFrames(input, [1] * (2 * radius + 1), scenechange=scenechange)
+    else:
+        return core.misc.AverageFrames(input, [1] * (2 * radius + 1), scenechange=scenechange)
 
 
 def FixTelecinedFades(input: vs.VideoNode, mode: Union[int, Sequence[int]] = 0,
@@ -5170,7 +5173,11 @@ def avg_decimate(clip: vs.VideoNode, clip2: Optional[vs.VideoNode] = None, weigh
 
     def avg_func(n: int, f: vs.VideoFrame, clip: vs.VideoNode) -> vs.VideoNode:
         if f.props["VDecimateDrop"] == 1:
-            return core.misc.AverageFrames(clip, weights=[0, 1-weight, weight]) # forward averaging
+            # forward averaging
+            if _is_api4:
+                return core.std.AverageFrames(clip, weights=[0, 1-weight, weight])
+            else:
+                return core.misc.AverageFrames(clip, weights=[0, 1-weight, weight])
         else:
             return clip
 
