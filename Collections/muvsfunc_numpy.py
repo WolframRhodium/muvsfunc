@@ -158,7 +158,7 @@ def numpy_process(clips, numpy_function, input_per_plane=True, output_per_plane=
 
             # Plane-wise copying
             for p in range(fout.format.num_planes):
-                output_array = np.asarray(_get_array(frame, plane=p, read=False))
+                output_array = np.asarray(_get_array(fout, plane=p, read=False))
                 np.copyto(output_array, output[:, :, p] if channels_last else output[p, :, :])
 
         return fout
@@ -221,7 +221,7 @@ def numpy_process_val(clip, numpy_function, props_name, per_plane=True, lock_sou
         val = []
         if per_plane:
             for p in range(planes):
-                s = np.asarray(_get_array(frame, plane=p, read=True))
+                s = np.asarray(_get_array(f, plane=p, read=True))
                 if lock_source_array:
                     s.flags.writeable = False # Lock the source data, making it read-only
 
@@ -229,7 +229,7 @@ def numpy_process_val(clip, numpy_function, props_name, per_plane=True, lock_sou
         else:
             s_list = []
             for p in range(planes):
-                arr = np.asarray(_get_array(frame, plane=p, read=True)) # This is a 2-D array
+                arr = np.asarray(_get_array(f, plane=p, read=True)) # This is a 2-D array
                 s_list.append(arr)
             s = np.stack(s_list, axis=2) # "s" is a 3-D array
             if lock_source_array:
