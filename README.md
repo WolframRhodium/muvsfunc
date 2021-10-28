@@ -44,7 +44,7 @@ and the dependencies of them.
 
 - [TemporalMedian](https://github.com/dubhater/vapoursynth-temporalmedian)
 
-- [VSFilter](https://github.com/HomeOfVapourSynthEvolution/VSFilter) (only `TextSub16()`)
+- [VSFilter](https://github.com/HomeOfVapourSynthEvolution/VSFilter) (only required by `TextSub16()`)
 
 - [VSFilterMod](https://github.com/sorayuki/VSFilterMod) (only required by `TextSub16()`)
 
