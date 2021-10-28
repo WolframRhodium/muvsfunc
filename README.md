@@ -1,10 +1,10 @@
 # muvsfunc
 Muonium's VapourSynth functions
 
-### Dependencies
+## Dependencies
 [VapourSynth](https://github.com/vapoursynth/vapoursynth) R39-R57
 
-#### Scripts
+### Scripts
 - [havsfunc](https://github.com/HomeOfVapourSynthEvolution/havsfunc/blob/master/havsfunc.py)
 
 - [mvsfunc](https://github.com/AmusementClub/mvsfunc/blob/mod/mvsfunc.py)
@@ -13,7 +13,7 @@ Muonium's VapourSynth functions
 
 and the dependencies of them.
 
-#### Plugins
+### Plugins
 - [AWarpSharp2](https://github.com/dubhater/vapoursynth-awarpsharp2)
 
 - [Bilateral](https://github.com/HomeOfVapourSynthEvolution/VapourSynth-Bilateral)
@@ -44,22 +44,22 @@ and the dependencies of them.
 
 - [TemporalMedian](https://github.com/dubhater/vapoursynth-temporalmedian)
 
-- [VSFilter](https://github.com/HomeOfVapourSynthEvolution/VSFilter) (`TextSub16()`)
+- [VSFilter](https://github.com/HomeOfVapourSynthEvolution/VSFilter) (only `TextSub16()`)
 
 - [VSFilterMod](https://github.com/sorayuki/VSFilterMod) (only required by `TextSub16()`)
 
 - [vs_mxnet](https://github.com/kice/vs_mxnet) (only required by `super_resolution()`)
 
-#### Python Packages
+### Python Packages
 - [matplotlib](https://github.com/matplotlib/matplotlib) (only required by `getnative()`)
 
 - [MXNet](https://github.com/apache/incubator-mxnet) (only required by `super_resolution()`)
 
-#### Optional dependencies
+### Optional dependencies
 - [Akarin's Expr](https://github.com/AkarinVS/vapoursynth-plugin) (performance optimizations)
 
 
-### Files
+## Files
 `muvsfunc.py` is the main script. It contains some algorithms like `GradFun3`, `GuidedFilter`, `TextSub16`, some helper functions like `MergeChroma`, and some ideas that I develop like `LDMerge`, `AnimeMask`.
 
 `muvsfunc_misc.py` is a complement of the previous script, containing some out-dated algorithms like `SSR`(Single-scale Retinex), some helper functions like `gauss`, `band_merge`, and also one of my idea named `detail_enhancement`. It may or may not be merged to the main script some day.
@@ -68,7 +68,7 @@ and the dependencies of them.
 
 `LUM.py` and `SuperRes.py`(it's not the SuperRes in madVR or MPDN) are the dross of history. You won't need to use them.
 
-### Resources
+## Resources
 
 #### **_[OpenCV for VapourSynth](https://github.com/WolframRhodium/muvsfunc/wiki/OpenCV-Python-for-VapourSynth)_**
 
