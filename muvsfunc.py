@@ -3755,7 +3755,8 @@ def SSIM_downsample(clip: vs.VideoNode, w: int, h: int, smooth: Union[float, VSF
     if gamma:
         clip = nnrs.GammaToLinear(mvf.Depth(clip, 16), fulls=fulls, fulld=fulld, curve=curve, sigmoid=sigmoid, planes=[0])
 
-    clip = mvf.Depth(clip, depth=32, sample=vs.FLOAT, **depth_args)
+    if clip.format.bits_per_sample!=32
+        clip = mvf.Depth(clip, depth=32, sample=vs.FLOAT, **depth_args)
 
     kernel = kernel.capitalize()
     if use_fmtc:
