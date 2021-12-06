@@ -67,6 +67,7 @@ import itertools
 import math
 import operator
 from collections import abc
+import os
 import numbers
 import typing
 from typing import Any, Callable, Dict, Iterable, List, Optional
@@ -5520,8 +5521,8 @@ def S_BoxFilter(clip: vs.VideoNode, radius: int = 1, planes: PlanesType = None) 
     return res
 
 
-def VFRSplice(clips: Sequence[vs.VideoNode], tcfile: Optional[str] = None, v2: bool = True,
-              precision: int = 6) -> vs.VideoNode:
+def VFRSplice(clips: Sequence[vs.VideoNode], tcfile: Optional[Union[str, os.PathLike]] = None, 
+              v2: bool = True, precision: int = 6) -> vs.VideoNode:
     """fractions-based VFRSplice()
 
     This function is modified from mvsfunc.VFRSplice().
@@ -5534,7 +5535,7 @@ def VFRSplice(clips: Sequence[vs.VideoNode], tcfile: Optional[str] = None, v2: b
         clips: List of clips to be spliced.
             Each clip should be CRF(constant frame rate).
 
-        tcfile: (str) Timecode file output.
+        tcfile: (str or os.PathLike) Timecode file output. Supports recursive directory creation.
             Default: None.
 
         v2: (bool) Timecode format.
@@ -5652,6 +5653,10 @@ def VFRSplice(clips: Sequence[vs.VideoNode], tcfile: Optional[str] = None, v2: b
                 [tc2strln(first_tc, precision)],
                 (tc2strln(tc, precision) for tc in tc_gen)
             )
+
+        dirname = os.path.dirname(tcfile)
+        if not os.path.exists(dirname):
+            os.makedirs(dirname)
 
         with open(tcfile, 'w') as ofile:
             ofile.writelines(olines)
