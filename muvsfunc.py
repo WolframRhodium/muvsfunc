@@ -5912,16 +5912,16 @@ def getnative(clip: vs.VideoNode, dh_sequence: Sequence[int] = tuple(range(500, 
 
     def output_statistics(clip: vs.VideoNode, save_filename: str, dh_sequence: Sequence[int]) -> vs.VideoNode:
         data = [0] * clip.num_frames
-        remaining_frames = clip.num_frames # mutable
+        remaining_frames = [1] * clip.num_frames # mutable
 
         def func_core(n: int, f: vs.VideoFrame, clip: vs.VideoNode) -> vs.VideoNode:
             # add eps to avoid getting 0 diff, which later messes up the graph.
             data[n] = f.props.PlaneStatsAverage + 1e-9 # type: ignore
 
             nonlocal remaining_frames
-            remaining_frames -= 1
+            remaining_frames[n] = 0
 
-            if remaining_frames == 0:
+            if sum(remaining_frames) == 0:
                 create_plot(data, save_filename, dh_sequence)
 
             return clip
