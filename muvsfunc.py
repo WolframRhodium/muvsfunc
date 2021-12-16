@@ -5908,6 +5908,8 @@ def getnative(clip: vs.VideoNode, src_heights: Sequence[int] = tuple(range(500, 
     for rescaler in rescalers:
         assert isinstance(rescaler, rescale.Rescaler)
 
+    if isinstance(src_heights, int) or isinstance(src_heights, float):
+        src_heights = (src_heights,)
     if not isinstance(src_heights, tuple):
         src_heights = tuple(src_heights)
 
