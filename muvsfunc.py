@@ -5758,7 +5758,7 @@ class rescale:
             width, height = width, height
             src_left, src_top = 0, 0
         else:
-            base_width = round(w / h * base_height) if base_height % 2 == 1 else round(w / h * base_height / 2) * 2
+            base_width = round(W / H * base_height) if base_height % 2 == 1 else round(W / H * base_height / 2) * 2
             src_width = width
             src_height = height
             width = base_width - 2 * int((base_width - width) / 2)
