@@ -5750,19 +5750,19 @@ def arange(start, stop, step=1):
         current += step
 
 
-class descale:
-    def get_descale_args(w: int, h: int, dw: Union[float, int], dh: Union[float, int], bh: int = None):
-        if bh is None:
-            dw, dh = round(dw), round(dh)
-            width, height = dw, dh
+class rescale:
+    def get_descale_args(W: int, H: int, width: Union[float, int], height: Union[float, int], base_height: int = None):
+        if base_height is None:
+            width, height = round(width), round(height)
+            src_width, src_height = width, height
+            width, height = width, height
             src_left, src_top = 0, 0
-            src_width, src_height = dw, dh
         else:
-            bw = round(w / h * bh) if bh % 2 == 1 else round(w / h * bh / 2) * 2
-            width = bw - 2 * int((bw - dw) / 2)
-            height = bh - 2 * int((bh - dh) / 2)
-            src_width = dw
-            src_height = dh
+            base_width = round(w / h * base_height) if base_height % 2 == 1 else round(w / h * base_height / 2) * 2
+            src_width = width
+            src_height = height
+            width = base_width - 2 * int((base_width - width) / 2)
+            height = base_height - 2 * int((base_height - height) / 2)
             src_top = (height - src_height) / 2
             src_left = (width - src_width) / 2
 
@@ -5775,79 +5775,75 @@ class descale:
             "src_height": src_height,
         }
 
-    class Descale:
-        def __init__(self, kernel: str = "bicubic", b: float = 0.0, c: float = 0.5, taps: int = 3, upscaler: Callable = None):
+    def Upscale(clip: vs.VideoNode, width: int, height: int, kernel: str = "bicubic", taps: int = 3, b: float = 0.0, c: float = 0.5,
+        src_left: float = None, src_top: float = None, src_width: float = None, src_height: float = None) -> vs.VideoNode:
+        upscaler = getattr(core.resize, kernel.capitalize())
+        if kernel.lower() == "bicubic":
+            upscaler = functools.partial(upscaler, filter_param_a=b, filter_param_b=c)
+        elif kernel.lower() == "lanczos":
+            upscaler = functools.partial(upscaler, filter_param_a=taps)
+
+        return upscaler(clip, width, height, src_left=src_left, src_top=src_top, src_width=src_width, src_height=src_height)
+
+    class Rescaler:
+        def __init__(self, kernel: str = "bicubic", taps: int = 3, b: float = 0.0, c: float = 0.5, upscaler: Callable = None):
             kernel = kernel.lower()
             self.kernel = kernel
-            self.b, self.c, self.taps = float(b), float(c), int(taps)
+            self.taps, self.b, self.c = taps, b, c
             self.upscaler = upscaler
-            self.descale_args = {}
-            bc_name = f"_{self.b:.3}_{self.c:.3}" if kernel == "bicubic" else ""
-            taps_name = f"{self.taps}" if kernel == "lanczos" else ""
+            bc_name = f"_{float(b):.3}_{float(c):.3}" if kernel == "bicubic" else ""
+            taps_name = f"{int(taps)}" if kernel == "lanczos" else ""
             self.name = f"{kernel}{bc_name}{taps_name}"
+            self.descale_args = {}
 
-        def __call__(self, clip: vs.VideoNode, dh: int, bh: Optional[int] = None):
-            w, h = clip.width, clip.height
-            dw = w / h * dh
-            return self.descale(clip, dw, dh, bh)
+        def __call__(self, clip: vs.VideoNode, height: int, base_height: Optional[int] = None):
+            W, H = clip.width, clip.height
+            width = W / H * height
+            return self.descale(clip, width, height, base_height)
 
-        def rescale(self, clip: vs.VideoNode, dh: float, bh: Optional[int] = None) -> vs.VideoNode:
-            w, h = clip.width, clip.height
-            dw = w / h * dh
-            descaled = self.descale(clip, dw, dh, bh)
-            rescaled = self.upscale(descaled, w, h)
+        def rescale(self, clip: vs.VideoNode, height: float, base_height: Optional[int] = None) -> vs.VideoNode:
+            W, H = clip.width, clip.height
+            width = W / H * height
+            descaled = self.descale(clip, width, height, base_height)
+            rescaled = self.upscale(descaled, W, H)
             return rescaled
 
-        def descale(self, clip: vs.VideoNode, dw: Union[int, float], dh: Union[int, float], bh: int = None):
-            w, h = clip.width, clip.height
-            self.descale_args = descale.get_descale_args(w, h, dw, dh, bh)
+        def descale(self, clip: vs.VideoNode, width: Union[int, float], height: Union[int, float], base_height: int = None):
+            W, H = clip.width, clip.height
+            self.descale_args = rescale.get_descale_args(W, H, width, height, base_height)
             kwargs = self.descale_args.copy()
             return core.descale.Descale(clip, kernel=self.kernel, taps=self.taps, b=self.b, c=self.c, **kwargs)
 
-        def upscale(self, clip: vs.VideoNode, w: int, h: int) -> vs.VideoNode:
+        def upscale(self, clip: vs.VideoNode, width: int, height: int) -> vs.VideoNode:
             kwargs = self.descale_args.copy()
-            kwargs.update({"width": w, "height": h})
-            return self.upscaler(clip, **kwargs)
+            kwargs.update({"width": width, "height": height})
+            return rescale.Upscale(clip, kernel=self.kernel, taps=self.taps, b=self.b, c=self.c, **kwargs)
 
         def get_save_filename(self):
             from datetime import datetime
-
             return f"{self.name}_{datetime.now().strftime('%H-%M-%S')}.png"
 
-    class Debilinear(Descale):
-        def __init__(self):
-            upscaler = core.resize.Bilinear
-            super().__init__("bilinear", upscaler=upscaler)
+    def Bilinear():
+        return rescale.Rescaler(kernel="bilinear")
 
-    class Debicubic(Descale):
-        def __init__(self, b: float = 0.0, c: float = 0.5):
-            upscaler = functools.partial(core.resize.Bicubic, filter_param_a=b, filter_param_b=c)
-            super().__init__("bicubic", b=b, c=c, upscaler=upscaler)
+    def Bicubic(b: float = 0.0, c: float = 0.5):
+        return rescale.Rescaler(kernel="bicubic", b=b, c=c)
 
-    class Delanczos(Descale):
-        def __init__(self, taps: int = 3):
-            upscaler = functools.partial(core.resize.Lanczos, filter_param_a=taps)
-            super().__init__("lanczos", taps=taps, upscaler=upscaler)
+    def Lanczos(taps: int = 3):
+        return rescale.Rescaler(kernel="lanczos", taps=taps)
 
-    class Despline16(Descale):
-        def __init__(self):
-            upscaler = core.resize.Spline16
-            super().__init__("spline16", upscaler=upscaler)
+    def Spline16():
+        return rescale.Rescaler(kernel="spline16")
 
-    class Despline36(Descale):
-        def __init__(self):
-            upscaler = core.resize.Spline36
-            super().__init__("spline36", upscaler=upscaler)
+    def Spline36():
+        return rescale.Rescaler(kernel="spline36")
 
-    class Despline64(Descale):
-        def __init__(self):
-            upscaler = core.resize.Spline64
-            super().__init__("spline64", upscaler=upscaler)
+    def Spline64():
+        return rescale.Rescaler(kernel="spline64")
 
 
-def getnative(clip: vs.VideoNode, dh_sequence: Sequence[int] = tuple(range(500, 1001)),
-    bh: int = None, descaler: descale.Descale = descale.Debicubic(0, 0.5), crop_size: int = 5,
-    rt_eval: bool = True) -> vs.VideoNode:
+def getnative(clip: vs.VideoNode, src_heights: Sequence[int] = tuple(range(500, 1001)), base_height: int = None,
+    rescaler: rescale.Rescaler = rescale.Bicubic(0, 0.5), crop_size: int = 5, rt_eval: bool = True) -> vs.VideoNode:
     """Find the native resolution(s) of upscaled material (mostly anime)
 
     Modifyed from getnative 1.3.0 (https://github.com/Infiziert90/getnative/tree/ea08405f34a23dc681ff38a45e840ca21379a14d) and
@@ -5905,12 +5901,13 @@ def getnative(clip: vs.VideoNode, dh_sequence: Sequence[int] = tuple(range(500, 
 
     # check
     assert isinstance(clip, vs.VideoNode) and clip.format.id == vs.GRAYS and clip.num_frames == 1
-    assert isinstance(bh, int) or bh is None
+    assert isinstance(rescaler, rescale.Rescaler)
+    assert isinstance(base_height, int) or base_height is None
 
-    if not isinstance(dh_sequence, tuple):
-        dh_sequence = tuple(dh_sequence)
+    if not isinstance(src_heights, tuple):
+        src_heights = tuple(src_heights)
 
-    def output_statistics(clip: vs.VideoNode, save_filename: str, dh_sequence: Sequence[int]) -> vs.VideoNode:
+    def output_statistics(clip: vs.VideoNode, save_filename: str, src_heights: Sequence[int]) -> vs.VideoNode:
         data = [0] * clip.num_frames
         remaining_frames = [1] * clip.num_frames # mutable
 
@@ -5922,31 +5919,31 @@ def getnative(clip: vs.VideoNode, dh_sequence: Sequence[int] = tuple(range(500, 
             remaining_frames[n] = 0
 
             if sum(remaining_frames) == 0:
-                create_plot(data, save_filename, dh_sequence)
+                create_plot(data, save_filename, src_heights)
 
             return clip
 
         return core.std.FrameEval(clip, functools.partial(func_core, clip=clip), clip)
 
-    def create_plot(data: Sequence[float], save_filename: str, dh_sequence: Sequence[int]) -> None:
+    def create_plot(data: Sequence[float], save_filename: str, src_heights: Sequence[int]) -> None:
         plt.style.use("dark_background")
         fig, ax = plt.subplots(figsize=(12, 8))
-        ax.plot(dh_sequence, data, ".w-")
-        ticks = tuple(dh for dh in dh_sequence if dh % 24 == 0) if len(dh_sequence) > 25 else dh_sequence # display full x if no more than 25 tests
+        ax.plot(src_heights, data, ".w-")
+        ticks = tuple(dh for dh in src_heights if dh % 24 == 0) if len(src_heights) > 25 else src_heights # display full x if no more than 25 tests
         ax.set(xlabel="Height", xticks=ticks, ylabel="Relative error", title=save_filename, yscale="log")
         fig.savefig(f"{save_filename}")
         plt.close()
         with open(f"{save_filename}.txt", "w") as ftxt:
             import pprint
-            pprint.pprint(list(zip(dh_sequence, data)), stream=ftxt)
+            pprint.pprint(list(zip(src_heights, data)), stream=ftxt)
 
     # process
     if rt_eval:
-        clip = core.std.Loop(clip, len(dh_sequence))
-        rescaled = core.std.FrameEval(clip, lambda n, clip=clip: descaler.rescale(clip, dh_sequence[n], bh))  # type: ignore
+        clip = core.std.Loop(clip, len(src_heights))
+        rescaled = core.std.FrameEval(clip, lambda n, clip=clip: rescaler.rescale(clip, src_heights[n], base_height))  # type: ignore
     else:
-        rescaled = core.std.Splice([descaler.rescale(clip, dh, bh) for dh in dh_sequence])  # type: ignore
-        clip = core.std.Loop(clip, len(dh_sequence))
+        rescaled = core.std.Splice([rescaler.rescale(clip, src_height, base_height) for src_height in src_heights])  # type: ignore
+        clip = core.std.Loop(clip, len(src_heights))
 
     diff = core.std.Expr([clip, rescaled], ["x y - abs dup 0.015 > swap 0 ?"])
 
@@ -5955,5 +5952,5 @@ def getnative(clip: vs.VideoNode, dh_sequence: Sequence[int] = tuple(range(500, 
 
     stats = core.std.PlaneStats(diff)
 
-    return output_statistics(stats, descaler.get_save_filename(), dh_sequence)
+    return output_statistics(stats, rescaler.get_save_filename(), src_heights)
 
