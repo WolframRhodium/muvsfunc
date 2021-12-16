@@ -5843,7 +5843,7 @@ class rescale:
 
 
 def getnative(clip: vs.VideoNode, src_heights: Sequence[int] = tuple(range(500, 1001)), base_height: int = None,
-    rescaler: rescale.Rescaler = rescale.Bicubic(0, 0.5), crop_size: int = 5, rt_eval: bool = True) -> vs.VideoNode:
+    rescalers: List[rescale.Rescaler] = [rescale.Bicubic(0, 0.5)], crop_size: int = 5, rt_eval: bool = True) -> vs.VideoNode:
     """Find the native resolution(s) of upscaled material (mostly anime)
 
     Modifyed from getnative 1.3.0 (https://github.com/Infiziert90/getnative/tree/ea08405f34a23dc681ff38a45e840ca21379a14d) and
@@ -5901,13 +5901,24 @@ def getnative(clip: vs.VideoNode, src_heights: Sequence[int] = tuple(range(500, 
 
     # check
     assert isinstance(clip, vs.VideoNode) and clip.format.id == vs.GRAYS and clip.num_frames == 1
-    assert isinstance(rescaler, rescale.Rescaler)
     assert isinstance(base_height, int) or base_height is None
+
+    if not isinstance(rescalers, list):
+        rescalers = [rescalers]
+    for rescaler in rescalers:
+        assert isinstance(rescaler, rescale.Rescaler)
 
     if not isinstance(src_heights, tuple):
         src_heights = tuple(src_heights)
 
-    def output_statistics(clip: vs.VideoNode, save_filename: str, src_heights: Sequence[int]) -> vs.VideoNode:
+    if len(rescalers) == 1:
+        multi_kernel = False
+    elif len(src_heights) == 1:
+        multi_kernel = True
+    else:
+        raise ValueError("Multi rescalers with multi src_heights, not supported.")
+
+    def output_statistics(clip: vs.VideoNode, rescalers: Sequence[rescale.Rescaler], src_heights: Sequence[int], multi_kernel: bool) -> vs.VideoNode:
         data = [0] * clip.num_frames
         remaining_frames = [1] * clip.num_frames # mutable
 
@@ -5919,31 +5930,53 @@ def getnative(clip: vs.VideoNode, src_heights: Sequence[int] = tuple(range(500, 
             remaining_frames[n] = 0
 
             if sum(remaining_frames) == 0:
-                create_plot(data, save_filename, src_heights)
+                create_plot(data, rescalers, src_heights, multi_kernel)
 
             return clip
 
         return core.std.FrameEval(clip, functools.partial(func_core, clip=clip), clip)
 
-    def create_plot(data: Sequence[float], save_filename: str, src_heights: Sequence[int]) -> None:
+    def create_plot(data: Sequence[float], rescalers: Sequence[rescale.Rescaler], src_heights: Sequence[int], multi_kernel: bool) -> None:
         plt.style.use("dark_background")
         fig, ax = plt.subplots(figsize=(12, 8))
-        ax.plot(src_heights, data, ".w-")
-        ticks = tuple(dh for dh in src_heights if dh % 24 == 0) if len(src_heights) > 25 else src_heights # display full x if no more than 25 tests
-        ax.set(xlabel="Height", xticks=ticks, ylabel="Relative error", title=save_filename, yscale="log")
+        if not multi_kernel:
+            save_filename = rescalers[0].get_save_filename()
+            ax.plot(src_heights, data, ".w-")
+            ticks = tuple(dh for dh in src_heights if dh % 24 == 0) if len(src_heights) > 25 else src_heights # display full x if no more than 25 tests
+            ax.set(xlabel="Height", xticks=ticks, ylabel="Relative error", title=save_filename, yscale="log")
+            with open(f"{save_filename}.txt", "w") as ftxt:
+                import pprint
+                pprint.pprint(list(zip(src_heights, data)), stream=ftxt)
+        else:
+            from datetime import datetime
+            save_filename = f"{src_heights[0]}_{datetime.now().strftime('%H-%M-%S')}.png"
+            ax.plot(range(len(rescalers)), data, ".w-")
+            ticks = range(len(rescalers))
+            ticklabels = [rescaler.name for rescaler in rescalers]
+            ax.set(xlabel="Height", xticks=ticks, xticklabels=ticklabels, ylabel="Relative error", title=save_filename, yscale="log")
+            with open(f"{save_filename}.txt", "w") as ftxt:
+                import pprint
+                pprint.pprint(list(zip(ticklabels, data)), stream=ftxt)
         fig.savefig(f"{save_filename}")
         plt.close()
-        with open(f"{save_filename}.txt", "w") as ftxt:
-            import pprint
-            pprint.pprint(list(zip(src_heights, data)), stream=ftxt)
 
     # process
-    if rt_eval:
-        clip = core.std.Loop(clip, len(src_heights))
-        rescaled = core.std.FrameEval(clip, lambda n, clip=clip: rescaler.rescale(clip, src_heights[n], base_height))  # type: ignore
+    if not multi_kernel:
+        rescaler = rescalers[0]
+        if rt_eval:
+            clip = core.std.Loop(clip, len(src_heights))
+            rescaled = core.std.FrameEval(clip, lambda n, clip=clip: rescaler.rescale(clip, src_heights[n], base_height))  # type: ignore
+        else:
+            rescaled = core.std.Splice([rescaler.rescale(clip, src_height, base_height) for src_height in src_heights])  # type: ignore
+            clip = core.std.Loop(clip, len(src_heights))
     else:
-        rescaled = core.std.Splice([rescaler.rescale(clip, src_height, base_height) for src_height in src_heights])  # type: ignore
-        clip = core.std.Loop(clip, len(src_heights))
+        src_height = src_heights[0]
+        if rt_eval:
+            clip = core.std.Loop(clip, len(rescalers))
+            rescaled = core.std.FrameEval(clip, lambda n, clip=clip: rescalers[n].rescale(clip, src_height, base_height))  # type: ignore
+        else:
+            rescaled = core.std.Splice([rescaler.rescale(clip, src_height, base_height) for rescaler in rescalers])  # type: ignore
+            clip = core.std.Loop(clip, len(rescalers))
 
     diff = core.std.Expr([clip, rescaled], ["x y - abs dup 0.015 > swap 0 ?"])
 
@@ -5952,5 +5985,5 @@ def getnative(clip: vs.VideoNode, src_heights: Sequence[int] = tuple(range(500, 
 
     stats = core.std.PlaneStats(diff)
 
-    return output_statistics(stats, rescaler.get_save_filename(), src_heights)
+    return output_statistics(stats, rescalers, src_heights, multi_kernel)
 
