@@ -5838,8 +5838,8 @@ class rescale:
         return rescale.Rescaler(kernel="spline64")
 
 
-def getnative(clip: vs.VideoNode, rescalers: List[rescale.Rescaler] = [rescale.Bicubic(0, 0.5)],
-    src_heights: Sequence[int] = tuple(range(500, 1001)), base_height: int = None,
+def getnative(clip: vs.VideoNode, rescalers: Union[rescale.Rescaler, List[rescale.Rescaler]] = [rescale.Bicubic(0, 0.5)],
+    src_heights: Union[int, float, Sequence[int], Sequence[float]] = tuple(range(500, 1001)), base_height: int = None,
     crop_size: int = 5, rt_eval: bool = True, dark: bool = True) -> vs.VideoNode:
     """Find the native resolution(s) of upscaled material (mostly anime)
 
@@ -5851,37 +5851,42 @@ def getnative(clip: vs.VideoNode, rescalers: List[rescale.Rescaler] = [rescale.B
     Args:
         clip: Input clip, vs.GRAYS, single frame.
 
-        dh_sequence: (int []) List of heights to be evaluated.
+        rescalers: (rescale.Rescaler []) Resizer to be used. Should be wrapped as muf.rescale.Rescaler class
+            Default is [muf.rescaler.Bicubic(0, 0.5)].
+
+        src_heights: (int|float []) List of heights to be evaluated.
             Default is [500 ... 1000].
 
-        kernel: (str, any of ["bicubic", "bilinear", "lanczos", "spline16", "spline36", "spline64"]) Resize kernel to be used.
-            Default is "bicubic".
+        base_height: (int) The real integer height before cropping. If not None, fractional resolution will be evaluated.
+            Should be larger than src_height.
+            Default is None.
 
         crop_size: (int) Range of pixels around the border to be excluded in calculation.
             Default is 5.
 
-        save_filename: (str) Filename of saved image.
-            Default is "{kernel}_{b}_{c}_%H-%M-%S.png".
-
-        aot_eval: (bool) Wheter to build the processing graph in runtime to reduce overhead.
+        rt_eval: (bool) Whether to build the processing graph in runtime to reduce overhead.
             Default is True.
+
+        dark: (bool) Whether to use dark background in output png file.
+            Default is True
 
     Example:
         # It is trivial to generate multiple results:
-        result1 = muf.getnative(clip, kernel="bicubic")
-        result2 = muf.getnative(clip, kernel="lanczos")
-        result3 = muf.getnative(clip, kernel="spline36")
+        result1 = muf.getnative(clip, rescalers=muf.rescale.Bicubic())
+        result2 = muf.getnative(clip, rescalers=muf.rescale.Lanczos())
+        result3 = muf.getnative(clip, rescalers=muf.rescale.Spline36())
         last = core.std.Splice([result1, result2, result3])
         last.set_output()
 
         # https://github.com/LittlePox/getnative/tree/f2fef4a5ebbed3cf88e972c14693b75102a0ee29
+        from muf import rescale
         scalers = [
-            ["Bilinear"], ["Bicubic", 1/3, 1/3], ["Bicubic", 0, 0.5], ["Bicubic", 0.5, 0.5],
-            ["Lanczos", 2], ["Lanczos", 3], ["Lanczos", 4],
-            ["Spline16"], ["Spline36"]
+            rescale.Bilinear(), rescale.Bicubic(1/3, 1/3), rescale.Bicubic(0, 0.5), rescale.Bicubic(0.5, 0.5),
+            rescale.Lanczos(2), rescale.Lanczos(3), rescale.Lanczos(4),
+            rescale.Spline16(), rescale.Spline36()
         ]
 
-        last = core.std.Splice([muf.getnative(clip, tuple(range(480, 960+1, 12)), *args) for args in scalers])
+        last = core.std.Splice([muf.getnative(clip, arg, tuple(range(480, 960+1, 12))) for arg in scalers])
         last.set_output()
 
 
@@ -5912,6 +5917,8 @@ def getnative(clip: vs.VideoNode, rescalers: List[rescale.Rescaler] = [rescale.B
         src_heights = (src_heights,)
     if not isinstance(src_heights, tuple):
         src_heights = tuple(src_heights)
+    if base_height is not None:
+        assert base_height > max(src_heights)
 
     if clip.num_frames > 1:
         mode = Mode.MULTI_SCENE
