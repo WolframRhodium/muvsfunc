@@ -5743,10 +5743,104 @@ def MSR(clip: vs.VideoNode, *passes: numbers.Real, radius: int = 1, planes: Plan
     return core.std.Expr(flts, [(expr if i in planes else '') for i in range(clip.format.num_planes)], format=out_format) # type: ignore
 
 
-def getnative(clip: vs.VideoNode, dh_sequence: Sequence[int] = tuple(range(500, 1001)),
-    kernel: str = "bicubic", b: Optional[numbers.Real] = None, c: numbers.Real = 0.5, # type: ignore
-    crop_size: int = 5, save_filename: Optional[str] = None,
-    rt_eval: bool = True) -> vs.VideoNode:
+def arange(start, stop, step=1):
+    current = start
+    while current < stop:
+        yield current
+        current += step
+
+
+class rescale:
+    def get_descale_args(W: int, H: int, width: Union[float, int], height: Union[float, int], base_height: int = None):
+        if base_height is None:
+            width, height = round(width), round(height)
+            src_width, src_height = width, height
+            width, height = width, height
+            src_left, src_top = 0, 0
+        else:
+            base_width = round(W / H * base_height) if base_height % 2 == 1 else round(W / H * base_height / 2) * 2
+            src_width = width
+            src_height = height
+            width = base_width - 2 * int((base_width - width) / 2)
+            height = base_height - 2 * int((base_height - height) / 2)
+            src_top = (height - src_height) / 2
+            src_left = (width - src_width) / 2
+
+        return {
+            "width": width,
+            "height": height,
+            "src_left": src_left,
+            "src_top": src_top,
+            "src_width": src_width,
+            "src_height": src_height,
+        }
+
+    def Upscale(clip: vs.VideoNode, width: int, height: int, kernel: str = "bicubic", taps: int = 3, b: float = 0.0, c: float = 0.5,
+        src_left: float = None, src_top: float = None, src_width: float = None, src_height: float = None) -> vs.VideoNode:
+        upscaler = getattr(core.resize, kernel.capitalize())
+        if kernel.lower() == "bicubic":
+            upscaler = functools.partial(upscaler, filter_param_a=b, filter_param_b=c)
+        elif kernel.lower() == "lanczos":
+            upscaler = functools.partial(upscaler, filter_param_a=taps)
+
+        return upscaler(clip, width, height, src_left=src_left, src_top=src_top, src_width=src_width, src_height=src_height)
+
+    class Rescaler:
+        def __init__(self, kernel: str = "bicubic", taps: int = 3, b: float = 0.0, c: float = 0.5, upscaler: Callable = None):
+            kernel = kernel.lower()
+            self.kernel = kernel
+            self.taps, self.b, self.c = taps, b, c
+            self.upscaler = upscaler
+            bc_name = f"_{float(b):.3}_{float(c):.3}" if kernel == "bicubic" else ""
+            taps_name = f"{taps}" if kernel == "lanczos" else ""
+            self.name = f"{kernel}{bc_name}{taps_name}"
+            self.descale_args = {}
+
+        def __call__(self, clip: vs.VideoNode, height: int, base_height: Optional[int] = None):
+            W, H = clip.width, clip.height
+            width = W / H * height
+            return self.descale(clip, width, height, base_height)
+
+        def rescale(self, clip: vs.VideoNode, height: float, base_height: Optional[int] = None) -> vs.VideoNode:
+            W, H = clip.width, clip.height
+            width = W / H * height
+            descaled = self.descale(clip, width, height, base_height)
+            rescaled = self.upscale(descaled, W, H)
+            return rescaled
+
+        def descale(self, clip: vs.VideoNode, width: Union[int, float], height: Union[int, float], base_height: int = None):
+            W, H = clip.width, clip.height
+            self.descale_args = rescale.get_descale_args(W, H, width, height, base_height)
+            kwargs = self.descale_args.copy()
+            return core.descale.Descale(clip, kernel=self.kernel, taps=self.taps, b=self.b, c=self.c, **kwargs)
+
+        def upscale(self, clip: vs.VideoNode, width: int, height: int) -> vs.VideoNode:
+            kwargs = self.descale_args.copy()
+            kwargs.update({"width": width, "height": height})
+            return rescale.Upscale(clip, kernel=self.kernel, taps=self.taps, b=self.b, c=self.c, **kwargs)
+
+    def Bilinear():
+        return rescale.Rescaler(kernel="bilinear")
+
+    def Bicubic(b: float = 0.0, c: float = 0.5):
+        return rescale.Rescaler(kernel="bicubic", b=b, c=c)
+
+    def Lanczos(taps: int = 3):
+        return rescale.Rescaler(kernel="lanczos", taps=taps)
+
+    def Spline16():
+        return rescale.Rescaler(kernel="spline16")
+
+    def Spline36():
+        return rescale.Rescaler(kernel="spline36")
+
+    def Spline64():
+        return rescale.Rescaler(kernel="spline64")
+
+
+def getnative(clip: vs.VideoNode, rescalers: Union[rescale.Rescaler, List[rescale.Rescaler]] = [rescale.Bicubic(0, 0.5)],
+    src_heights: Union[int, float, Sequence[int], Sequence[float]] = tuple(range(500, 1001)), base_height: int = None,
+    crop_size: int = 5, rt_eval: bool = True, dark: bool = True) -> vs.VideoNode:
     """Find the native resolution(s) of upscaled material (mostly anime)
 
     Modifyed from getnative 1.3.0 (https://github.com/Infiziert90/getnative/tree/ea08405f34a23dc681ff38a45e840ca21379a14d) and
@@ -5757,40 +5851,42 @@ def getnative(clip: vs.VideoNode, dh_sequence: Sequence[int] = tuple(range(500, 
     Args:
         clip: Input clip, vs.GRAYS, single frame.
 
-        dh_sequence: (int []) List of heights to be evaluated.
+        rescalers: (rescale.Rescaler []) Resizer to be used. Should be wrapped as muf.rescale.Rescaler class
+            Default is [muf.rescaler.Bicubic(0, 0.5)].
+
+        src_heights: (int|float []) List of heights to be evaluated.
             Default is [500 ... 1000].
 
-        kernel: (str, any of ["bicubic", "bilinear", "lanczos", "spline16", "spline36", "spline64"]) Resize kernel to be used.
-            Default is "bicubic".
-
-        b, c: (int or float) Parameters of parametric kernel.
-            Default is (0, 0.5) for "bicubic", 3 for "lanczos".
+        base_height: (int) The real integer height before cropping. If not None, fractional resolution will be evaluated.
+            Should be larger than src_height.
+            Default is None.
 
         crop_size: (int) Range of pixels around the border to be excluded in calculation.
             Default is 5.
 
-        save_filename: (str) Filename of saved image.
-            Default is "{kernel}_{b}_{c}_%H-%M-%S.png".
-
-        aot_eval: (bool) Wheter to build the processing graph in runtime to reduce overhead.
+        rt_eval: (bool) Whether to build the processing graph in runtime to reduce overhead.
             Default is True.
+
+        dark: (bool) Whether to use dark background in output png file.
+            Default is True
 
     Example:
         # It is trivial to generate multiple results:
-        result1 = muf.getnative(clip, kernel="bicubic")
-        result2 = muf.getnative(clip, kernel="lanczos")
-        result3 = muf.getnative(clip, kernel="spline36")
+        result1 = muf.getnative(clip, rescalers=muf.rescale.Bicubic())
+        result2 = muf.getnative(clip, rescalers=muf.rescale.Lanczos())
+        result3 = muf.getnative(clip, rescalers=muf.rescale.Spline36())
         last = core.std.Splice([result1, result2, result3])
         last.set_output()
 
         # https://github.com/LittlePox/getnative/tree/f2fef4a5ebbed3cf88e972c14693b75102a0ee29
+        from muf import rescale
         scalers = [
-            ["Bilinear"], ["Bicubic", 1/3, 1/3], ["Bicubic", 0, 0.5], ["Bicubic", 0.5, 0.5],
-            ["Lanczos", 2], ["Lanczos", 3], ["Lanczos", 4],
-            ["Spline16"], ["Spline36"]
+            rescale.Bilinear(), rescale.Bicubic(1/3, 1/3), rescale.Bicubic(0, 0.5), rescale.Bicubic(0.5, 0.5),
+            rescale.Lanczos(2), rescale.Lanczos(3), rescale.Lanczos(4),
+            rescale.Spline16(), rescale.Spline36()
         ]
 
-        last = core.std.Splice([muf.getnative(clip, tuple(range(480, 960+1, 12)), *args) for args in scalers])
+        last = core.std.Splice([muf.getnative(clip, arg, tuple(range(480, 960+1, 12))) for arg in scalers])
         last.set_output()
 
 
@@ -5801,94 +5897,117 @@ def getnative(clip: vs.VideoNode, dh_sequence: Sequence[int] = tuple(range(500, 
     import matplotlib
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
+    from enum import Enum
+
+    class Mode(Enum):
+        MULTI_SCENE = 1
+        MULTI_HEIGHT = 2
+        MULTI_KERNEL = 3
 
     # check
-    assert isinstance(clip, vs.VideoNode) and clip.format.id == vs.GRAYS and clip.num_frames == 1
+    assert isinstance(clip, vs.VideoNode) and clip.format.id == vs.GRAYS
+    assert isinstance(base_height, int) or base_height is None
 
-    kernel = kernel.lower()
-    if b is None:
-        if kernel == "bicubic":
-            b = 0 # type: ignore
-        elif kernel == "lanczos":
-            b = 3 # type: ignore
+    if not isinstance(rescalers, list):
+        rescalers = [rescalers]
+    for rescaler in rescalers:
+        assert isinstance(rescaler, rescale.Rescaler)
 
-    if save_filename is None:
-        from datetime import datetime
+    if isinstance(src_heights, int) or isinstance(src_heights, float):
+        src_heights = (src_heights,)
+    if not isinstance(src_heights, tuple):
+        src_heights = tuple(src_heights)
+    if base_height is not None:
+        assert base_height > max(src_heights)
 
-        if kernel == "bicubic":
-            b, c = float(b), float(c) # type: ignore
-            save_filename = f"{kernel}_{b:.3}_{c:.3}_{datetime.now().strftime('%H-%M-%S')}.png"
-        elif kernel == "lanczos":
-            b = int(b) # type: ignore
-            save_filename = f"{kernel}_{b}taps_{datetime.now().strftime('%H-%M-%S')}.png"
-        else:
-            save_filename = f"{kernel}_{datetime.now().strftime('%H-%M-%S')}.png"
+    if clip.num_frames > 1:
+        mode = Mode.MULTI_SCENE
+        assert len(src_heights) == 1 and len(rescalers) == 1
+    elif len(src_heights) > 1:
+        mode = Mode.MULTI_HEIGHT
+        assert clip.num_frames == 1 and len(rescalers) == 1
+    elif len(rescalers) > 1:
+        mode = Mode.MULTI_KERNEL
+        assert clip.num_frames == 1 and len(src_heights) == 1
 
-    # internal functions
-    def rescale(clip: vs.VideoNode, dh: int, kernel: str, b: int, c: int) -> vs.VideoNode:
-        w, h = clip.width, clip.height
-        dw = round(w / h * dh)
-
-        if kernel == 'bicubic':
-            descaled = core.descale.Debicubic(clip, dw, dh, b=b, c=c)
-            rescaled = core.resize.Bicubic(descaled, w, h, filter_param_a=b, filter_param_b=c)
-        elif kernel == 'bilinear':
-            descaled = core.descale.Debilinear(clip, dw, dh)
-            rescaled = core.resize.Bilinear(descaled, w, h)
-        elif kernel == 'lanczos':
-            descaled = core.descale.Delanczos(clip, dw, dh, taps=int(b))
-            rescaled = core.resize.Lanczos(descaled, w, h, filter_param_a=int(b))
-        elif kernel == 'spline16':
-            descaled = core.descale.Despline16(clip, dw, dh)
-            rescaled = core.resize.Spline16(descaled, w, h)
-        elif kernel == 'spline36':
-            descaled = core.descale.Despline36(clip, dw, dh)
-            rescaled = core.resize.Spline36(descaled, w, h)
-        elif kernel == 'spline64':
-            descaled = core.descale.Despline64(clip, dw, dh)
-            rescaled = core.resize.Spline64(descaled, w, h)
-        else:
-            raise NotImplementedError(f"Kernel {kernel} is not implemented.")
-
-        return rescaled
-
-    def output_statistics(clip: vs.VideoNode, save_filename: str, dh_sequence: Sequence[int]) -> vs.VideoNode:
+    def output_statistics(clip: vs.VideoNode, rescalers: List[rescale.Rescaler], src_heights: Sequence[int], mode: Mode, dark: bool) -> vs.VideoNode:
         data = [0] * clip.num_frames
-        remaining_frames = clip.num_frames # mutable
+        remaining_frames = [1] * clip.num_frames # mutable
 
         def func_core(n: int, f: vs.VideoFrame, clip: vs.VideoNode) -> vs.VideoNode:
             # add eps to avoid getting 0 diff, which later messes up the graph.
             data[n] = f.props.PlaneStatsAverage + 1e-9 # type: ignore
 
             nonlocal remaining_frames
-            remaining_frames -= 1
+            remaining_frames[n] = 0
 
-            if remaining_frames == 0:
-                create_plot(data, save_filename, dh_sequence)
+            if sum(remaining_frames) == 0:
+                create_plot(data, rescalers, src_heights, mode, dark)
 
             return clip
 
         return core.std.FrameEval(clip, functools.partial(func_core, clip=clip), clip)
 
-    def create_plot(data: Sequence[float], save_filename: str, dh_sequence: Sequence[int]) -> None:
-        plt.style.use("dark_background")
+    def create_plot(data: Sequence[float], rescalers: List[rescale.Rescaler], src_heights: Sequence[int], mode: Mode, dark: bool) -> None:
+        if dark:
+            plt.style.use("dark_background")
+            fmt = ".w-"
+        else:
+            fmt = ".-"
         fig, ax = plt.subplots(figsize=(12, 8))
-        ax.plot(dh_sequence, data, ".w-")
-        ticks = tuple(dh for dh in dh_sequence if dh % 24 == 0) if len(dh_sequence) > 25 else dh_sequence # display full x if no more than 25 tests
-        ax.set(xlabel="Height", xticks=ticks, ylabel="Relative error", title=save_filename, yscale="log")
+        if mode == Mode.MULTI_SCENE:
+            save_filename = get_save_filename(f"verify_{rescalers[0].name}_{src_heights[0]}")
+            ax.plot(range(len(data)), data, fmt)
+            ticks = list(range(len(data)))
+            ax.set(xlabel="Frame", ylabel="Relative error", title=save_filename, yscale="log")
+            with open(f"{save_filename}.txt", "w") as ftxt:
+                import pprint
+                pprint.pprint(list(enumerate(data)), stream=ftxt)
+        if mode == Mode.MULTI_HEIGHT:
+            save_filename = get_save_filename(f"height_{rescalers[0].name}")
+            ax.plot(src_heights, data, fmt)
+            ticks = src_heights[::24] if len(src_heights) > 25 else src_heights # display full x if no more than 25 tests
+            ax.set(xlabel="Height", xticks=ticks, ylabel="Relative error", title=save_filename, yscale="log")
+            with open(f"{save_filename}.txt", "w") as ftxt:
+                import pprint
+                pprint.pprint(list(zip(src_heights, data)), stream=ftxt)
+        elif mode == Mode.MULTI_KERNEL:
+            save_filename = get_save_filename(f"kernel_{src_heights[0]}")
+            ax.plot(range(len(data)), data, fmt)
+            ticks = list(range(len(data)))
+            ticklabels = [rescaler.name for rescaler in rescalers]
+            ax.set(xlabel="Kernel", xticks=ticks, xticklabels=ticklabels, ylabel="Relative error", title=save_filename, yscale="log")
+            with open(f"{save_filename}.txt", "w") as ftxt:
+                import pprint
+                pprint.pprint(list(zip(ticklabels, data)), stream=ftxt)
         fig.savefig(f"{save_filename}")
         plt.close()
-        with open(f"{save_filename}.txt", "w") as ftxt:
-            import pprint
-            pprint.pprint(list(zip(dh_sequence, data)), stream=ftxt)
+
+    def get_save_filename(name: str):
+        from datetime import datetime
+        return f"{name}_{datetime.now().strftime('%H-%M-%S')}.png"
 
     # process
-    if rt_eval:
-        clip = core.std.Loop(clip, len(dh_sequence))
-        rescaled = core.std.FrameEval(clip, lambda n, clip=clip: rescale(clip, dh_sequence[n], kernel, b, c)) # type: ignore
-    else:
-        rescaled = core.std.Splice([rescale(clip, dh, kernel, b, c) for dh in dh_sequence]) # type: ignore
-        clip = core.std.Loop(clip, len(dh_sequence))
+    if mode == Mode.MULTI_SCENE:
+        src_height = src_heights[0]
+        rescaler = rescalers[0]
+        rescaled = rescaler.rescale(clip, src_height, base_height)
+    elif mode == Mode.MULTI_HEIGHT:
+        rescaler = rescalers[0]
+        if rt_eval:
+            clip = core.std.Loop(clip, len(src_heights))
+            rescaled = core.std.FrameEval(clip, lambda n, clip=clip: rescaler.rescale(clip, src_heights[n], base_height))  # type: ignore
+        else:
+            rescaled = core.std.Splice([rescaler.rescale(clip, src_height, base_height) for src_height in src_heights])  # type: ignore
+            clip = core.std.Loop(clip, len(src_heights))
+    elif mode == Mode.MULTI_KERNEL:
+        src_height = src_heights[0]
+        if rt_eval:
+            clip = core.std.Loop(clip, len(rescalers))
+            rescaled = core.std.FrameEval(clip, lambda n, clip=clip: rescalers[n].rescale(clip, src_height, base_height))  # type: ignore
+        else:
+            rescaled = core.std.Splice([rescaler.rescale(clip, src_height, base_height) for rescaler in rescalers])  # type: ignore
+            clip = core.std.Loop(clip, len(rescalers))
 
     diff = core.std.Expr([clip, rescaled], ["x y - abs dup 0.015 > swap 0 ?"])
 
@@ -5897,5 +6016,5 @@ def getnative(clip: vs.VideoNode, dh_sequence: Sequence[int] = tuple(range(500, 
 
     stats = core.std.PlaneStats(diff)
 
-    return output_statistics(stats, save_filename, dh_sequence)
+    return output_statistics(stats, rescalers, src_heights, mode, dark)
 
