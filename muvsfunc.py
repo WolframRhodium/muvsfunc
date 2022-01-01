@@ -5846,10 +5846,13 @@ def getnative(clip: vs.VideoNode, rescalers: Union[rescale.Rescaler, List[rescal
     Modifyed from getnative 1.3.0 (https://github.com/Infiziert90/getnative/tree/ea08405f34a23dc681ff38a45e840ca21379a14d) and
     descale_verify (https://github.com/himesaka-noa/descale-verifier/blob/master/descale_verify.py).
 
+    The function has 3 modes: verify, multi heights and multi kernels. They are enabled by passing multi-frame clip, multi
+    rescalers and multi src_heights to the function.
+
     The result is generated after all frames have been evaluated, which can be done through vspipe or "benchmark" of vsedit.
 
     Args:
-        clip: Input clip, vs.GRAYS, single frame.
+        clip: Input clip, vs.GRAYS.
 
         rescalers: (rescale.Rescaler []) Resizer to be used. Should be wrapped as muf.rescale.Rescaler class
             Default is [muf.rescaler.Bicubic(0, 0.5)].
@@ -5871,6 +5874,10 @@ def getnative(clip: vs.VideoNode, rescalers: Union[rescale.Rescaler, List[rescal
             Default is True
 
     Example:
+        # For fractional src_heights:
+        res = muf.getnative(clip, rescalers=muf.rescale.Bicubic(), src_heights=muf.arange(800, 900, 0.1), base_height=900)
+        res.set_output()
+
         # It is trivial to generate multiple results:
         result1 = muf.getnative(clip, rescalers=muf.rescale.Bicubic())
         result2 = muf.getnative(clip, rescalers=muf.rescale.Lanczos())
@@ -5922,13 +5929,13 @@ def getnative(clip: vs.VideoNode, rescalers: Union[rescale.Rescaler, List[rescal
 
     if clip.num_frames > 1:
         mode = Mode.MULTI_SCENE
-        assert len(src_heights) == 1 and len(rescalers) == 1
+        assert len(src_heights) == 1 and len(rescalers) == 1, "1 src_height and 1 rescaler should be passed for verify mode."
     elif len(src_heights) > 1:
         mode = Mode.MULTI_HEIGHT
-        assert clip.num_frames == 1 and len(rescalers) == 1
+        assert clip.num_frames == 1 and len(rescalers) == 1, "1-frame clip and 1 rescaler should be passed for multi heights mode."
     elif len(rescalers) > 1:
         mode = Mode.MULTI_KERNEL
-        assert clip.num_frames == 1 and len(src_heights) == 1
+        assert clip.num_frames == 1 and len(src_heights) == 1, "1-frame clip and 1 src_height shoule be passed for multi kernels mode."
 
     def output_statistics(clip: vs.VideoNode, rescalers: List[rescale.Rescaler], src_heights: Sequence[int], mode: Mode, dark: bool) -> vs.VideoNode:
         data = [0] * clip.num_frames
