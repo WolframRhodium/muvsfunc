@@ -5846,10 +5846,13 @@ def getnative(clip: vs.VideoNode, rescalers: Union[rescale.Rescaler, List[rescal
     Modifyed from getnative 1.3.0 (https://github.com/Infiziert90/getnative/tree/ea08405f34a23dc681ff38a45e840ca21379a14d) and
     descale_verify (https://github.com/himesaka-noa/descale-verifier/blob/master/descale_verify.py).
 
+    The function has 3 modes: verify, multi heights and multi kernels. They are enabled by passing multi-frame clip, multi
+    rescalers and multi src_heights to the function.
+
     The result is generated after all frames have been evaluated, which can be done through vspipe or "benchmark" of vsedit.
 
     Args:
-        clip: Input clip, vs.GRAYS, single frame.
+        clip: Input clip, vs.GRAYS.
 
         rescalers: (rescale.Rescaler []) Resizer to be used. Should be wrapped as muf.rescale.Rescaler class
             Default is [muf.rescaler.Bicubic(0, 0.5)].
@@ -5871,6 +5874,10 @@ def getnative(clip: vs.VideoNode, rescalers: Union[rescale.Rescaler, List[rescal
             Default is True
 
     Example:
+        # For fractional src_heights:
+        res = muf.getnative(clip, rescalers=muf.rescale.Bicubic(), src_heights=muf.arange(800, 900, 0.1), base_height=900)
+        res.set_output()
+
         # It is trivial to generate multiple results:
         result1 = muf.getnative(clip, rescalers=muf.rescale.Bicubic())
         result2 = muf.getnative(clip, rescalers=muf.rescale.Lanczos())
@@ -5922,13 +5929,13 @@ def getnative(clip: vs.VideoNode, rescalers: Union[rescale.Rescaler, List[rescal
 
     if clip.num_frames > 1:
         mode = Mode.MULTI_SCENE
-        assert len(src_heights) == 1 and len(rescalers) == 1
+        assert len(src_heights) == 1 and len(rescalers) == 1, "1 src_height and 1 rescaler should be passed for verify mode."
     elif len(src_heights) > 1:
         mode = Mode.MULTI_HEIGHT
-        assert clip.num_frames == 1 and len(rescalers) == 1
+        assert clip.num_frames == 1 and len(rescalers) == 1, "1-frame clip and 1 rescaler should be passed for multi heights mode."
     elif len(rescalers) > 1:
         mode = Mode.MULTI_KERNEL
-        assert clip.num_frames == 1 and len(src_heights) == 1
+        assert clip.num_frames == 1 and len(src_heights) == 1, "1-frame clip and 1 src_height shoule be passed for multi kernels mode."
 
     def output_statistics(clip: vs.VideoNode, rescalers: List[rescale.Rescaler], src_heights: Sequence[int], mode: Mode, dark: bool) -> vs.VideoNode:
         data = [0] * clip.num_frames
@@ -5948,7 +5955,25 @@ def getnative(clip: vs.VideoNode, rescalers: Union[rescale.Rescaler, List[rescal
 
         return core.std.FrameEval(clip, functools.partial(func_core, clip=clip), clip)
 
-    def create_plot(data: Sequence[float], rescalers: List[rescale.Rescaler], src_heights: Sequence[int], mode: Mode, dark: bool) -> None:
+    def create_plot(data: Sequence[float], rescalers: List[rescale.Rescaler], src_heights: Sequence[float], mode: Mode, dark: bool) -> None:
+        def get_heights_ticks(data: Sequence[float], src_heights: Sequence[float]) -> Sequence[float]:
+            interval = round((max(src_heights) - min(src_heights)) * 0.05)
+            log10_data = [math.log10(v) for v in data]
+            d2_log10_data = []
+            for i in range(1, len(data) - 1):
+                d2_log10_data.append(log10_data[i - 1] + log10_data[i + 1] - 2 * log10_data[i])
+            candidate_heights = [src_heights[i] for _, i in sorted(zip(d2_log10_data, range(1, len(data) - 1)), reverse=True)[0:10]]
+            candidate_heights.append(src_heights[0])
+            candidate_heights.append(src_heights[-1])
+            ticks = []
+            for height in candidate_heights:
+                for tick in ticks:
+                    if abs(height - tick) < interval:
+                        break
+                else:
+                    ticks.append(height)
+            return ticks
+
         if dark:
             plt.style.use("dark_background")
             fmt = ".w-"
@@ -5958,7 +5983,6 @@ def getnative(clip: vs.VideoNode, rescalers: Union[rescale.Rescaler, List[rescal
         if mode == Mode.MULTI_SCENE:
             save_filename = get_save_filename(f"verify_{rescalers[0].name}_{src_heights[0]}")
             ax.plot(range(len(data)), data, fmt)
-            ticks = list(range(len(data)))
             ax.set(xlabel="Frame", ylabel="Relative error", title=save_filename, yscale="log")
             with open(f"{save_filename}.txt", "w") as ftxt:
                 import pprint
@@ -5966,7 +5990,7 @@ def getnative(clip: vs.VideoNode, rescalers: Union[rescale.Rescaler, List[rescal
         if mode == Mode.MULTI_HEIGHT:
             save_filename = get_save_filename(f"height_{rescalers[0].name}")
             ax.plot(src_heights, data, fmt)
-            ticks = src_heights[::24] if len(src_heights) > 25 else src_heights # display full x if no more than 25 tests
+            ticks = get_heights_ticks(data, src_heights)
             ax.set(xlabel="Height", xticks=ticks, ylabel="Relative error", title=save_filename, yscale="log")
             with open(f"{save_filename}.txt", "w") as ftxt:
                 import pprint
