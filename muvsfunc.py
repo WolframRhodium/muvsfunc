@@ -5843,25 +5843,29 @@ def getnative(clip: vs.VideoNode, rescalers: Union[rescale.Rescaler, List[rescal
     crop_size: int = 5, rt_eval: bool = True, dark: bool = True) -> vs.VideoNode:
     """Find the native resolution(s) of upscaled material (mostly anime)
 
-    Modifyed from getnative 1.3.0 (https://github.com/Infiziert90/getnative/tree/ea08405f34a23dc681ff38a45e840ca21379a14d) and
-    descale_verify (https://github.com/himesaka-noa/descale-verifier/blob/master/descale_verify.py).
+    Modifyed from:
+        [getnative 1.3.0](https://github.com/Infiziert90/getnative/tree/ea08405f34a23dc681ff38a45e840ca21379a14d)
+        [descale_verify](https://github.com/himesaka-noa/descale-verifier/blob/master/descale_verify.py)
+        [getfnative](https://github.com/YomikoR/GetFnative/blob/main/getfnative.py)
 
-    The function has 3 modes: verify, multi heights and multi kernels. They are enabled by passing multi-frame clip, multi
-    rescalers and multi src_heights to the function.
+    The function has 3 modes: verify, multi heights and multi kernels.
+    They can be enabled by passing multi-frame clip, multi rescalers and multi src_heights to the function.
+    For more details see Examples section below.
 
     The result is generated after all frames have been evaluated, which can be done through vspipe or "benchmark" of vsedit.
 
     Args:
         clip: Input clip, vs.GRAYS.
 
-        rescalers: (rescale.Rescaler []) Resizer to be used. Should be wrapped as muf.rescale.Rescaler class
+        rescalers: (rescale.Rescaler []) Sequence of resizers to be evaluated. Should be wrapped as muf.rescale.Rescaler
             Default is [muf.rescaler.Bicubic(0, 0.5)].
+                Functions in muf.rescale such as muf.rescale.Bicubic() might help you to get a Rescaler.
 
-        src_heights: (int|float []) List of heights to be evaluated.
+        src_heights: (int|float []) Sequence of heights to be evaluated.
             Default is [500 ... 1000].
+                muf.arange(start[, stop, step]) might help you to construct such a sequence.
 
         base_height: (int) The real integer height before cropping. If not None, fractional resolution will be evaluated.
-            Should be larger than src_height.
             Default is None.
 
         crop_size: (int) Range of pixels around the border to be excluded in calculation.
@@ -5873,28 +5877,52 @@ def getnative(clip: vs.VideoNode, rescalers: Union[rescale.Rescaler, List[rescal
         dark: (bool) Whether to use dark background in output png file.
             Default is True
 
-    Example:
-        # For fractional src_heights:
-        res = muf.getnative(clip, rescalers=muf.rescale.Bicubic(), src_heights=muf.arange(800, 900, 0.1), base_height=900)
-        res.set_output()
+    Examples:
+        Assume that src is a one-plane GRAYS clip. You might get such a clip by
 
-        # It is trivial to generate multiple results:
-        result1 = muf.getnative(clip, rescalers=muf.rescale.Bicubic())
-        result2 = muf.getnative(clip, rescalers=muf.rescale.Lanczos())
-        result3 = muf.getnative(clip, rescalers=muf.rescale.Spline36())
-        last = core.std.Splice([result1, result2, result3])
-        last.set_output()
+            src = src.std.ShufflePlanes(0, vs.GRAY).resize.Point(format=vs.GRAYS)
 
-        # https://github.com/LittlePox/getnative/tree/f2fef4a5ebbed3cf88e972c14693b75102a0ee29
-        from muf import rescale
-        scalers = [
-            rescale.Bilinear(), rescale.Bicubic(1/3, 1/3), rescale.Bicubic(0, 0.5), rescale.Bicubic(0.5, 0.5),
-            rescale.Lanczos(2), rescale.Lanczos(3), rescale.Lanczos(4),
-            rescale.Spline16(), rescale.Spline36()
-        ]
+        Compare between different integer source heights:
 
-        last = core.std.Splice([muf.getnative(clip, arg, tuple(range(480, 960+1, 12))) for arg in scalers])
-        last.set_output()
+            clip = src[1000]  # to get a single frame clip
+
+            # evaluate 500, 501, 502, ..., 999, 1000 as source heights with bicubic(b=1/3, c=1/3) as kernel.
+            res = muf.getnative(clip, rescalers=muf.rescale.Bicubic(1/3, 1/3), src_heights=muf.arange(500, 1001, 1))
+            res.set_output()
+
+        Compare between different fractional source heights:
+
+            clip = src[1000]  # to get a single frame clip
+
+            # evaluate 800.0, 800.1, 800.2, ..., 899.8, 899.9 as source heights with bicubic(b=1/3, c=1/3) as kernel
+            # base_height here must be a interger larger than any of src_heights
+            res = muf.getnative(clip, rescalers=muf.rescale.Bicubic(), src_heights=muf.arange(800, 900, 0.1), base_height=900)
+            res.set_output()
+
+        Compare between different descale kernels:
+
+            clip = src[1000]  # to get a single frame clip
+
+            # construct a list of Rescaler
+            # https://github.com/LittlePox/getnative/tree/f2fef4a5ebbed3cf88e972c14693b75102a0ee29
+            from muf import rescale
+            rescalers = [
+                rescale.Bilinear(), rescale.Bicubic(1/3, 1/3), rescale.Bicubic(0, 0.5), rescale.Bicubic(0.5, 0.5),
+                rescale.Lanczos(2), rescale.Lanczos(3), rescale.Lanczos(4),
+                rescale.Spline16(), rescale.Spline36()
+            ]
+
+            # evaluate 714.7 as source height with bilinear, bicubic(b=1/3, c=1/3), ..., spline36 as kernels
+            res = muf.getnative(clip, rescalers=rescalers, src_heights=714.7, base_height=720)
+            res.set_output()
+
+        Verify if a source height and a kernel can descale the whole clip well:
+
+            clip = src  # clip is a multi frame clip
+
+            # evaluate 714.7 as source height with bicubic(b=1/3, c=1/3) as kernel for every frame in clip
+            res = muf.getnative(clip, rescalers=muf.rescale.Bicubic(1/3, 1/3), src_heights=714.7, base_height=720)
+            res.set_output()
 
 
     Requirments:
@@ -5909,7 +5937,7 @@ def getnative(clip: vs.VideoNode, rescalers: Union[rescale.Rescaler, List[rescal
     from enum import Enum
 
     class Mode(Enum):
-        MULTI_SCENE = 1
+        MULTI_FRAME = 1
         MULTI_HEIGHT = 2
         MULTI_KERNEL = 3
 
@@ -5930,7 +5958,7 @@ def getnative(clip: vs.VideoNode, rescalers: Union[rescale.Rescaler, List[rescal
         assert base_height > max(src_heights)
 
     if clip.num_frames > 1:
-        mode = Mode.MULTI_SCENE
+        mode = Mode.MULTI_FRAME
         assert len(src_heights) == 1 and len(rescalers) == 1, "1 src_height and 1 rescaler should be passed for verify mode."
     elif len(src_heights) > 1:
         mode = Mode.MULTI_HEIGHT
@@ -5985,7 +6013,7 @@ def getnative(clip: vs.VideoNode, rescalers: Union[rescale.Rescaler, List[rescal
         else:
             fmt = ".-"
         fig, ax = plt.subplots(figsize=(12, 8))
-        if mode == Mode.MULTI_SCENE:
+        if mode == Mode.MULTI_FRAME:
             save_filename = get_save_filename(f"verify_{rescalers[0].name}_{src_heights[0]}")
             ax.plot(range(len(data)), data, fmt)
             ax.set(xlabel="Frame", ylabel="Relative error", title=save_filename, yscale="log")
@@ -6017,7 +6045,7 @@ def getnative(clip: vs.VideoNode, rescalers: Union[rescale.Rescaler, List[rescal
         return f"{name}_{datetime.now().strftime('%H-%M-%S')}.png"
 
     # process
-    if mode == Mode.MULTI_SCENE:
+    if mode == Mode.MULTI_FRAME:
         src_height = src_heights[0]
         rescaler = rescalers[0]
         rescaled = rescaler.rescale(clip, src_height, base_height)
