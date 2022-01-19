@@ -5901,6 +5901,8 @@ def getnative(clip: vs.VideoNode, rescalers: Union[rescale.Rescaler, List[rescal
         descale, matplotlib
     """
 
+    import logging
+    logging.getLogger('matplotlib').setLevel(logging.WARNING)
     import matplotlib
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
@@ -5960,9 +5962,12 @@ def getnative(clip: vs.VideoNode, rescalers: Union[rescale.Rescaler, List[rescal
             interval = round((max(src_heights) - min(src_heights)) * 0.05)
             log10_data = [math.log10(v) for v in data]
             d2_log10_data = []
+            valley_heights = []
             for i in range(1, len(data) - 1):
-                d2_log10_data.append(log10_data[i - 1] + log10_data[i + 1] - 2 * log10_data[i])
-            candidate_heights = [src_heights[i] for _, i in sorted(zip(d2_log10_data, range(1, len(data) - 1)), reverse=True)[0:10]]
+                if log10_data[i - 1] > log10_data[i] and log10_data[i + 1] > log10_data[i]:
+                    d2_log10_data.append(log10_data[i - 1] + log10_data[i + 1] - 2 * log10_data[i])
+                    valley_heights.append(src_heights[i])
+            candidate_heights = [valley_heights[i] for _, i in sorted(zip(d2_log10_data, range(len(valley_heights))), reverse=True)]
             candidate_heights.append(src_heights[0])
             candidate_heights.append(src_heights[-1])
             ticks = []
@@ -6041,4 +6046,3 @@ def getnative(clip: vs.VideoNode, rescalers: Union[rescale.Rescaler, List[rescal
     stats = core.std.PlaneStats(diff)
 
     return output_statistics(stats, rescalers, src_heights, mode, dark)
-
