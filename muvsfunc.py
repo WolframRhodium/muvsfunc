@@ -5751,7 +5751,41 @@ def arange(start, stop, step=1):
 
 
 class rescale:
-    def get_descale_args(W: int, H: int, width: Union[float, int], height: Union[float, int], base_height: int = None):
+    """Auxilary class to do descale and rescale with fractional source height.
+
+    You can easily do descale and upscale with muf.rescale.Rescaler objects:
+
+        rescaler = muf.rescale.Bilinear()  # get a muf.rescale.Rescaler object
+        descaled_clip = rescaler.descale(clip, 1280, 720)
+        rescaled_clip = rescaler.upscale(descaled_clip, 1920, 1080)
+
+    You can also do descale with fractional source height:
+
+        rescaler = muf.rescale.Bilinear()  # get a muf.rescale.Rescaler object
+        descaled_clip = rescaler.descale(clip, 1270.6, 714.7, base_height=720)
+        rescaled_clip = rescaler.upscale(descaled_clip, 1920, 1080)  # rescaler will handle scale args to correctly rescale the clip
+
+    You can directly generate a rescaled clip:
+
+        rescaler = muf.rescale.Bilinear()  # get a muf.rescale.Rescaler object
+        # we assume that descaled clip has the SAME aspect ratio as source clip, so you don't need to pass src_width to rescale()
+        rescaled_clip = rescaler.rescale(clip, src_height=714.7, base_height=720)
+
+    Also, you can rescale the clip with other scalers you want such as nnedi3_resample:
+
+        from nnedi3_resample import nnedi3_resample
+        rescaler = muf.rescale.Bilinear()  # get a muf.rescale.Rescaler object
+        rescaled_clip = rescaler.rescale(clip, 714.7, 720, upscaler=nnedi3_resample)
+
+    And you can directly call the Rescaler to ignore the base_height argument:
+
+        from nnedi3_resample import nnedi3_resample
+        rescaler = muf.rescale.Bilinear()  # get a muf.rescale.Rescaler object
+        rescaled_clip = rescaler(clip, 714.7, upscaler=nnedi3_resample)
+
+    """
+
+    def _get_descale_args(W: int, H: int, width: Union[float, int], height: Union[float, int], base_height: int = None):
         if base_height is None:
             width, height = round(width), round(height)
             src_width, src_height = width, height
@@ -5796,28 +5830,42 @@ class rescale:
             self.name = f"{kernel}{bc_name}{taps_name}"
             self.descale_args = {}
 
-        def __call__(self, clip: vs.VideoNode, height: int, base_height: Optional[int] = None):
-            W, H = clip.width, clip.height
-            width = W / H * height
-            return self.descale(clip, width, height, base_height)
+        def __call__(self, clip: vs.VideoNode, src_height: Union[int, float], upscaler: Optional[Callable] = None) -> Any:
+            base_height = clip.height if isinstance(src_height, float) else None
+            return self.rescale(clip, src_height, base_height, upscaler)
 
-        def rescale(self, clip: vs.VideoNode, height: float, base_height: Optional[int] = None) -> vs.VideoNode:
+        def rescale(self, clip: vs.VideoNode, src_height: Union[int, float], base_height: Optional[int] = None, upscaler: Optional[Callable] = None) -> vs.VideoNode:
             W, H = clip.width, clip.height
-            width = W / H * height
-            descaled = self.descale(clip, width, height, base_height)
-            rescaled = self.upscale(descaled, W, H)
+            src_width = W / H * src_height
+            descaled = self.descale(clip, src_width, src_height, base_height)
+            rescaled = self.upscale(descaled, W, H, upscaler)
             return rescaled
 
         def descale(self, clip: vs.VideoNode, width: Union[int, float], height: Union[int, float], base_height: int = None):
             W, H = clip.width, clip.height
-            self.descale_args = rescale.get_descale_args(W, H, width, height, base_height)
+            self.descale_args = rescale._get_descale_args(W, H, width, height, base_height)
             kwargs = self.descale_args.copy()
             return core.descale.Descale(clip, kernel=self.kernel, taps=self.taps, b=self.b, c=self.c, **kwargs)
 
-        def upscale(self, clip: vs.VideoNode, width: int, height: int) -> vs.VideoNode:
+        def upscale(self, clip: vs.VideoNode, width: int, height: int, upscaler: Optional[Callable] = None) -> vs.VideoNode:
+            from inspect import signature
             kwargs = self.descale_args.copy()
-            kwargs.update({"width": width, "height": height})
-            return rescale.Upscale(clip, kernel=self.kernel, taps=self.taps, b=self.b, c=self.c, **kwargs)
+            kwargs.pop("width")
+            kwargs.pop("height")
+            if upscaler is None:
+                return rescale.Upscale(clip, width, height, kernel=self.kernel, taps=self.taps, b=self.b, c=self.c, **kwargs)
+            else:
+                param_dict = signature(upscaler).parameters
+                if all(key in param_dict for key in ("src_left", "src_top", "src_width", "src_height")):
+                    pass
+                elif all(key in param_dict for key in ("sx", "sy", "sw", "sh")):
+                    kwargs["sx"] = kwargs.pop("src_left")
+                    kwargs["sy"] = kwargs.pop("src_top")
+                    kwargs["sw"] = kwargs.pop("src_width")
+                    kwargs["sh"] = kwargs.pop("src_height")
+                else:
+                    raise TypeError("Your upscaler must have resize-like (src_left, src_width) or fmtc-like (sx, sw) argument names")
+                return upscaler(clip, width, height, **kwargs)
 
     def Bilinear():
         return rescale.Rescaler(kernel="bilinear")
