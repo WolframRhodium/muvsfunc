@@ -645,7 +645,7 @@ def GradFun3(src: vs.VideoNode, thr: float = 0.35, radius: Optional[int] = None,
             dmask = core.std.Convolution(dmask, matrix=[1, 2, 1, 2, 4, 2, 1, 2, 1])
             if mask > 2:
                 dmask = core.std.Convolution(dmask, matrix=[1]*9)
-        dmask = core.fmtc.bitdepth(dmask, bits=16, fulls=True, fulld=True)
+        dmask = core.resize.Point(dmask, format=vs.GRAY16)
         res_16 = core.std.MaskedMerge(flt, src_16, dmask, planes=planes, first_plane=True)
     else:
         res_16 = flt
