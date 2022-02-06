@@ -638,7 +638,7 @@ def GradFun3(src: vs.VideoNode, thr: float = 0.35, radius: Optional[int] = None,
 
     if mask > 0:
         dmask = mvf.GetPlane(src_8, 0)
-        dmask = _Build_gf3_range_mask(dmask)
+        dmask = _Build_gf3_range_mask(dmask, mask)
         dmask = core.std.Expr([dmask], [mexpr])
         dmask = core.rgvs.RemoveGrain(dmask, [22])
         if mask > 1:
