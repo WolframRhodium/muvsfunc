@@ -179,7 +179,7 @@ def _build_repr() -> Callable[..., str]:
         elif isinstance(obj, (vs.ColorFamily, vs.PresetFormat, vs.SampleType)):
             return f"vs.{obj!s}"
 
-        elif isinstance(obj, vs.Format):
+        elif isinstance(obj, (vs.VideoFormat if _is_api4 else vs.Format)):
             arg_str = ', '.join(f"{k}={closure(v)}" for k, v in obj._as_dict().items())
             return f"core.query_video_format({arg_str})" if _is_api4 else f"core.register_format({arg_str})"
 
@@ -1364,3 +1364,4 @@ def pollute(*modules):
         for module in modules:
             module.core = core
             module.vs = _vs
+

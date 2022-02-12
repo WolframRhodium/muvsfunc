@@ -60,6 +60,7 @@ Functions:
     VFRSplice
     MSR
     getnative
+    downsample
 '''
 
 import functools
@@ -71,7 +72,7 @@ import os
 import numbers
 import typing
 from typing import Any, Callable, Dict, Iterable, List, Optional
-from typing import Sequence, Tuple, TypeVar, Union
+from typing import Sequence, Tuple, TypedDict, TypeVar, Union
 
 import vapoursynth as vs
 from vapoursynth import core
@@ -637,14 +638,14 @@ def GradFun3(src: vs.VideoNode, thr: float = 0.35, radius: Optional[int] = None,
 
     if mask > 0:
         dmask = mvf.GetPlane(src_8, 0)
-        dmask = _Build_gf3_range_mask(dmask)
+        dmask = _Build_gf3_range_mask(dmask, mask)
         dmask = core.std.Expr([dmask], [mexpr])
         dmask = core.rgvs.RemoveGrain(dmask, [22])
         if mask > 1:
             dmask = core.std.Convolution(dmask, matrix=[1, 2, 1, 2, 4, 2, 1, 2, 1])
             if mask > 2:
                 dmask = core.std.Convolution(dmask, matrix=[1]*9)
-        dmask = core.fmtc.bitdepth(dmask, bits=16, fulls=True, fulld=True)
+        dmask = core.resize.Point(dmask, format=vs.GRAY16)
         res_16 = core.std.MaskedMerge(flt, src_16, dmask, planes=planes, first_plane=True)
     else:
         res_16 = flt
@@ -3724,6 +3725,8 @@ def SSIM_downsample(clip: vs.VideoNode, w: int, h: int, smooth: Union[float, VSF
             This helps reducing the dark halo artefacts around sharp edges caused by resizing in linear luminance.
 
         resample_args: (dict) Additional arguments passed to vszimg/fmtconv in the form of keyword arguments.
+            Refer to the documentation of downsample() as an example.
+
             Default is {}.
 
     Ref:
@@ -5521,7 +5524,7 @@ def S_BoxFilter(clip: vs.VideoNode, radius: int = 1, planes: PlanesType = None) 
     return res
 
 
-def VFRSplice(clips: Sequence[vs.VideoNode], tcfile: Optional[Union[str, os.PathLike]] = None, 
+def VFRSplice(clips: Sequence[vs.VideoNode], tcfile: Optional[Union[str, os.PathLike]] = None,
               v2: bool = True, precision: int = 6) -> vs.VideoNode:
     """fractions-based VFRSplice()
 
@@ -6122,3 +6125,399 @@ def getnative(clip: vs.VideoNode, rescalers: Union[rescale.Rescaler, List[rescal
     stats = core.std.PlaneStats(diff)
 
     return output_statistics(stats, rescalers, src_heights, mode, dark)
+
+
+# port from fmtconv by Firesledge
+class ResampleKernel:
+    @staticmethod
+    def bilinear() -> Tuple[Callable[[float], float], int]:
+        def contributions(x: float) -> float:
+            return max(1 - abs(x), 0)
+
+        return contributions, 1
+
+    @staticmethod
+    def bicubic(b: float = 1/3, c: float = 1/3) -> Tuple[Callable[[float], float], int]:
+        p0 = (6 - 2 * b) / 6
+        p2 = (-18 + 12 * b + 6 * c) / 6
+        p3 = (12 - 9 * b - 6 * c) / 6
+        q0 = (8 * b + 24 * c) / 6
+        q1 = (-12 * b - 48 * c) / 6
+        q2 = (6 * b + 30 * c) / 6
+        q3 = (-b - 6 * c) / 6
+
+        def contributions(x: float) -> float:
+            x = abs(x)
+            if x <= 1:
+                return p0 + x * x * (p2 + x * p3)
+            elif x <= 2:
+                return q0 + x * (q1 + x * (q2 + x * q3))
+            else:
+                return 0.0
+
+        return contributions, 2
+
+    @staticmethod
+    def _sinc_function(x: float) -> float:
+        if x == 0:
+            return 1
+        else:
+            xp = x * math.pi
+            return math.sin(xp) / xp
+
+    @classmethod
+    def lanczos(cls, taps: int = 4) -> Tuple[Callable[[float], float], int]:
+        assert taps >= 1
+
+        def contributions(x: float) -> float:
+            if abs(x) <= taps:
+                return cls._sinc_function(x) * cls._sinc_function(x / taps)
+            else:
+                return 0.0
+
+        return contributions, taps
+
+    @staticmethod
+    def spline16() -> Tuple[Callable[[float], float], int]:
+        def contributions(x: float) -> float:
+            x = abs(x)
+
+            if x <= 1:
+                return ((x - 9/5) * x - 1/5) * x + 1
+            elif x <= 2:
+                x -= 1
+                return ((-1/3 * x + 4/5) * x - 7/15) * x
+            else:
+                return 0.0
+
+        return contributions, 2
+
+    @staticmethod
+    def spline36() -> Tuple[Callable[[float], float], int]:
+        def contributions(x: float) -> float:
+            x = abs(x)
+
+            if x <= 1:
+                return ((13/11 * x - 453/209) * x - 3/209) * x + 1
+            elif x <= 2:
+                x -= 1
+                return ((-6/11 * x + 270/209) * x - 156/209) * x
+            elif x <= 3:
+                x -= 2
+                return ((1/11 * x - 45/209) * x + 26/209) * x
+            else:
+                return 0.0
+
+        return contributions, 3
+
+    @staticmethod
+    def spline64() -> Tuple[Callable[[float], float], int]:
+        def contributions(x: float) -> float:
+            x = abs(x)
+
+            if x <= 1:
+                return ((49/41 * x - 6387/2911) * x - 3/2911) * x + 1
+            elif x <= 2:
+                x -= 1
+                return ((-24/41 * x + 4032/2911) * x - 2328/2911) * x
+            elif x <= 3:
+                x -= 2
+                return ((6/41 * x - 1008/2911) * x + 582/2911) * x
+            elif x <= 4:
+                x -= 3
+                return ((-1/41 * x + 168/2911) * x - 97/2911) * x
+            else:
+                return 0.0
+
+        return contributions, 4
+
+    @staticmethod
+    def gauss(p: float = 30.0, taps: int = 4) -> Tuple[Callable[[float], float], int]:
+        assert taps >= 1
+
+        p = max(1, min(p, 100)) / 10
+
+        def contributions(x: float) -> float:
+            if abs(x) <= taps:
+                return 2 ** (-p * x * x)
+            else:
+                return 0.0
+
+        return contributions, taps
+
+    @staticmethod
+    def spline(taps: int = 4) -> Tuple[Callable[[float], float], int]:
+        assert taps >= 1
+
+        y = [0.0] * (2 * taps + 1)
+        y[taps] = 1.0
+
+        f = [0.0] * (2 * taps)
+        if taps > 1:
+            f[taps - 2] = 6.0
+            f[taps] = 6.0
+        f[taps - 1] = -12.0
+
+        w = [4.0]
+        z = [f[0] / w[0]]
+        for j in range(1, 2 * taps):
+            w.append(4 - 1 / w[j - 1])
+            z.append((f[j] - z[j - 1]) / w[j])
+
+        x = [0.0] * (2 * taps + 1)
+        for j in range(2 * taps - 1, 0, -1):
+            x[j] = z[j - 1] - x[j + 1] / w[j - 1]
+
+        coef = [float(taps)]
+        for j in range(taps, 2 * taps):
+            p = 4 * (j - taps)
+            coef.extend([
+                (x[j+1] - x[j]) / 6,
+                x[j] / 2,
+                (y[j+1] - y[j]) - (x[j+1] + 2 * x[j]) / 6,
+                y[j]
+            ])
+
+        def contributions(x: float) -> float:
+            x = abs(x)
+            if (p := int(x)) < taps:
+                r = x - p
+                return functools.reduce(lambda x, y: x * r + y, coef[4*p+1:4*p+5])
+            else:
+                return 0.0
+
+        return contributions, taps
+
+    @classmethod
+    def sinc(cls, taps: int = 4) -> Tuple[Callable[[float], float], int]:
+        assert taps >= 1
+
+        def contributions(x: float) -> float:
+            if abs(x) <= taps:
+                return cls._sinc_function(x)
+            else:
+                return 0.0
+
+        return contributions, taps
+
+    @classmethod
+    def blackman(cls, taps: int = 3) -> Tuple[Callable[[float], float], int]:
+        assert taps >= 1
+
+        def compute_win_coef(x: float) -> float:
+            w_x = x * (math.pi / taps)
+            return 0.42 + 0.50 * math.cos(w_x) + 0.08 * math.cos(w_x * 2)
+
+        def contributions(x: float) -> float:
+            if abs(x) <= taps:
+                return cls._sinc_function(x) * compute_win_coef(x)
+            else:
+                return 0.0
+
+        return contributions, taps
+
+    @classmethod
+    def blackmanminlobe(cls, taps: int = 3) -> Tuple[Callable[[float], float], int]:
+        assert taps >= 1
+
+        def compute_win_coef(x: float) -> float:
+            w_x = x * (math.pi / taps)
+            return (
+                0.355768 + 0.487396 * math.cos(w_x) +
+                0.144232 * math.cos(w_x * 2) + 0.012604 * math.cos(w_x * 3))
+
+        def contributions(x: float) -> float:
+            if abs(x) <= taps:
+                return cls._sinc_function(x) * compute_win_coef(x)
+            else:
+                return 0.0
+
+        return contributions, taps
+
+
+def _downsample_helper(
+    kernel_func: Callable[[float], float],
+    support: int,
+    kernel_width: int,
+    kernel_scale: float,
+    down_scale: float,
+    shift: float
+) -> Tuple[List[float], float]:
+
+    shift_div, shift_rem = divmod(shift, 1)
+
+    def mod(x: float) -> float:
+        return (x + support) % (2 * support) - support
+
+    if down_scale % 2 == 0:
+        weights = [kernel_func(mod((i + 0.5 - shift_rem) * kernel_scale - support)) for i in range(kernel_width)]
+        impulse = list(itertools.accumulate(weights[1:-1], lambda s, x: 2 * x - s, initial=2*weights[0]))
+    else:
+        weights = [kernel_func(mod((i - shift_rem) * kernel_scale - support)) for i in range(1, kernel_width)]
+        impulse = weights
+
+    return impulse, shift_div
+
+
+class ResampleArgs(TypedDict):
+    sx: float
+    sy: float
+    kernel: str
+    impulseh: List[float]
+    impulsev: List[float]
+    kovrspl: int
+
+
+def get_downsample_args(
+    down_scale: int,
+    kernel: str = "bicubic",
+    taps: Optional[int] = None,
+    a1: Optional[float] = None,
+    a2: Optional[float] = None,
+    sx: float = 0.0,
+    sy: float = 0.0,
+    antialiasing: bool = True,
+    custom_kernel: Optional[Tuple[Callable[[float], float], int]] = None
+) -> ResampleArgs:
+    """ utility for downsample() """
+
+    kovrspl = down_scale
+
+    if taps is None:
+        taps = 4
+
+    if custom_kernel is not None:
+        kernel_func, support = custom_kernel
+    elif kernel == "bilinear":
+        kernel_func, support = ResampleKernel.bilinear()
+    elif kernel == "bicubic":
+        if a1 is None:
+            a1 = 1 / 3
+        if a2 is None:
+            a2 = 1 / 3
+        kernel_func, support = ResampleKernel.bicubic(b=a1, c=a2)
+    elif kernel == "lanczos":
+        kernel_func, support = ResampleKernel.lanczos(taps=taps)
+    elif kernel == "gauss":
+        if a1 is None:
+            a1 = 30.0
+        kernel_func, support = ResampleKernel.gauss(p=a1, taps=taps)
+    elif kernel == "spline16":
+        kernel_func, support = ResampleKernel.spline16()
+    elif kernel == "spline36":
+        kernel_func, support = ResampleKernel.spline36()
+    elif kernel == "spline64":
+        kernel_func, support = ResampleKernel.spline64()
+    elif kernel == "spline":
+        kernel_func, support = ResampleKernel.spline(taps=taps)
+    elif kernel == "sinc":
+        kernel_func, support = ResampleKernel.sinc(taps=taps)
+    elif kernel == "blackman":
+        kernel_func, support = ResampleKernel.blackman(taps=taps)
+    elif kernel == "blackmanminlobe":
+        kernel_func, support = ResampleKernel.blackmanminlobe(taps=taps)
+    else:
+        raise ValueError(f"Unknown kernel {kernel}")
+
+    if antialiasing:
+        kernel_width = down_scale * support * 2
+        kernel_scale = 1.0 / down_scale
+    else:
+        kernel_width = support * 2
+        kernel_scale = 1.0
+
+    impulseh, fmtc_sx = _downsample_helper(kernel_func, support, kernel_width, kernel_scale, down_scale, sx)
+    impulsev, fmtc_sy = _downsample_helper(kernel_func, support, kernel_width, kernel_scale, down_scale, sy)
+
+    return ResampleArgs(sx=fmtc_sx, sy=fmtc_sy, kernel="impulse", impulseh=impulseh, impulsev=impulsev, kovrspl=kovrspl)
+
+
+def downsample(
+    clip: vs.VideoNode,
+    down_scale: int,
+    kernel: str = "bicubic",
+    taps: Optional[int] = None,
+    a1: Optional[float] = None,
+    a2: Optional[float] = None,
+    sx: float = 0.0,
+    sy: float = 0.0,
+    antialiasing: bool = True,
+    custom_kernel: Optional[Tuple[Callable[[float], float], int]] = None,
+    **resample_kwargs
+) -> vs.VideoNode:
+
+    """ Integer-factor downsampling using fmtc.resample(kernel="impulse")
+
+    Args:
+        clip: Input clip.
+
+        down_scale: (int) Downsample factor.
+            Must be greater than 1 and be a common factor of clip's resolutions.
+
+        kernel: (str) Downsample kernel. Possible values:
+            bilinear, bicubic, lanczos, gauss, spline16, spline36, spline64,
+            spline, sinc, blackman, blackmanminlobe
+
+            Default is bicubic.
+
+        taps: (int) Number of sample points.
+            Default is 4.
+
+        a1, a2, sx, sy: (float) Please refer to documentation of fmtc.resample().
+            https://github.com/EleonoreMizo/fmtconv/blob/master/doc/fmtconv.html
+
+        antialiasing: (bool) Whether to perform antialiasing when downsampling.
+            fmtc.resample() implements "antialiasing=True".
+
+            Default is True.
+
+        custom_kernel: (kernel function, support) Override previous specification of downsample kernel.
+
+    Warning:
+        Subsampling is not handled.
+
+    Example:
+        # customizing SSIM_downsample()
+        down_scale = 2
+        assert gray.width % down_scale == 0 and gray.height % down_scale == 0
+
+        w = gray.width // down_scale
+        h = gray.height // down_scale
+        kwargs = muvsfunc.get_downsample_args(down_scale=down_scale, antialiasing=False)
+
+        res = muvsfunc.SSIM_downsample(gray, w, h, use_fmtc=True, **kwargs)
+    """
+
+    funcName = "downsample"
+
+    if not isinstance(clip, vs.VideoNode):
+        raise TypeError(f'{funcName}: "clip" must be a clip!')
+
+    if clip.format.subsampling_w > 0 or clip.format.subsampling_h > 0:
+        raise NotImplementedError(f'{funcName}: Subsampling is not handled!')
+
+    if not isinstance(down_scale, int):
+        raise TypeError(f'{funcName}: "down_scale" must be an int!')
+
+    if down_scale <= 1:
+        raise ValueError(f'{funcName}: "down_scale" must be greater than 1!')
+
+    if clip.width % down_scale != 0 or clip.height % down_scale != 0:
+        raise ValueError(f'{funcName}: "down_scale" is not a factor of video dimensions!')
+
+    w = clip.width // down_scale
+    h = clip.height // down_scale
+
+    kwargs = get_downsample_args(
+        down_scale=down_scale,
+        kernel=kernel,
+        taps=taps,
+        a1=a1,
+        a2=a2,
+        sx=sx,
+        sy=sy,
+        antialiasing=antialiasing,
+        custom_kernel=custom_kernel
+    )
+
+    return core.fmtc.resample(clip, w, h, **kwargs, **resample_kwargs)
