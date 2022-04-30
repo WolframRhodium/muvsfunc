@@ -1751,8 +1751,6 @@ def firniture(clip: vs.VideoNode, width: int, height: int, kernel: str = 'binomi
     if not isinstance(clip, vs.VideoNode):
         raise TypeError(funcName + ': \"clip\" must be a clip!')
 
-    import nnedi3_resample as nnrs
-
     impulseCoefficents = dict(
         binomial5=[8, 0, -589, 0, 11203, 0, -93355, 0, 606836, 1048576, 606836, 0, -93355, 0, 11203, 0, -589, 0, 8],
         binomial7=[146, 0, -20294, 0, 744006, 0, -11528384, 0, 94148472, 0, -487836876, 0, 2551884458, 4294967296, 2551884458,
@@ -1772,6 +1770,7 @@ def firniture(clip: vs.VideoNode, width: int, height: int, kernel: str = 'binomi
         clip = mvf.Depth(clip, 16)
 
     if gamma:
+        import nnedi3_resample as nnrs
         clip = nnrs.GammaToLinear(clip, fulls=fulls, fulld=fulld, curve=curve, sigmoid=sigmoid, planes=[0])
 
     clip = core.fmtc.resample(clip, width, height, kernel='impulse', impulse=impulseCoefficents[kernel], kovrspl=2,
@@ -3739,8 +3738,6 @@ def SSIM_downsample(clip: vs.VideoNode, w: int, h: int, smooth: Union[float, VSF
     if not isinstance(clip, vs.VideoNode):
         raise TypeError(funcName + ': \"clip\" must be a clip!')
 
-    import nnedi3_resample as nnrs
-
     if depth_args is None:
         depth_args = {}
 
@@ -3757,6 +3754,7 @@ def SSIM_downsample(clip: vs.VideoNode, w: int, h: int, smooth: Union[float, VSF
         kernel = 'Bicubic'
 
     if gamma:
+        import nnedi3_resample as nnrs
         clip = nnrs.GammaToLinear(mvf.Depth(clip, 16), fulls=fulls, fulld=fulld, curve=curve, sigmoid=sigmoid, planes=[0])
 
     clip = mvf.Depth(clip, depth=32, sample=vs.FLOAT, **depth_args)
