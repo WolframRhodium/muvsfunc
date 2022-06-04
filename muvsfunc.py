@@ -3783,9 +3783,11 @@ def SSIM_downsample(clip: vs.VideoNode, w: int, h: int, smooth: Union[float, VSF
     return d
 
 
-def LocalStatisticsMatching(src: vs.VideoNode, ref: vs.VideoNode, radius: Union[int, VSFuncType] = 1,
-                            return_all: bool = False, **depth_args: Any
-                            ) -> Union[vs.VideoNode, Tuple[vs.VideoNode, vs.VideoNode, vs.VideoNode, vs.VideoNode, vs.VideoNode]]:
+def LocalStatisticsMatching(
+    src: vs.VideoNode, ref: vs.VideoNode, radius: Union[int, VSFuncType] = 1,
+    return_all: bool = False, epsilon: float = 1e-4, **depth_args: Any
+) -> Union[vs.VideoNode, Tuple[vs.VideoNode, vs.VideoNode, vs.VideoNode, vs.VideoNode, vs.VideoNode]]:
+
     """Local statistics matcher
 
     Match the local statistics (mean, variance) of "src" with "ref".
@@ -3804,6 +3806,8 @@ def LocalStatisticsMatching(src: vs.VideoNode, ref: vs.VideoNode, radius: Union[
         depth_args: (dict) Additional arguments passed to mvf.Depth().
             Default is {}.
 
+        epsilon: (float) Small positive number to avoid dividing by 0.
+            Default is 1e-4.
     """
 
     funcName = 'LocalStatisticsMatching'
@@ -3815,7 +3819,6 @@ def LocalStatisticsMatching(src: vs.VideoNode, ref: vs.VideoNode, radius: Union[
 
     bits = src.format.bits_per_sample
     sampleType = src.format.sample_type
-    epsilon = 1e-7 # small positive number to avoid dividing by 0
 
     src, src_mean, src_var = LocalStatistics(src, radius=radius, **depth_args)
     _, ref_mean, ref_var = LocalStatistics(ref, radius=radius, **depth_args)
