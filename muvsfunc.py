@@ -1895,7 +1895,7 @@ def BoxFilter(input: vs.VideoNode, radius: int = 16, radius_v: Optional[int] = N
                     flt = mvf.Depth(flt, depth=input.format.bits_per_sample, **depth_args)
                 return flt
 
-            elif core.std.get_functions().__contains__('BoxBlur'):
+            elif hasattr(core.std, 'BoxBlur'):
                 return core.std.BoxBlur(input, hradius=radius-1, vradius=radius_v-1, planes=planes)
 
             else: # BoxBlur was not found
@@ -3497,7 +3497,7 @@ def GMSD(clip1: vs.VideoNode, clip2: vs.VideoNode, plane: Optional[int] = None,
     quality_map = core.std.Expr([clip1_grad_squared, clip2_grad_squared], ['2 x y * sqrt * {c} + x y + {c} + /'.format(c=c)])
 
     # The following code is modified from mvf.PlaneStatistics(), which is used to compute the standard deviation of the GMS map as GMSD
-    if core.std.get_functions().__contains__('PlaneStats'):
+    if hasattr(core.std, 'PlaneStats'):
         map_mean = core.std.PlaneStats(quality_map, plane=0, prop='PlaneStats')
     else:
         map_mean = core.std.PlaneAverage(quality_map, plane=0, prop='PlaneStatsAverage') # type: ignore
@@ -3512,7 +3512,7 @@ def GMSD(clip1: vs.VideoNode, clip2: vs.VideoNode, plane: Optional[int] = None,
     else:
         SDclip = core.std.FrameEval(quality_map, functools.partial(_PlaneSDFrame, clip=quality_map, core=core), map_mean)
 
-    if core.std.get_functions().__contains__('PlaneStats'):
+    if hasattr(core.std, 'PlaneStats'):
         SDclip = core.std.PlaneStats(SDclip, plane=0, prop='PlaneStats')
     else:
         SDclip = core.std.PlaneAverage(SDclip, plane=0, prop='PlaneStatsAverage') # type: ignore
@@ -3643,7 +3643,7 @@ def SSIM(clip1: vs.VideoNode, clip2: vs.VideoNode, plane: Optional[int] = None,
         ssim_map = core.std.Expr([denominator1, denominator2, mu1_mu2, sigma12_pls_mu1_mu2], [expr])
 
     # The following code is modified from mvf.PlaneStatistics(), which is used to compute the mean of the SSIM index map as MSSIM
-    if core.std.get_functions().__contains__('PlaneStats'):
+    if hasattr(core.std, 'PlaneStats'):
         map_mean = core.std.PlaneStats(ssim_map, plane=0, prop='PlaneStats')
     else:
         map_mean = core.std.PlaneAverage(ssim_map, plane=0, prop='PlaneStatsAverage') # type: ignore
