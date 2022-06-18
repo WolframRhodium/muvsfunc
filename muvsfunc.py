@@ -5405,7 +5405,7 @@ def Cdeblend(input: vs.VideoNode, omode: int = 0, bthresh: float = 0.1, mthresh:
             return clip[0:2] + clip[2+current:]
         else:
             text = f'{min(-Cbp1, Cbc0) if Cbc0 > 0 and Cbp1 < 0 else 0.0}{" -> BLEND!!" if min(-Cbp1, Cbc0) >= bthresh else " "}'
-            return core.sub.Subtitle(clip, text)
+            return core.text.Text(clip, text)
 
     # process
     blendclip = input if dclip is None else dclip
