@@ -5892,7 +5892,7 @@ class rescale:
 
 def getnative(clip: vs.VideoNode, rescalers: Union[rescale.Rescaler, List[rescale.Rescaler]] = [rescale.Bicubic(0, 0.5)],
     src_heights: Union[int, float, Sequence[int], Sequence[float]] = tuple(range(500, 1001)), base_height: int = None,
-    crop_size: int = 5, rt_eval: bool = True, dark: bool = True) -> vs.VideoNode:
+    crop_size: int = 5, rt_eval: bool = True, dark: bool = True, ex_thr: float = 0.015) -> vs.VideoNode:
     """Find the native resolution(s) of upscaled material (mostly anime)
 
     Modifyed from:
@@ -5928,6 +5928,9 @@ def getnative(clip: vs.VideoNode, rescalers: Union[rescale.Rescaler, List[rescal
 
         dark: (bool) Whether to use dark background in output png file.
             Default is True
+
+        ex_thr: (float) Threshold for excluding little difference in calculation
+            Default is 0.015.
 
     Examples:
         Assume that src is a one-plane GRAYS clip. You might get such a clip by
@@ -6118,7 +6121,7 @@ def getnative(clip: vs.VideoNode, rescalers: Union[rescale.Rescaler, List[rescal
             rescaled = core.std.Splice([rescaler.rescale(clip, src_height, base_height) for rescaler in rescalers])  # type: ignore
             clip = core.std.Loop(clip, len(rescalers))
 
-    diff = core.std.Expr([clip, rescaled], ["x y - abs dup 0.015 > swap 0 ?"])
+    diff = core.std.Expr([clip, rescaled], [f"x y - abs dup {ex_thr} > swap 0 ?"])
 
     if crop_size > 0:
         diff = core.std.CropRel(diff, *([crop_size] * 4))
