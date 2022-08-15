@@ -29,6 +29,8 @@ src = core.std.BlankClip(format=vs.GRAYS)
 radius = 3
 thr = 0.01
 
+parallel = True
+
 
 # pre-processing
 if src.format.id != vs.GRAYS:
@@ -45,8 +47,12 @@ def executor(n, f, radius, thr):
 
     return fout
 
+selector = partial(executor, radius=radius, thr=thr)
 # process
-res = core.std.ModifyFrame(src, src, partial(executor, radius=radius, thr=thr))
+if parallel:
+    res = core.std.FrameEval(src, lambda n: core.std.ModifyFrame(src, src, selector))
+else:
+    res = core.std.ModifyFrame(src, src, selector)
 
 # res = mufnp.SigmaFilter(src, radius=radius, thr=thr)
 
