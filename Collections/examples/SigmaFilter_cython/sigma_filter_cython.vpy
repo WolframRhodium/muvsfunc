@@ -7,6 +7,20 @@ from functools import partial
 # To build, run `python setup.py build_ext --inplace`
 from sigma_filter import sigma_filter
 
+is_api4: bool = hasattr(vs, "__api_version__") and vs.__api_version__.api_major == 4
+
+def get_array(frame, plane, read=True):
+    if not read and frame.readonly:
+        raise ValueError("Frame is readonly")
+
+    if is_api4:
+        return frame[plane]
+    else:
+        if read:
+            return frame.get_read_array(plane)
+        else:
+            return frame.get_write_array(plane)
+
 
 # Load source clip. Only GRAYS is supported
 src = core.std.BlankClip(format=vs.GRAYS)
@@ -24,8 +38,8 @@ if src.format.id != vs.GRAYS:
 def executor(n, f, radius, thr):
     fout = f.copy()
 
-    src = f.get_read_array(0)
-    dst = fout.get_write_array(0)
+    src = get_array(f, 0)
+    dst = get_array(fout, 0, read=False)
 
     sigma_filter(src, dst, radius, thr)
 
