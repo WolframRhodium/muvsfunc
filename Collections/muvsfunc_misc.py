@@ -597,10 +597,18 @@ def fast_mandelbrot(width=1920, height=1280, iterations=50,
             data = array.array('f', (((high - low) * j / (width - 1) + low) for j in range(width)))
 
             for i in range(height):
-                mem_view[i, :] = data
+                if _is_api4:
+                    for j in range(width):
+                        mem_view[i, j] = data[j]
+                else:
+                    mem_view[i, :] = data
         else:
             for i in range(height):
-                mem_view[i, :] = array.array('f', [(low - high) * i / (height - 1) + high]) * width
+                if _is_api4:
+                    for j in range(width):
+                        mem_view[i, j] = (low - high) * i / (height - 1) + high
+                else:
+                    mem_view[i, :] = array.array('f', [(low - high) * i / (height - 1) + high]) * width
 
         return f
 
