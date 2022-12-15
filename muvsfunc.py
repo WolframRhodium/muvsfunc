@@ -6061,13 +6061,35 @@ def getnative(clip: vs.VideoNode, rescalers: Union[rescale.Rescaler, List[rescal
                 else:
                     ticks.append(height)
             return ticks
-
+        def get_kernel_ticks(data: Sequence[float], kernels: List[str]) -> tuple[List[int], List[str]]:
+            interval = round(len(kernels) * 0.05)
+            log10_data = [math.log10(v) for v in data]
+            d2_log10_data = []
+            valley_kernels = []
+            for i in range(1, len(data) - 1):
+                if log10_data[i - 1] > log10_data[i] and log10_data[i + 1] > log10_data[i]:
+                    d2_log10_data.append(log10_data[i - 1] + log10_data[i + 1] - 2 * log10_data[i])
+                    valley_kernels.append(kernels[i])
+            candidate_kernels = [valley_kernels[i] for _, i in sorted(zip(d2_log10_data, range(len(valley_kernels))), reverse=True)]
+            candidate_kernels.append(kernels[0])
+            candidate_kernels.append(kernels[-1])
+            ticks = []
+            ticklabels = []
+            for kernel in candidate_kernels:
+                for ticklabel in ticklabels:
+                    if abs(kernels.index(kernel) - kernels.index(ticklabel)) < interval:
+                        break
+                else:
+                    ticks.append(kernels.index(kernel))
+                    ticklabels.append(kernel)
+            return ticks, ticklabels
         if dark:
             plt.style.use("dark_background")
             fmt = ".w-"
         else:
             fmt = ".-"
         fig, ax = plt.subplots(figsize=(12, 8))
+        fig.set_tight_layout(True)
         if mode == Mode.MULTI_FRAME:
             save_filename = get_save_filename(f"verify_{rescalers[0].name}_{src_heights[0]}")
             ax.plot(range(len(data)), data, fmt)
@@ -6088,10 +6110,13 @@ def getnative(clip: vs.VideoNode, rescalers: Union[rescale.Rescaler, List[rescal
             ax.plot(range(len(data)), data, fmt)
             ticks = list(range(len(data)))
             ticklabels = [rescaler.name for rescaler in rescalers]
-            ax.set(xlabel="Kernel", xticks=ticks, xticklabels=ticklabels, ylabel="Relative error", title=save_filename, yscale="log")
+            if len(data) >= 20:
+                ticks, ticklabels = get_kernel_ticks(data, ticklabels)
             with open(f"{save_filename}.txt", "w") as ftxt:
                 import pprint
                 pprint.pprint(list(zip(ticklabels, data)), stream=ftxt)
+            ticklabels = [ticklabel.replace('_', '\n') for ticklabel in ticklabels]
+            ax.set(xlabel="Kernel", xticks=ticks, xticklabels=ticklabels, ylabel="Relative error", title=save_filename, yscale="log")
         fig.savefig(f"{save_filename}")
         plt.close()
 
