@@ -6110,11 +6110,11 @@ def getnative(clip: vs.VideoNode, rescalers: Union[rescale.Rescaler, List[rescal
             ax.plot(range(len(data)), data, fmt)
             ticks = list(range(len(data)))
             ticklabels = [rescaler.name for rescaler in rescalers]
-            if len(data) >= 20:
-                ticks, ticklabels = get_kernel_ticks(data, ticklabels)
             with open(f"{save_filename}.txt", "w") as ftxt:
                 import pprint
                 pprint.pprint(list(zip(ticklabels, data)), stream=ftxt)
+            if len(data) >= 20:
+                ticks, ticklabels = get_kernel_ticks(data, ticklabels)
             ticklabels = [ticklabel.replace('_', '\n') for ticklabel in ticklabels]
             ax.set(xlabel="Kernel", xticks=ticks, xticklabels=ticklabels, ylabel="Relative error", title=save_filename, yscale="log")
         fig.savefig(f"{save_filename}")
