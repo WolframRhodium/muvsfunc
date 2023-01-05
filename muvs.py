@@ -1105,7 +1105,7 @@ def _build_VideoNode(fake_vn=None):
                 def closure(*args, **kwargs):
                     for recorder in Recorder._live_recorders:
                         if recorder.is_recording:
-                            args_str = ', '.join(args)
+                            args_str = ', '.join(map(_repr, args))
                             kwargs_str = ', '.join(f"{k}={_repr(v)}" for k, v in kwargs)
                             call_str = ', '.join(s for s in [args_str, kwargs_str] if s != '')
                             recorder.buffer.append(f"{_repr(self)}.{name}({call_str})\n")
