@@ -276,6 +276,15 @@ class _Plugin:
                             recorder.buffer.append(self._get_str(func, args, kwargs, output) + '\n')
 
                     return _VideoNode(output)
+                elif isinstance(output, list) and len(output) > 0 and isinstance(output[0], vs.VideoNode):
+                    for item in output:
+                        _ = _repr(item, default_prefix="clip") # register output
+                    
+                    for recorder in Recorder._live_recorders:
+                        if recorder.is_recording:
+                            recorder.buffer.append(self._get_str(func, args, kwargs, output, check_output=False) + '\n')
+
+                    return list(_VideoNode(item) for item in output)
                 else:
                     return output
 
@@ -291,30 +300,31 @@ class _Plugin:
         return dir(self._plugin)
 
     @staticmethod
-    def _get_str(func: vs.Function, args, kwargs, output):
+    def _get_str(func: vs.Function, args, kwargs, output, check_output=True):
         output_str = ""
 
-        def diff_str(clip1: vs.VideoNode, clip2: vs.VideoNode):
-            """Compare two clips and output a string of their difference"""
-            res = []
-            for attr in ["width", "height", "num_frames"]:
-                if getattr(clip1, attr) != getattr(clip2, attr):
-                    res.append(f"{attr}: {getattr(clip1, attr)} -> {getattr(clip2, attr)}")
-            if clip1.format.name != clip2.format.name:
-                res.append(f"format: {clip1.format.name} -> {clip2.format.name}")
-            if clip1.fps != clip2.fps:
-                res.append(f"fps: {clip1.fps_num}/{clip1.fps_den} -> {clip2.fps_num}/{clip2.fps_den}")
-            return ', '.join(res)
+        if check_output:
+            def diff_str(clip1: vs.VideoNode, clip2: vs.VideoNode):
+                """Compare two clips and output a string of their difference"""
+                res = []
+                for attr in ["width", "height", "num_frames"]:
+                    if getattr(clip1, attr) != getattr(clip2, attr):
+                        res.append(f"{attr}: {getattr(clip1, attr)} -> {getattr(clip2, attr)}")
+                if clip1.format.name != clip2.format.name:
+                    res.append(f"format: {clip1.format.name} -> {clip2.format.name}")
+                if clip1.fps != clip2.fps:
+                    res.append(f"fps: {clip1.fps_num}/{clip1.fps_den} -> {clip2.fps_num}/{clip2.fps_den}")
+                return ', '.join(res)
 
-        if len(args) > 0 and isinstance(args[0], vs.VideoNode):
-            if diff_str(args[0], output) != "":
-                output_str += f"# {diff_str(args[0], output)}\n"
-        elif kwargs.get("clip", None):
-            if diff_str(kwargs["clip"], output) != "":
-                output_str += f"# {diff_str(kwargs['clip'], output)}\n"
-        else:
-            output_str += (f"# output: {output.width} x {output.height}, {output.format.name}, "
-                           f"{output.num_frames} frames, {output.fps_num}/{output.fps_den} fps\n")
+            if len(args) > 0 and isinstance(args[0], vs.VideoNode):
+                if diff_str(args[0], output) != "":
+                    output_str += f"# {diff_str(args[0], output)}\n"
+            elif kwargs.get("clip", None):
+                if diff_str(kwargs["clip"], output) != "":
+                    output_str += f"# {diff_str(kwargs['clip'], output)}\n"
+            else:
+                output_str += (f"# output: {output.width} x {output.height}, {output.format.name}, "
+                            f"{output.num_frames} frames, {output.fps_num}/{output.fps_den} fps\n")
 
         args_dict = inspect.signature(func).bind(*args, **kwargs).arguments
 
@@ -1364,4 +1374,3 @@ def pollute(*modules):
         for module in modules:
             module.core = core
             module.vs = _vs
-
