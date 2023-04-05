@@ -5793,10 +5793,9 @@ class rescale:
         if base_height is None:
             width, height = round(width), round(height)
             src_width, src_height = width, height
-            width, height = width, height
             src_left, src_top = 0, 0
         else:
-            base_width = round(W / H * base_height) if base_height % 2 == 1 else round(W / H * base_height / 2) * 2
+            base_width = round(W / H * base_height)
             src_width = width
             src_height = height
             width = base_width - 2 * int((base_width - width) / 2)
@@ -5804,6 +5803,34 @@ class rescale:
             src_top = (height - src_height) / 2
             src_left = (width - src_width) / 2
 
+        return {
+            "width": width,
+            "height": height,
+            "src_left": src_left,
+            "src_top": src_top,
+            "src_width": src_width,
+            "src_height": src_height,
+        }
+
+    def _get_descale_args_pro(width: Union[float, int], height: Union[float, int], base_height: int = None, base_width: int = None):
+        if base_height is None:
+            height = round(height)
+            src_height = height
+            src_top = 0
+        else:
+            src_height = height
+            height = base_height - 2 * int((base_height - height) / 2)
+            src_top = (height - src_height) / 2
+            
+        
+        if base_width is None:
+            width = round(width)
+            src_width = width
+            src_left= 0
+        else:
+            src_width = width
+            width = base_width - 2 * int((base_width - width) / 2)
+            src_left = (width - src_width) / 2
         return {
             "width": width,
             "height": height,
@@ -5844,12 +5871,30 @@ class rescale:
             descaled = self.descale(clip, src_width, src_height, base_height)
             rescaled = self.upscale(descaled, W, H, upscaler)
             return rescaled
+        
+        def rescale_pro(self, clip: vs.VideoNode, src_width: Union[int, float] = None, src_height: Union[int, float] = None, base_width: Optional[int] = None, base_height: Optional[int] = None, upscaler: Optional[Callable] = None) -> vs.VideoNode:
+
+            if ((src_height is None) and (src_width is None)):
+                raise TypeError("At least one of the 'src_height' and 'src_width' must be set.")
+
+            descaled = self.descale_pro(clip, src_width, src_height, base_width, base_height)
+            rescaled = self.upscale(descaled, clip.width, clip.height, upscaler)
+            return rescaled
 
         def descale(self, clip: vs.VideoNode, width: Union[int, float], height: Union[int, float], base_height: int = None):
             W, H = clip.width, clip.height
             self.descale_args = rescale._get_descale_args(W, H, width, height, base_height)
             kwargs = self.descale_args.copy()
             return core.descale.Descale(clip, kernel=self.kernel, taps=self.taps, b=self.b, c=self.c, **kwargs)
+
+        def descale_pro(self, clip: vs.VideoNode, width: Union[int, float] = None, height: Union[int, float] = None, base_width: int = None, base_height: int = None):
+            if width is None:
+                width = clip.width
+            if height is None:
+                height = clip.height
+            self.descale_args = rescale._get_descale_args_pro(width, height, base_height, base_width)
+            kwargs = self.descale_args.copy()
+            return core.descale.Descale(clip, kernel=self.kernel, taps=self.taps, b=self.b, c=self.c, **kwargs)        
 
         def upscale(self, clip: vs.VideoNode, width: int, height: int, upscaler: Optional[Callable] = None) -> vs.VideoNode:
             from inspect import signature
@@ -5892,7 +5937,7 @@ class rescale:
 
 def getnative(clip: vs.VideoNode, rescalers: Union[rescale.Rescaler, List[rescale.Rescaler]] = [rescale.Bicubic(0, 0.5)],
     src_heights: Union[int, float, Sequence[int], Sequence[float]] = tuple(range(500, 1001)), base_height: int = None,
-    crop_size: int = 5, rt_eval: bool = True, dark: bool = True, ex_thr: float = 0.015) -> vs.VideoNode:
+    crop_size: int = 5, rt_eval: bool = True, dark: bool = True, ex_thr: float = 0.015, filename: str = None) -> vs.VideoNode:
     """Find the native resolution(s) of upscaled material (mostly anime)
 
     Modifyed from:
@@ -5931,6 +5976,9 @@ def getnative(clip: vs.VideoNode, rescalers: Union[rescale.Rescaler, List[rescal
 
         ex_thr: (float) Threshold for excluding little difference in calculation
             Default is 0.015.
+
+        filename: (str) The filename of the output file.
+            Default is None.
 
     Examples:
         Assume that src is a one-plane GRAYS clip. You might get such a clip by
@@ -6121,8 +6169,11 @@ def getnative(clip: vs.VideoNode, rescalers: Union[rescale.Rescaler, List[rescal
         plt.close()
 
     def get_save_filename(name: str):
-        from datetime import datetime
-        return f"{name}_{datetime.now().strftime('%H-%M-%S')}.png"
+        if filename is None:
+            from datetime import datetime
+            return f"{name}_{datetime.now().strftime('%H-%M-%S')}.png"
+        else:
+            return filename
 
     # process
     if mode == Mode.MULTI_FRAME:
@@ -6144,6 +6195,187 @@ def getnative(clip: vs.VideoNode, rescalers: Union[rescale.Rescaler, List[rescal
             rescaled = core.std.FrameEval(clip, lambda n, clip=clip: rescalers[n].rescale(clip, src_height, base_height))  # type: ignore
         else:
             rescaled = core.std.Splice([rescaler.rescale(clip, src_height, base_height) for rescaler in rescalers])  # type: ignore
+            clip = core.std.Loop(clip, len(rescalers))
+
+    diff = core.std.Expr([clip, rescaled], [f"x y - abs dup {ex_thr} > swap 0 ?"])
+
+    if crop_size > 0:
+        diff = core.std.CropRel(diff, *([crop_size] * 4))
+
+    stats = core.std.PlaneStats(diff)
+
+    return output_statistics(stats, rescalers, src_heights, mode, dark)
+
+def getnative1D(clip: vs.VideoNode, rescalers: Union[rescale.Rescaler, List[rescale.Rescaler]] = [rescale.Bicubic(0, 0.5)],
+    src_heights: Union[int, float, Sequence[int], Sequence[float]] = tuple(range(500, 1001)), base_height: int = None,
+    crop_size: int = 5, rt_eval: bool = True, dark: bool = True, ex_thr: float = 0.015, filename: str = None) -> vs.VideoNode:
+    """
+    Similar to 'getnative', but just descale and upscale the image in the vertical direction. The horizontal direction is untouched.
+    """
+
+    import logging
+    logging.getLogger('matplotlib').setLevel(logging.WARNING)
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+    from enum import Enum
+
+    class Mode(Enum):
+        MULTI_FRAME = 1
+        MULTI_HEIGHT = 2
+        MULTI_KERNEL = 3
+
+    # check
+    assert isinstance(clip, vs.VideoNode) and clip.format.id == vs.GRAYS
+    assert isinstance(base_height, int) or base_height is None
+
+    if not isinstance(rescalers, list):
+        rescalers = [rescalers]
+    for rescaler in rescalers:
+        assert isinstance(rescaler, rescale.Rescaler)
+
+    if isinstance(src_heights, int) or isinstance(src_heights, float):
+        src_heights = (src_heights,)
+    if not isinstance(src_heights, tuple):
+        src_heights = tuple(src_heights)
+    if base_height is not None:
+        assert base_height > max(src_heights)
+
+    if clip.num_frames > 1:
+        mode = Mode.MULTI_FRAME
+        assert len(src_heights) == 1 and len(rescalers) == 1, "1 src_height and 1 rescaler should be passed for verify mode."
+    elif len(src_heights) > 1:
+        mode = Mode.MULTI_HEIGHT
+        assert clip.num_frames == 1 and len(rescalers) == 1, "1-frame clip and 1 rescaler should be passed for multi heights mode."
+    elif len(rescalers) > 1:
+        mode = Mode.MULTI_KERNEL
+        assert clip.num_frames == 1 and len(src_heights) == 1, "1-frame clip and 1 src_height shoule be passed for multi kernels mode."
+
+    def output_statistics(clip: vs.VideoNode, rescalers: List[rescale.Rescaler], src_heights: Sequence[int], mode: Mode, dark: bool) -> vs.VideoNode:
+        data = [0] * clip.num_frames
+        remaining_frames = [1] * clip.num_frames # mutable
+
+        def func_core(n: int, f: vs.VideoFrame, clip: vs.VideoNode) -> vs.VideoNode:
+            # add eps to avoid getting 0 diff, which later messes up the graph.
+            data[n] = f.props.PlaneStatsAverage + 1e-9 # type: ignore
+
+            nonlocal remaining_frames
+            remaining_frames[n] = 0
+
+            if sum(remaining_frames) == 0:
+                create_plot(data, rescalers, src_heights, mode, dark)
+
+            return clip
+
+        return core.std.FrameEval(clip, functools.partial(func_core, clip=clip), clip)
+
+    def create_plot(data: Sequence[float], rescalers: List[rescale.Rescaler], src_heights: Sequence[float], mode: Mode, dark: bool) -> None:
+        def get_heights_ticks(data: Sequence[float], src_heights: Sequence[float]) -> Sequence[float]:
+            interval = round((max(src_heights) - min(src_heights)) * 0.05)
+            log10_data = [math.log10(v) for v in data]
+            d2_log10_data = []
+            valley_heights = []
+            for i in range(1, len(data) - 1):
+                if log10_data[i - 1] > log10_data[i] and log10_data[i + 1] > log10_data[i]:
+                    d2_log10_data.append(log10_data[i - 1] + log10_data[i + 1] - 2 * log10_data[i])
+                    valley_heights.append(src_heights[i])
+            candidate_heights = [valley_heights[i] for _, i in sorted(zip(d2_log10_data, range(len(valley_heights))), reverse=True)]
+            candidate_heights.append(src_heights[0])
+            candidate_heights.append(src_heights[-1])
+            ticks = []
+            for height in candidate_heights:
+                for tick in ticks:
+                    if abs(height - tick) < interval:
+                        break
+                else:
+                    ticks.append(height)
+            return ticks
+        def get_kernel_ticks(data: Sequence[float], kernels: List[str]) -> tuple[List[int], List[str]]:
+            interval = round(len(kernels) * 0.05)
+            log10_data = [math.log10(v) for v in data]
+            d2_log10_data = []
+            valley_kernels = []
+            for i in range(1, len(data) - 1):
+                if log10_data[i - 1] > log10_data[i] and log10_data[i + 1] > log10_data[i]:
+                    d2_log10_data.append(log10_data[i - 1] + log10_data[i + 1] - 2 * log10_data[i])
+                    valley_kernels.append(kernels[i])
+            candidate_kernels = [valley_kernels[i] for _, i in sorted(zip(d2_log10_data, range(len(valley_kernels))), reverse=True)]
+            candidate_kernels.append(kernels[0])
+            candidate_kernels.append(kernels[-1])
+            ticks = []
+            ticklabels = []
+            for kernel in candidate_kernels:
+                for ticklabel in ticklabels:
+                    if abs(kernels.index(kernel) - kernels.index(ticklabel)) < interval:
+                        break
+                else:
+                    ticks.append(kernels.index(kernel))
+                    ticklabels.append(kernel)
+            return ticks, ticklabels
+        if dark:
+            plt.style.use("dark_background")
+            fmt = ".w-"
+        else:
+            fmt = ".-"
+        fig, ax = plt.subplots(figsize=(12, 8))
+        fig.set_tight_layout(True)
+        if mode == Mode.MULTI_FRAME:
+            save_filename = get_save_filename(f"verify_{rescalers[0].name}_{src_heights[0]}")
+            ax.plot(range(len(data)), data, fmt)
+            ax.set(xlabel="Frame", ylabel="Relative error", title=save_filename, yscale="log")
+            with open(f"{save_filename}.txt", "w") as ftxt:
+                import pprint
+                pprint.pprint(list(enumerate(data)), stream=ftxt)
+        if mode == Mode.MULTI_HEIGHT:
+            save_filename = get_save_filename(f"height_{rescalers[0].name}")
+            ax.plot(src_heights, data, fmt)
+            ticks = get_heights_ticks(data, src_heights)
+            ax.set(xlabel="Height", xticks=ticks, ylabel="Relative error", title=save_filename, yscale="log")
+            with open(f"{save_filename}.txt", "w") as ftxt:
+                import pprint
+                pprint.pprint(list(zip(src_heights, data)), stream=ftxt)
+        elif mode == Mode.MULTI_KERNEL:
+            save_filename = get_save_filename(f"kernel_{src_heights[0]}")
+            ax.plot(range(len(data)), data, fmt)
+            ticks = list(range(len(data)))
+            ticklabels = [rescaler.name for rescaler in rescalers]
+            with open(f"{save_filename}.txt", "w") as ftxt:
+                import pprint
+                pprint.pprint(list(zip(ticklabels, data)), stream=ftxt)
+            if len(data) >= 20:
+                ticks, ticklabels = get_kernel_ticks(data, ticklabels)
+            ticklabels = [ticklabel.replace('_', '\n') for ticklabel in ticklabels]
+            ax.set(xlabel="Kernel", xticks=ticks, xticklabels=ticklabels, ylabel="Relative error", title=save_filename, yscale="log")
+        fig.savefig(f"{save_filename}")
+        plt.close()
+
+    def get_save_filename(name: str):
+        if filename is None:
+            from datetime import datetime
+            return f"{name}_{datetime.now().strftime('%H-%M-%S')}.png"
+        else:
+            return filename
+
+    # process
+    if mode == Mode.MULTI_FRAME:
+        src_height = src_heights[0]
+        rescaler = rescalers[0]
+        rescaled = rescaler.rescale_pro(clip, src_height=src_height, base_height=base_height)
+    elif mode == Mode.MULTI_HEIGHT:
+        rescaler = rescalers[0]
+        if rt_eval:
+            clip = core.std.Loop(clip, len(src_heights))
+            rescaled = core.std.FrameEval(clip, lambda n, clip=clip: rescaler.rescale_pro(clip, src_height = src_heights[n], base_height = base_height))  # type: ignore
+        else:
+            rescaled = core.std.Splice([rescaler.rescale_pro(clip, src_height = src_height, base_height = base_height) for src_height in src_heights])  # type: ignore
+            clip = core.std.Loop(clip, len(src_heights))
+    elif mode == Mode.MULTI_KERNEL:
+        src_height = src_heights[0]
+        if rt_eval:
+            clip = core.std.Loop(clip, len(rescalers))
+            rescaled = core.std.FrameEval(clip, lambda n, clip=clip: rescalers[n].rescale_pro(clip, src_height = src_height, base_height = base_height))  # type: ignore
+        else:
+            rescaled = core.std.Splice([rescaler.rescale_pro(clip, src_height = src_height, base_height = base_height) for rescaler in rescalers])  # type: ignore
             clip = core.std.Loop(clip, len(rescalers))
 
     diff = core.std.Expr([clip, rescaled], [f"x y - abs dup {ex_thr} > swap 0 ?"])
