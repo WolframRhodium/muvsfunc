@@ -5978,6 +5978,7 @@ def getnative(clip: vs.VideoNode, rescalers: Union[rescale.Rescaler, List[rescal
             Default is 0.015.
 
         filename: (str) The filename of the output file.
+            Default is None.
 
     Examples:
         Assume that src is a one-plane GRAYS clip. You might get such a clip by
