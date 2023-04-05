@@ -5937,7 +5937,7 @@ class rescale:
 
 def getnative(clip: vs.VideoNode, rescalers: Union[rescale.Rescaler, List[rescale.Rescaler]] = [rescale.Bicubic(0, 0.5)],
     src_heights: Union[int, float, Sequence[int], Sequence[float]] = tuple(range(500, 1001)), base_height: int = None,
-    crop_size: int = 5, rt_eval: bool = True, dark: bool = True, ex_thr: float = 0.015, filename: str = None) -> vs.VideoNode:
+    crop_size: int = 5, rt_eval: bool = True, dark: bool = True, ex_thr: float = 0.015, filename: str = None, vertical_only: bool = False) -> vs.VideoNode:
     """Find the native resolution(s) of upscaled material (mostly anime)
 
     Modifyed from:
@@ -6179,22 +6179,38 @@ def getnative(clip: vs.VideoNode, rescalers: Union[rescale.Rescaler, List[rescal
     if mode == Mode.MULTI_FRAME:
         src_height = src_heights[0]
         rescaler = rescalers[0]
-        rescaled = rescaler.rescale(clip, src_height, base_height)
+        if not vertical_only:
+            rescaled = rescaler.rescale(clip, src_height, base_height)
+        else:
+            rescaled = rescaler.rescale_pro(clip, src_height=src_height, base_height=base_height)
     elif mode == Mode.MULTI_HEIGHT:
         rescaler = rescalers[0]
         if rt_eval:
             clip = core.std.Loop(clip, len(src_heights))
-            rescaled = core.std.FrameEval(clip, lambda n, clip=clip: rescaler.rescale(clip, src_heights[n], base_height))  # type: ignore
+            if not vertical_only:
+                rescaled = core.std.FrameEval(clip, lambda n, clip=clip: rescaler.rescale(clip, src_heights[n], base_height))  # type: ignore
+            else:
+                rescaled = core.std.FrameEval(clip, lambda n, clip=clip: rescaler.rescale_pro(clip, src_height = src_heights[n], base_height = base_height))  # type: ignore
         else:
-            rescaled = core.std.Splice([rescaler.rescale(clip, src_height, base_height) for src_height in src_heights])  # type: ignore
+            if not vertical_only:
+                rescaled = core.std.Splice([rescaler.rescale(clip, src_height, base_height) for src_height in src_heights])  # type: ignore
+            else:
+                rescaled = core.std.Splice([rescaler.rescale_pro(clip, src_height = src_height, base_height = base_height) for src_height in src_heights])  # type: ignore
             clip = core.std.Loop(clip, len(src_heights))
     elif mode == Mode.MULTI_KERNEL:
         src_height = src_heights[0]
         if rt_eval:
             clip = core.std.Loop(clip, len(rescalers))
-            rescaled = core.std.FrameEval(clip, lambda n, clip=clip: rescalers[n].rescale(clip, src_height, base_height))  # type: ignore
+            if not vertical_only:
+                rescaled = core.std.FrameEval(clip, lambda n, clip=clip: rescalers[n].rescale(clip, src_height, base_height))  # type: ignore
+            else:
+                rescaled = core.std.FrameEval(clip, lambda n, clip=clip: rescalers[n].rescale_pro(clip, src_height = src_height, base_height = base_height))  # type: ignore
         else:
-            rescaled = core.std.Splice([rescaler.rescale(clip, src_height, base_height) for rescaler in rescalers])  # type: ignore
+            if not vertical_only:
+                rescaled = core.std.Splice([rescaler.rescale(clip, src_height, base_height) for rescaler in rescalers])  # type: ignore
+            else:
+                rescaled = core.std.Splice([rescaler.rescale_pro(clip, src_height = src_height, base_height = base_height) for rescaler in rescalers])  # type: ignore
+            clip = core.std.Loop(clip, len(rescalers))
             clip = core.std.Loop(clip, len(rescalers))
 
     diff = core.std.Expr([clip, rescaled], [f"x y - abs dup {ex_thr} > swap 0 ?"])
