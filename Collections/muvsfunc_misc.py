@@ -582,7 +582,7 @@ def fade(clip, start=0, end=None, mode='in', base=None):
 
 
 def fast_mandelbrot(width=1920, height=1280, iterations=50, 
-    real_range=(-2, 1), imag_range=(-1, 1), c=0+0j, julia_set=False):
+    real_range=(-2, 1), imag_range=(-1, 1), c=0+0j, julia_set=False, backend=None):
 
     import array
 
@@ -616,13 +616,22 @@ def fast_mandelbrot(width=1920, height=1280, iterations=50,
 
     ones = core.std.BlankClip(format=vs.GRAYS, width=width, height=height, length=1, color=1)
 
-    z_real = core.std.ModifyFrame(
-        ones, ones, 
-        functools.partial(meshgrid_core, horizontal=True, low=real_range[0], high=real_range[1]))
+    if hasattr(core, "akarin"):
+        features = core.akarin.Version()["expr_features"]
 
-    z_imag = core.std.ModifyFrame(
-        ones, ones, 
-        functools.partial(meshgrid_core, horizontal=False, low=imag_range[0], high=imag_range[1]))
+        if b"X" in features and b"width" in features:
+            z_real = core.akarin.Expr([ones], f"{real_range[1] - real_range[0]} X * width 1 - / {real_range[0]} +")
+        else:
+            z_real = core.std.ModifyFrame(
+                ones, ones, 
+                functools.partial(meshgrid_core, horizontal=True, low=real_range[0], high=real_range[1]))
+
+        if b"Y" in features and b"height" in features:
+            z_imag = core.akarin.Expr([ones], f"{imag_range[0] - imag_range[1]} Y * height 1 - / {imag_range[1]} +")
+        else:
+            z_imag = core.std.ModifyFrame(
+                ones, ones, 
+                functools.partial(meshgrid_core, horizontal=False, low=imag_range[0], high=imag_range[1]))
 
     if julia_set:
         inner = (
@@ -648,4 +657,10 @@ def fast_mandelbrot(width=1920, height=1280, iterations=50,
 
         expr = f"{c.real} {c.imag} z {inner * iterations} 1 swap2 ? 1 swap2 ?"
 
-    return core.std.Expr([z_real, z_imag, ones], expr)
+    if backend is None:
+        if hasattr(core, "akarin"):
+            return core.akarin.Expr([z_real, z_imag, ones], expr)
+        else:
+            return core.std.Expr([z_real, z_imag, ones], expr)
+    else:
+        return backend([z_real, z_imag, ones], expr)
