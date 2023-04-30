@@ -5526,7 +5526,7 @@ def S_BoxFilter(clip: vs.VideoNode, radius: int = 1, planes: PlanesType = None) 
 
 
 def VFRSplice(clips: Sequence[vs.VideoNode], tcfile: Optional[Union[str, os.PathLike]] = None,
-              v2: bool = True, precision: int = 6, cfr_ref: Optional[vs.VideoNode] = None, fpsnum_out: int = 30000, fpsden_out: int = 1001) -> vs.VideoNode:
+              v2: bool = True, precision: int = 6, cfr_ref: Optional[vs.VideoNode] = None) -> vs.VideoNode:
     """fractions-based VFRSplice()
 
     This function is modified from mvsfunc.VFRSplice().
@@ -5554,15 +5554,8 @@ def VFRSplice(clips: Sequence[vs.VideoNode], tcfile: Optional[Union[str, os.Path
 
         cfr_ref: (bool or VideoNode)
             You can input a reference clip (can be your source clip) for CFR output.
-            Or you can set False and use custom FrameRate Numerator & FrameRate Denominator for CFR output.
             If you input a reference clip, it should also be CFR, and the time of the output clip should same as the reference clip.
             Default: None.
-
-        fpn_out: (int) Custom FrameRate Numerator for CFR output.
-            Default: 30000.
-
-        fpn_out: (int) Custom FrameRate Denominator for CFR output.
-            Default: 1001.
 
         An example:
             source = core.std.BlankClip(length=3000, fpsnum=30000, fpsden=1001).text.FrameNum()
@@ -5704,8 +5697,6 @@ def VFRSplice(clips: Sequence[vs.VideoNode], tcfile: Optional[Union[str, os.Path
         fpn = clipa.num_frames * clipb.fps.numerator / clipb.num_frames
         fpd = clipb.fps.denominator
         return core.std.AssumeFPS(output, fpsnum=fpn, fpsden=fpd)
-    elif cfr_ref == False:
-        return core.std.AssumeFPS(output, fpsnum=fpsnum_out, fpsden=fpsden_out)
     else:
         return output
 
