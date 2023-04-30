@@ -5525,8 +5525,8 @@ def S_BoxFilter(clip: vs.VideoNode, radius: int = 1, planes: PlanesType = None) 
     return res
 
 
-def VFRSplice(clips: Sequence[vs.VideoNode], ref: vs.VideoNode = None, tcfile: Optional[Union[str, os.PathLike]] = None,
-              v2: bool = True, precision: int = 6, cfr_output: bool = False) -> vs.VideoNode:
+def VFRSplice(clips: Sequence[vs.VideoNode], tcfile: Optional[Union[str, os.PathLike]] = None,
+              v2: bool = True, precision: int = 6, cfr_ref = None, fpsnum_out: int = 30000, fpsden_out: int = 1001) -> vs.VideoNode:
     """fractions-based VFRSplice()
 
     This function is modified from mvsfunc.VFRSplice().
@@ -5535,16 +5535,11 @@ def VFRSplice(clips: Sequence[vs.VideoNode], ref: vs.VideoNode = None, tcfile: O
     since it is implemented based on rational number arithmetic
     rather than floating-point arithmetic.
 
-    In addition, added constant frame rate output used a reference clip, for x265(or other encoders).
+    In addition, added constant frame rate output, for x265 (or other encoders).
 
     Args:
         clips: List of clips to be spliced.
-            Each clip should be CFR(constant frame rate).
-
-        ref: Your reference clip(can be your source clip) for CFR output.
-            The time of the output clip should same as the reference clip.
-            And it should also be CFR.
-            Default: None.
+            Each clip should be CFR (constant frame rate).
 
         tcfile: (str or os.PathLike) Timecode file output. Supports recursive directory creation.
             Default: None.
@@ -5557,16 +5552,24 @@ def VFRSplice(clips: Sequence[vs.VideoNode], ref: vs.VideoNode = None, tcfile: O
             indicating how many digits should be displayed after the decimal point for a fixed-point value.
             Default: 6.
 
-        cfr_output: (bool)
-            True for CFR output(use the reference clip).
-            Default: False.
-            
+        cfr_ref: (bool or VideoNode)
+            You can input a reference clip (can be your source clip) for CFR output.
+            Or you can set False and use custom FrameRate Numerator & FrameRate Denominator for CFR output.
+            If you input a reference clip, it should also be CFR, and the time of the output clip should same as the reference clip.
+            Default: None.
+
+        fpn_out: (int) Custom FrameRate Numerator for CFR output.
+            Default: 30000.
+
+        fpn_out: (int) Custom FrameRate Denominator for CFR output.
+            Default: 1001.
+
         An example:
-            source = core.std.BlankClip(length=3000,fpsnum=30000,fpsden=1001).text.FrameNum()
-            clip1 = core.std.BlankClip(length=1200,fpsnum=24000,fpsden=1001).text.FrameNum()
-            clip2 = core.std.BlankClip(length=3000,fpsnum=60000,fpsden=1001).text.FrameNum()
-            # The time of the output clip(clip1+clip2) is same as the reference(source) clip.
-            out = muvsfunc.VFRSplice([clip1, clip2], ref=source, cfr_output=True)
+            source = core.std.BlankClip(length=3000, fpsnum=30000, fpsden=1001).text.FrameNum()
+            clip1 = core.std.BlankClip(length=1200, fpsnum=24000, fpsden=1001).text.FrameNum()
+            clip2 = core.std.BlankClip(length=3000, fpsnum=60000, fpsden=1001).text.FrameNum()
+            # The time of the output clip(clip1 + clip2) is same as the reference(source) clip.
+            out = muvsfunc.VFRSplice([clip1, clip2], cfr_ref=source)
             out.set_output()
 
     """
@@ -5585,11 +5588,11 @@ def VFRSplice(clips: Sequence[vs.VideoNode], ref: vs.VideoNode = None, tcfile: O
     else:
         raise TypeError(f'{funcName}: "clips" must be a clip or a list of clips!')
 
-    if cfr_output:
-        if not isinstance(ref, vs.VideoNode):
-            raise TypeError(f'{funcName}: "ref" must be a clip!')
-        if ref.fps.numerator == 0 and ref.fps.denominator == 1:
-            raise ValueError(f'{funcName}: "ref" must be CFR!')
+    if cfr_ref:
+        if not isinstance(cfr_ref, vs.VideoNode):
+            raise TypeError(f'{funcName}: "cfr_ref" must be a clip!')
+        if cfr_ref.fps.numerator == 0 and cfr_ref.fps.denominator == 1:
+            raise ValueError(f'{funcName}: "cfr_ref" must be CFR!')
 
     T = TypeVar("T")
     def exclusive_accumulate(iterable: Iterable[T], func: Callable[[T, T], T] = operator.add,
@@ -5692,16 +5695,17 @@ def VFRSplice(clips: Sequence[vs.VideoNode], ref: vs.VideoNode = None, tcfile: O
     # Output spliced clip
     output = core.std.Splice(clips, mismatch=True)
 
-    # Use a reference clip for CFR output.
-    if cfr_output:
+    # For CFR output.
+    if cfr_ref:
         clipa = output
-        clipb = ref
-        fpn_out = clipa.num_frames*clipb.fps.numerator/clipb.num_frames
-        fpd_out = clipb.fps.denominator
-        return core.std.AssumeFPS(output, fpsnum=fpn_out, fpsden=fpd_out)
+        clipb = cfr_ref
+        fpn = clipa.num_frames * clipb.fps.numerator
+        fpd = clipb.fps.denominator * clipb.num_frames
+        return core.std.AssumeFPS(output, fpsnum=fpn, fpsden=fpd)
+    elif cfr_ref == False:
+        return core.std.AssumeFPS(output, fpsnum=fpsnum_out, fpsden=fpsden_out)
     else:
         return output
-
 
 def MSR(clip: vs.VideoNode, *passes: numbers.Real, radius: int = 1, planes: PlanesType = None) -> vs.VideoNode:
     """Multiscale Retinex
