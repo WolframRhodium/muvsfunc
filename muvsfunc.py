@@ -5535,7 +5535,7 @@ def VFRSplice(clips: Sequence[vs.VideoNode], ref: vs.VideoNode = None, tcfile: O
     since it is implemented based on rational number arithmetic
     rather than floating-point arithmetic.
 
-    In addition, added constant frame rate output with a reference clip
+    In addition, added constant frame rate output used a reference clip
     for x265(or other encoders).
 
     Args:
