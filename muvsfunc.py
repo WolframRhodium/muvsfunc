@@ -5526,7 +5526,7 @@ def S_BoxFilter(clip: vs.VideoNode, radius: int = 1, planes: PlanesType = None) 
 
 
 def VFRSplice(clips: Sequence[vs.VideoNode], tcfile: Optional[Union[str, os.PathLike]] = None,
-              v2: bool = True, precision: int = 6, cfr_ref = None, fpsnum_out: int = 30000, fpsden_out: int = 1001) -> vs.VideoNode:
+              v2: bool = True, precision: int = 6, cfr_ref: Optional[vs.VideoNode] = None, fpsnum_out: int = 30000, fpsden_out: int = 1001) -> vs.VideoNode:
     """fractions-based VFRSplice()
 
     This function is modified from mvsfunc.VFRSplice().
@@ -5699,8 +5699,10 @@ def VFRSplice(clips: Sequence[vs.VideoNode], tcfile: Optional[Union[str, os.Path
     if cfr_ref:
         clipa = output
         clipb = cfr_ref
-        fpn = clipa.num_frames * clipb.fps.numerator
-        fpd = clipb.fps.denominator * clipb.num_frames
+        # fpn = clipa.num_frames * clipb.fps.numerator
+        # fpd = clipb.fps.denominator * clipb.num_frames
+        fpn = clipa.num_frames * clipb.fps.numerator / clipb.num_frames
+        fpd = clipb.fps.denominator
         return core.std.AssumeFPS(output, fpsnum=fpn, fpsden=fpd)
     elif cfr_ref == False:
         return core.std.AssumeFPS(output, fpsnum=fpsnum_out, fpsden=fpsden_out)
