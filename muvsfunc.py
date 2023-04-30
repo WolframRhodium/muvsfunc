@@ -5552,7 +5552,7 @@ def VFRSplice(clips: Sequence[vs.VideoNode], tcfile: Optional[Union[str, os.Path
             indicating how many digits should be displayed after the decimal point for a fixed-point value.
             Default: 6.
 
-        cfr_ref: (bool or VideoNode)
+        cfr_ref: (VideoNode)
             You can input a reference clip (can be your source clip) for CFR output.
             If you input a reference clip, it should also be CFR, and the time of the output clip should same as the reference clip.
             Default: None.
