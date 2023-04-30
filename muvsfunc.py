@@ -5525,8 +5525,8 @@ def S_BoxFilter(clip: vs.VideoNode, radius: int = 1, planes: PlanesType = None) 
     return res
 
 
-def VFRSplice(clips: Sequence[vs.VideoNode], tcfile: Optional[Union[str, os.PathLike]] = None,
-              v2: bool = True, precision: int = 6) -> vs.VideoNode:
+def VFRSplice(clips: Sequence[vs.VideoNode], ref: vs.VideoNode = None, tcfile: Optional[Union[str, os.PathLike]] = None,
+              v2: bool = True, precision: int = 6, cfr_output: bool = False) -> vs.VideoNode:
     """fractions-based VFRSplice()
 
     This function is modified from mvsfunc.VFRSplice().
@@ -5535,9 +5535,17 @@ def VFRSplice(clips: Sequence[vs.VideoNode], tcfile: Optional[Union[str, os.Path
     since it is implemented based on rational number arithmetic
     rather than floating-point arithmetic.
 
+    In addition, added constant frame rate output with a reference clip
+    for x265(or other encoders).
+
     Args:
         clips: List of clips to be spliced.
-            Each clip should be CRF(constant frame rate).
+            Each clip should be CFR(constant frame rate).
+
+        ref: Your reference clip(can be your source clip) for CFR output.
+            The time of the output clip should same as the reference clip.
+            And it should also be CFR.
+            Default: None.
 
         tcfile: (str or os.PathLike) Timecode file output. Supports recursive directory creation.
             Default: None.
@@ -5549,6 +5557,18 @@ def VFRSplice(clips: Sequence[vs.VideoNode], tcfile: Optional[Union[str, os.Path
         precision: (int) Precision of time and frame rate,
             indicating how many digits should be displayed after the decimal point for a fixed-point value.
             Default: 6.
+
+        cfr_output: (bool)
+            True for CFR output(use the reference clip).
+            Default: False.
+            
+        An example:
+            source = core.std.BlankClip(length=3000,fpsnum=30000,fpsden=1001).text.FrameNum()
+            clip1 = core.std.BlankClip(length=1200,fpsnum=24000,fpsden=1001).text.FrameNum()
+            clip2 = core.std.BlankClip(length=3000,fpsnum=60000,fpsden=1001).text.FrameNum()
+            # The time of the output clip(clip1+clip2) is same as the reference(source) clip.
+            out = mvf.VFRSplice([clip1, clip2], ref=source, cfr_output=True)
+            out.set_output()
 
     """
 
@@ -5566,6 +5586,11 @@ def VFRSplice(clips: Sequence[vs.VideoNode], tcfile: Optional[Union[str, os.Path
     else:
         raise TypeError(f'{funcName}: "clips" must be a clip or a list of clips!')
 
+    if cfr_output:
+        if not isinstance(ref, vs.VideoNode):
+            raise TypeError(f'{funcName}: "ref" must be a clip!')
+        if ref.fps.numerator == 0 and ref.fps.denominator == 1:
+            raise ValueError(f'{funcName}: "ref" must be CFR!')
 
     T = TypeVar("T")
     def exclusive_accumulate(iterable: Iterable[T], func: Callable[[T, T], T] = operator.add,
@@ -5666,7 +5691,17 @@ def VFRSplice(clips: Sequence[vs.VideoNode], tcfile: Optional[Union[str, os.Path
             ofile.writelines(olines)
 
     # Output spliced clip
-    return core.std.Splice(clips, mismatch=True)
+    output = core.std.Splice(clips, mismatch=True)
+
+    # Use a reference clip for CFR output.
+    if cfr_output:
+        clipa = output
+        clipb = ref
+        fpn_out = clipa.num_frames*clipb.fps.numerator/clipb.num_frames
+        fpd_out = clipb.fps.denominator
+        return core.std.AssumeFPS(output, fpsnum=fpn_out, fpsden=fpd_out)
+    else:
+        return output
 
 
 def MSR(clip: vs.VideoNode, *passes: numbers.Real, radius: int = 1, planes: PlanesType = None) -> vs.VideoNode:
