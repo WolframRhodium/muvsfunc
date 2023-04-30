@@ -5566,7 +5566,7 @@ def VFRSplice(clips: Sequence[vs.VideoNode], ref: vs.VideoNode = None, tcfile: O
             clip1 = core.std.BlankClip(length=1200,fpsnum=24000,fpsden=1001).text.FrameNum()
             clip2 = core.std.BlankClip(length=3000,fpsnum=60000,fpsden=1001).text.FrameNum()
             # The time of the output clip(clip1+clip2) is same as the reference(source) clip.
-            out = mvf.VFRSplice([clip1, clip2], ref=source, cfr_output=True)
+            out = muvsfunc.VFRSplice([clip1, clip2], ref=source, cfr_output=True)
             out.set_output()
 
     """
