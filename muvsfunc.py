@@ -5699,7 +5699,7 @@ def VFRSplice(clips: Sequence[vs.VideoNode], tcfile: Optional[Union[str, os.Path
         clipb = cfr_ref
         # fpn = clipa.num_frames * clipb.fps.numerator
         # fpd = clipb.fps.denominator * clipb.num_frames
-        fpn = clipa.num_frames * clipb.fps.numerator / clipb.num_frames
+        fpn = round(clipa.num_frames * clipb.fps.numerator / clipb.num_frames)
         fpd = clipb.fps.denominator
         return core.std.AssumeFPS(output, fpsnum=fpn, fpsden=fpd)
     else:
