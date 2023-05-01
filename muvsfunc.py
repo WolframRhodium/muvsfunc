@@ -5337,6 +5337,10 @@ def Cdeblend(input: vs.VideoNode, omode: int = 0, bthresh: float = 0.1, mthresh:
 
     funcName = 'Cdeblend'
 
+    if _is_api4:
+        import warnings
+        warnings.warn("this function may produce visible incorrect output")
+
     # check
     if not isinstance(input, vs.VideoNode):
         raise TypeError(f'{funcName}: "input" must be a clip!')
