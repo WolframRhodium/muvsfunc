@@ -1920,7 +1920,7 @@ def SmoothGrad(input: vs.VideoNode, radius: int = 9, thr: float = 0.25,
     Args:
         input: Input clip to be filtered.
 
-        radius: (int) Size of the averaged square. Its width is radius*2-1. Range is 2–9.
+        radius: (int) Size of the averaged square. Its width is radius*2-1. Range is 2-9.
 
         thr: (float) Threshold between reference data and filtered data, on an 8-bit scale.
 
@@ -1978,7 +1978,7 @@ def DeFilter(clip: vs.VideoNode, func: VSFuncType, iteration: int = 10, planes: 
         [1] Tao, X., Zhou, C., Shen, X., Wang, J., & Jia, J. (2017, October). Zero-Order Reverse Filtering.
             In Computer Vision (ICCV), 2017 IEEE International Conference on (pp. 222-230). IEEE.
         [2] https://github.com/jiangsutx/DeFilter
-        [3] Milanfar, P. (2018). Rendition: Reclaiming what a black box takes away. SIAM Journal on Imaging Sciences, 11(4), 2722–2756.
+        [3] Milanfar, P. (2018). Rendition: Reclaiming what a black box takes away. SIAM Journal on Imaging Sciences, 11(4), 2722-2756.
 
     '''
 
@@ -2019,7 +2019,7 @@ def ColorBarsHD(clip: Optional[vs.VideoNode] = None, width: int = 1288, height: 
     '''Avisynth's ColorBarsHD()
 
     It produces a video clip containing SMPTE color bars (Rec. ITU-R BT.709 / arib std b28 v1.0) scaled to any image size.
-    By default, a 1288×720, YV24, TV range, 29.97 fps, 1 frame clip is produced.
+    By default, a 1288x720, YV24, TV range, 29.97 fps, 1 frame clip is produced.
 
     Requirment:
         lexpr (https://github.com/AkarinVS/vapoursynth-plugin), or
@@ -6655,10 +6655,10 @@ def downsample(
 
 def SSFDeband(
     clip: vs.VideoNode,
-    thr: float = 1,
-    smooth_taps: int = 2,
-    edge_taps: int = 3,
-    stride: int = 3,
+    thr: Union[float, Sequence[float]] = 1,
+    smooth_taps: Union[int, Sequence[int]] = 2,
+    edge_taps: Union[int, Sequence[int]] = 3,
+    stride: Union[int, Sequence[int]] = 3,
     planes: PlanesType = None
 ) -> vs.VideoNode:
     """Selective sparse filter debanding in VapourSynth
@@ -6672,16 +6672,16 @@ def SSFDeband(
     Args:
         clip: Input clip.
 
-        thr: (float) Threshold in (0, 255) of edge detection.
+        thr: (float or a list of floats) Threshold in (0, 255) of edge detection.
             Default is 1.
 
-        smooth_taps: (int) Taps of the sparse filter, the larger, the smoother.
+        smooth_taps: (int or a list of ints) Taps of the sparse filter, the larger, the smoother.
             Default is 2.
 
-        edge_taps: (int) Taps of the edge detector, the larger, smaller region will be smoothed.
+        edge_taps: (int or a list of ints) Taps of the edge detector, the larger, smaller region will be smoothed.
             Default is 3.
 
-        strides: (int) The stride of the edge detection and filtering.
+        strides: (int or a list of ints) The stride of the edge detection and filtering.
             Default is 3.
 
         planes: (int []) Whether to process the corresponding plane. By default, every plane will be processed.
@@ -6699,38 +6699,66 @@ def SSFDeband(
     if not isinstance(clip, vs.VideoNode):
         raise TypeError(f'{funcName}: "clip" must be a clip!')
 
+    def to_list(x):
+        if isinstance(x, abc.Sequence):
+            return list(x) + [x[-1]] * 2
+        else:
+            return [x] * 3
+
+    thr = to_list(thr)
+    smooth_taps = to_list(smooth_taps)
+    edge_taps = to_list(edge_taps)
+    stride = to_list(stride)
+
     if clip.format.sample_type == vs.INTEGER:
-        thr *= ((2 ** clip.format.bits_per_sample) - 1) / 255
+        thr = [t * ((2 ** clip.format.bits_per_sample) - 1) / 255 for t in thr]
     else:
-        thr /= 255
+        thr = [t / 255 for t in thr]
 
     if planes is None:
         planes = list(range(clip.format.num_planes))
     elif isinstance(planes, int):
         planes = [planes]
+    
+    def get_expr(thr: float, smooth_taps: int, edge_taps: int, stride: int, is_vertical: bool):
+        if thr <= 0 or smooth_taps <= 1 or edge_taps <= 0 or stride == 0:
+            return ""
 
-    isclose = lambda x, thr=thr: f"x {x} - abs {thr} <"
+        isclose = lambda x, thr=thr: f"x {x} - abs {thr} <"
 
-    vrt_generate = lambda taps, stride=stride: (
-        f"x[0,{y * stride}]"
-        for y in range(-taps, taps+1)
-    )
+        generate = lambda taps, stride=stride: (
+            (f"x[0,{i * stride}]" if is_vertical else f"x[{i * stride},0]")
+            for i in range(-taps, taps+1)
+        )
+        
+        mask_expr = functools.reduce(lambda x, y: f"{x} {y} and", map(isclose, generate(taps=edge_taps)))
+        smooth_expr = functools.reduce(lambda x, y: f"{x} {y} +", generate(taps=smooth_taps)) + f" {2 * smooth_taps + 1} /"
+        return f"{mask_expr} {smooth_expr} x ?"
 
-    vrt_mask_expr = functools.reduce(lambda x, y: f"{x} {y} and", map(isclose, vrt_generate(taps=edge_taps)))
-    vrt_smooth_expr = functools.reduce(lambda x, y: f"{x} {y} +", vrt_generate(taps=smooth_taps)) + f" {2 * smooth_taps + 1} /"
-    vrt_expr = f"{vrt_mask_expr} {vrt_smooth_expr} x ?"
-    vrt_exprs = [(vrt_expr if plane in planes else "") for plane in range(clip.format.num_planes)]
+    vrt_exprs = [(
+            get_expr(
+                thr=thr[plane], 
+                smooth_taps=smooth_taps[plane], 
+                edge_taps=edge_taps[plane], 
+                stride=stride[plane], 
+                is_vertical=True
+            ) 
+            if plane in planes else ""
+        ) for plane in range(clip.format.num_planes)
+    ]
     vrt_deband = core.akarin.Expr(clip, vrt_exprs)
 
-    hrz_generate = lambda taps, stride=stride: (
-        f"x[{x * stride},0]"
-        for x in range(-taps, taps+1)
-    )
-
-    hrz_mask_expr = functools.reduce(lambda x, y: f"{x} {y} and", map(isclose, hrz_generate(taps=edge_taps)))
-    hrz_smooth_expr = functools.reduce(lambda x, y: f"{x} {y} +", hrz_generate(taps=smooth_taps)) + f" {2 * smooth_taps + 1} /"
-    hrz_expr = f"{hrz_mask_expr} {hrz_smooth_expr} x ?"
-    hrz_exprs = [(hrz_expr if plane in planes else "") for plane in range(clip.format.num_planes)]
+    hrz_exprs = [(
+            get_expr(
+                thr=thr[plane], 
+                smooth_taps=smooth_taps[plane], 
+                edge_taps=edge_taps[plane], 
+                stride=stride[plane], 
+                is_vertical=False
+            ) 
+            if plane in planes else ""
+        ) for plane in range(clip.format.num_planes)
+    ]
     hrz_deband = core.akarin.Expr(vrt_deband, hrz_exprs)
 
     return hrz_deband
