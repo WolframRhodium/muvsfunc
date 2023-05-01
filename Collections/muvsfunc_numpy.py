@@ -1381,7 +1381,7 @@ def SSFDeband(clip, thr=1, smooth_taps=2, edge_taps=3, strides=3, auto_scale_thr
     Args:
         clip: Input clip.
 
-        thr: (int) Threshold of banding detection.
+        thr: (int) Threshold in (0, 255) of edge detection.
             Default is 1.
 
         smooth_taps: (int) Taps of the sparse filter, the larger, the smoother.
@@ -1390,7 +1390,7 @@ def SSFDeband(clip, thr=1, smooth_taps=2, edge_taps=3, strides=3, auto_scale_thr
         edge_taps: (int) Taps of the edge detector, the larger, smaller region will be smoothed.
             Default is 3.
 
-        strides: (int) The stride of the sliding window.
+        strides: (int) The stride of the edge detection and filtering.
             Default is 3.
 
         auto_scale_thr: (bool) Whether to automatically scale the "thr" according to the bit depth and sample type.
@@ -1408,7 +1408,7 @@ def SSFDeband(clip, thr=1, smooth_taps=2, edge_taps=3, strides=3, auto_scale_thr
         if sampleType == vs.INTEGER:
             thr *= ((1 << bits) - 1) / 255
         else: # sampleType == vs.FLOAT
-            thr /= (2 ** bits) - 1
+            thr /= 255
 
     clip = numpy_process(clip, functools.partial(SSFDeband_core, thr=thr, smooth_taps=smooth_taps, 
         edge_taps=edge_taps, strides=strides), input_per_plane=True, output_per_plane=True, copy=True)
