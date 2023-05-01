@@ -61,6 +61,7 @@ Functions:
     MSR
     getnative
     downsample
+    SSFDeband
 '''
 
 import functools
@@ -5700,6 +5701,7 @@ def VFRSplice(clips: Sequence[vs.VideoNode], tcfile: Optional[Union[str, os.Path
     else:
         return output
 
+
 def MSR(clip: vs.VideoNode, *passes: numbers.Real, radius: int = 1, planes: PlanesType = None) -> vs.VideoNode:
     """Multiscale Retinex
 
@@ -5852,8 +5854,7 @@ class rescale:
             src_height = height
             height = base_height - 2 * int((base_height - height) / 2)
             src_top = (height - src_height) / 2
-            
-        
+
         if base_width is None:
             width = round(width)
             src_width = width
@@ -5902,7 +5903,7 @@ class rescale:
             descaled = self.descale(clip, src_width, src_height, base_height)
             rescaled = self.upscale(descaled, W, H, upscaler)
             return rescaled
-        
+
         def rescale_pro(self, clip: vs.VideoNode, src_width: Union[int, float] = None, src_height: Union[int, float] = None, base_width: Optional[int] = None, base_height: Optional[int] = None, upscaler: Optional[Callable] = None) -> vs.VideoNode:
 
             if ((src_height is None) and (src_width is None)):
@@ -5925,7 +5926,7 @@ class rescale:
                 height = clip.height
             self.descale_args = rescale._get_descale_args_pro(width, height, base_height, base_width)
             kwargs = self.descale_args.copy()
-            return core.descale.Descale(clip, kernel=self.kernel, taps=self.taps, b=self.b, c=self.c, **kwargs)        
+            return core.descale.Descale(clip, kernel=self.kernel, taps=self.taps, b=self.b, c=self.c, **kwargs)
 
         def upscale(self, clip: vs.VideoNode, width: int, height: int, upscaler: Optional[Callable] = None) -> vs.VideoNode:
             from inspect import signature
@@ -6646,3 +6647,86 @@ def downsample(
     )
 
     return core.fmtc.resample(clip, w, h, **kwargs, **resample_kwargs)
+
+
+def SSFDeband(
+    clip: vs.VideoNode,
+    thr: float = 1,
+    smooth_taps: int = 2,
+    edge_taps: int = 3,
+    stride: int = 3,
+    planes: PlanesType = None
+) -> vs.VideoNode:
+    """Selective sparse filter debanding in VapourSynth
+
+    Deband using a selective sparse filter which combines smooth region detection and banding reduction.
+
+    Each plane is processed separately.
+
+    Output may be slightly different from muvsfunc_numpy.SSFDeband() due to rounding error and boundary handling.
+
+    Args:
+        clip: Input clip.
+
+        thr: (float) Threshold in (0, 255) of edge detection.
+            Default is 1.
+
+        smooth_taps: (int) Taps of the sparse filter, the larger, the smoother.
+            Default is 2.
+
+        edge_taps: (int) Taps of the edge detector, the larger, smaller region will be smoothed.
+            Default is 3.
+
+        strides: (int) The stride of the edge detection and filtering.
+            Default is 3.
+
+        planes: (int []) Whether to process the corresponding plane. By default, every plane will be processed.
+            The unprocessed planes will be copied from "clip".
+
+    Ref:
+        [1] Song, Q., Su, G. M., & Cosman, P. C. (2016, September).
+            Hardware-efficient debanding and visual enhancement filter for inverse tone mapped high dynamic range images and videos.
+            In Image Processing (ICIP), 2016 IEEE International Conference on (pp. 3299-3303). IEEE.
+
+    """
+
+    funcName = "SSFDeband"
+
+    if not isinstance(clip, vs.VideoNode):
+        raise TypeError(f'{funcName}: "clip" must be a clip!')
+
+    if clip.format.sample_type == vs.INTEGER:
+        thr *= ((2 ** clip.format.bits_per_sample) - 1) / 255
+    else:
+        thr /= 255
+
+    if planes is None:
+        planes = list(range(clip.format.num_planes))
+    elif isinstance(planes, int):
+        planes = [planes]
+
+    isclose = lambda x, thr=thr: f"x {x} - abs {thr} <"
+
+    vrt_generate = lambda taps, stride=stride: (
+        f"x[0,{y * stride}]"
+        for y in range(-taps, taps+1)
+    )
+
+    vrt_mask_expr = functools.reduce(lambda x, y: f"{x} {y} and", map(isclose, vrt_generate(taps=edge_taps)))
+    vrt_smooth_expr = functools.reduce(lambda x, y: f"{x} {y} +", vrt_generate(taps=smooth_taps)) + f" {2 * smooth_taps + 1} /"
+    vrt_expr = f"{vrt_mask_expr} {vrt_smooth_expr} x ?"
+    vrt_exprs = [(vrt_expr if plane in planes else "") for plane in range(clip.format.num_planes)]
+    vrt_deband = core.akarin.Expr(clip, vrt_exprs)
+
+    hrz_generate = lambda taps, stride=stride: (
+        f"x[{x * stride},0]"
+        for x in range(-taps, taps+1)
+    )
+
+    hrz_mask_expr = functools.reduce(lambda x, y: f"{x} {y} and", map(isclose, hrz_generate(taps=edge_taps)))
+    hrz_smooth_expr = functools.reduce(lambda x, y: f"{x} {y} +", hrz_generate(taps=smooth_taps)) + f" {2 * smooth_taps + 1} /"
+    hrz_expr = f"{hrz_mask_expr} {hrz_smooth_expr} x ?"
+    hrz_exprs = [(hrz_expr if plane in planes else "") for plane in range(clip.format.num_planes)]
+    hrz_deband = core.akarin.Expr(vrt_deband, hrz_exprs)
+
+    return hrz_deband
