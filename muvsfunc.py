@@ -77,7 +77,6 @@ from typing import Sequence, Tuple, TypedDict, TypeVar, Union
 
 import vapoursynth as vs
 from vapoursynth import core
-import havsfunc as haf
 import mvsfunc as mvf
 
 
@@ -187,11 +186,11 @@ def LDMerge(flt_h: vs.VideoNode, flt_v: vs.VideoNode, src: vs.VideoNode, mrad: i
     vmap = core.std.Convolution(src, matrix=convknl_v, saturate=False, planes=planes, divisor=conv_div)
 
     if mrad > 0:
-        hmap = haf.mt_expand_multi(hmap, sw=0, sh=mrad, planes=planes)
-        vmap = haf.mt_expand_multi(vmap, sw=mrad, sh=0, planes=planes)
+        hmap = haf_mt_expand_multi(hmap, sw=0, sh=mrad, planes=planes)
+        vmap = haf_mt_expand_multi(vmap, sw=mrad, sh=0, planes=planes)
     elif mrad < 0:
-        hmap = haf.mt_inpand_multi(hmap, sw=0, sh=-mrad, planes=planes)
-        vmap = haf.mt_inpand_multi(vmap, sw=-mrad, sh=0, planes=planes)
+        hmap = haf_mt_inpand_multi(hmap, sw=0, sh=-mrad, planes=planes)
+        vmap = haf_mt_inpand_multi(vmap, sw=-mrad, sh=0, planes=planes)
 
     if calc_mode == 0:
         ldexpr = '{peak} 1 x 0.0001 + y 0.0001 + / {power} pow + /'.format(peak=(1 << bits) - 1, power=power)
@@ -323,7 +322,7 @@ def ExInpand(input: vs.VideoNode, mrad: Union[int, Sequence[int], Sequence[Seque
             Example:
                 mrad=[2, -1] is equvalant to clip.std.Maximum().std.Maximum().std.Minimum()
                 mrad=[[2, 1], [2, -1]] is equivalant to
-                    haf.mt_expand_multi(clip, sw=2, sh=1).std.Maximum().std.Maximum().std.Minimum()
+                    haf_mt_expand_multi(clip, sw=2, sh=1).std.Maximum().std.Maximum().std.Minimum()
 
         mode: (0:"rectangle", 1:"losange" or 2:"ellipse", int [] or str []). Default is "rectangle"
             The shape of the kernel.
@@ -375,9 +374,9 @@ def ExInpand(input: vs.VideoNode, mrad: Union[int, Sequence[int], Sequence[Seque
             raise TypeError(funcName + ': \"mrad\" at a time must be both positive or negative!')
 
         if sw > 0 or sh > 0:
-            return haf.mt_expand_multi(input, mode=mode, planes=planes, sw=sw, sh=sh)
+            return haf_mt_expand_multi(input, mode=mode, planes=planes, sw=sw, sh=sh)
         else:
-            return haf.mt_inpand_multi(input, mode=mode, planes=planes, sw=-sw, sh=-sh)
+            return haf_mt_inpand_multi(input, mode=mode, planes=planes, sw=-sw, sh=-sh)
 
     # process
     for i in range(len(mrad)):
@@ -436,9 +435,9 @@ def InDeflate(input: vs.VideoNode, msmooth: Union[int, Sequence[int]] = 0,
                           planes: PlanesType = None
                           ) -> vs.VideoNode:
         if radius > 0:
-            return haf.mt_inflate_multi(input, planes=planes, radius=radius)
+            return haf_mt_inflate_multi(input, planes=planes, radius=radius)
         else:
-            return haf.mt_deflate_multi(input, planes=planes, radius=-radius)
+            return haf_mt_deflate_multi(input, planes=planes, radius=-radius)
 
     # process
     if isinstance(msmooth, list):
@@ -733,8 +732,8 @@ def _Build_gf3_range_mask(src: vs.VideoNode, radius: int = 1) -> vs.VideoNode:
     last = src
 
     if radius > 1:
-        ma = haf.mt_expand_multi(last, mode='ellipse', planes=[0], sw=radius, sh=radius)
-        mi = haf.mt_inpand_multi(last, mode='ellipse', planes=[0], sw=radius, sh=radius)
+        ma = haf_mt_expand_multi(last, mode='ellipse', planes=[0], sw=radius, sh=radius)
+        mi = haf_mt_inpand_multi(last, mode='ellipse', planes=[0], sw=radius, sh=radius)
         last = core.std.Expr([ma, mi], ['x y -'])
     else:
         bits = src.format.bits_per_sample
@@ -838,8 +837,8 @@ def AnimeMask2(input: vs.VideoNode, r: float = 1.2, expr: Optional[str] = None,
     if mode not in [-1, 1]:
         raise ValueError(funcName + ': \'mode\' have not a correct value! [-1 or 1]')
 
-    smooth = core.resize.Bicubic(input, haf.m4(w / r), haf.m4(h / r), filter_param_a=1/3, filter_param_b=1/3).resize.Bicubic(w, h, filter_param_a=1, filter_param_b=0)
-    smoother = core.resize.Bicubic(input, haf.m4(w / r), haf.m4(h / r), filter_param_a=1/3, filter_param_b=1/3).resize.Bicubic(w, h, filter_param_a=1.5, filter_param_b=-0.25)
+    smooth = core.resize.Bicubic(input, haf_m4(w / r), haf_m4(h / r), filter_param_a=1/3, filter_param_b=1/3).resize.Bicubic(w, h, filter_param_a=1, filter_param_b=0)
+    smoother = core.resize.Bicubic(input, haf_m4(w / r), haf_m4(h / r), filter_param_a=1/3, filter_param_b=1/3).resize.Bicubic(w, h, filter_param_a=1.5, filter_param_b=-0.25)
 
     calc_expr = 'x y - ' if mode == 1 else 'y x - '
 
@@ -1147,11 +1146,11 @@ def SharpAAMcmod(orig: vs.VideoNode, dark: float = 0.2, thin: int = 10, sharp: i
     if thin == 0 and dark == 0.:
         preaa = orig
     elif thin == 0:
-        preaa = haf.Toon(orig, str=dark)
+        preaa = haf_Toon(orig, str=dark)
     elif dark == 0.:
         preaa = core.warp.AWarpSharp2(orig, depth=thin)
     else:
-        preaa = haf.Toon(orig, str=dark).warp.AWarpSharp2(depth=thin)
+        preaa = haf_Toon(orig, str=dark).warp.AWarpSharp2(depth=thin)
 
     aatype = aatype.lower()
     if aatype == 'sangnom':
@@ -1169,14 +1168,14 @@ def SharpAAMcmod(orig: vs.VideoNode, dark: float = 0.2, thin: int = 10, sharp: i
     if sharp == 0 and smooth == 0:
         postsh = aa
     else:
-        postsh = haf.LSFmod(aa, strength=sharp, overshoot=1, soft=smooth, edgemode=1)
+        postsh = haf_LSFmod(aa, strength=sharp, overshoot=1, soft=smooth, edgemode=1)
 
     merged = core.std.MaskedMerge(orig, postsh, m)
 
     if stabilize:
         sD = core.std.MakeDiff(orig, merged)
 
-        origsuper = haf.DitherLumaRebuild(orig, s0=1).mv.Super(pel=aapel)
+        origsuper = haf_DitherLumaRebuild(orig, s0=1).mv.Super(pel=aapel)
         sDsuper = core.mv.Super(sD, pel=aapel)
 
         if tradius >= 1:
@@ -1380,13 +1379,7 @@ def Soothe_mod(input: vs.VideoNode, source: vs.VideoNode, keep: float = 24, radi
     if use_misc:
         diff2 = TemporalSoften(diff, radius, scenechange)
     else:
-        if 'TemporalSoften' in dir(haf):
-            diff2 = haf.TemporalSoften(diff, radius, (1 << bits)-1, 0, scenechange)
-        else:
-            raise NameError(funcName + (': \"TemporalSoften\" has been deprecated from the latest havsfunc.'
-                'If you would like to use it, copy the old function in '
-                'https://github.com/HomeOfVapourSynthEvolution/havsfunc/blob/0f5e6c5c2f1e825caf17f6b7de6edd4a0e13d27d/havsfunc.py#L4300-L4308'
-                'and function set_scenechange() at line 4320-4344 to havsfunc in your disk.'))
+        diff2 = haf_TemporalSoften(diff, radius, (1 << bits)-1, 0, scenechange)
 
     expr = 'x {neutral} - y {neutral} - * 0 < x {neutral} - {KP} * {neutral} + x {neutral} - abs y {neutral} - abs > x {KP} * y {iKP} * + x ? ?'.format(
         neutral=1 << (bits-1), KP=keep/100, iKP=1-keep/100)
@@ -1417,12 +1410,7 @@ def TemporalSoften(input: vs.VideoNode, radius: int = 4, scenechange: int = 15) 
         raise TypeError(funcName + ': \"input\" must be a clip!')
 
     if scenechange:
-        if 'SCDetect' in dir(haf):
-            input = haf.SCDetect(input, scenechange / 255)
-        elif 'set_scenechange' in dir(haf):
-            input = haf.set_scenechange(input, scenechange)
-        else:
-            raise AttributeError('module \"havsfunc\" has no attribute \"SCDetect\"!')
+        input = haf_SCDetect(input, scenechange / 255)
 
     if _is_api4:
         return core.std.AverageFrames(input, [1] * (2 * radius + 1), scenechange=scenechange)
@@ -2210,8 +2198,8 @@ def SeeSaw(clp: vs.VideoNode, denoised: Optional[vs.VideoNode] = None, NRlimit: 
 
     ox = clp.width
     oy = clp.height
-    xss = haf.m4(ox * ssx)
-    yss = haf.m4(oy * ssy)
+    xss = haf_m4(ox * ssx)
+    yss = haf_m4(oy * ssy)
     NRL = scale(NRlimit, bits)
     NRL2 = scale(NRlimit2, bits)
     NRLL = scale(round(NRlimit2 * 100 / bias - 1), bits)
@@ -2409,16 +2397,16 @@ def abcxyz(clp: vs.VideoNode, rad: float = 3.0, ss: float = 1.5) -> vs.VideoNode
         clp_src = clp
         clp = mvf.GetPlane(clp)
 
-    x = core.resize.Bicubic(clp, haf.m4(ox/rad), haf.m4(oy/rad), filter_param_a=1/3, filter_param_b=1/3).resize.Bicubic(ox, oy, filter_param_a=1, filter_param_b=0)
+    x = core.resize.Bicubic(clp, haf_m4(ox/rad), haf_m4(oy/rad), filter_param_a=1/3, filter_param_b=1/3).resize.Bicubic(ox, oy, filter_param_a=1, filter_param_b=0)
     y = core.std.Expr([clp, x], ['x {a} + y < x {a} + x {b} - y > x {b} - y ? ? x y - abs * x {c} x y - abs - * + {c} /'.format(
         a=scale(8, bits), b=scale(24, bits), c=scale(32, bits))])
 
     z1 = core.rgvs.Repair(clp, y, [1])
 
     if ss != 1.:
-        maxbig = core.std.Maximum(y).resize.Bicubic(haf.m4(ox*ss), haf.m4(oy*ss), filter_param_a=1/3, filter_param_b=1/3)
-        minbig = core.std.Minimum(y).resize.Bicubic(haf.m4(ox*ss), haf.m4(oy*ss), filter_param_a=1/3, filter_param_b=1/3)
-        z2 = core.resize.Lanczos(clp, haf.m4(ox*ss), haf.m4(oy*ss))
+        maxbig = core.std.Maximum(y).resize.Bicubic(haf_m4(ox*ss), haf_m4(oy*ss), filter_param_a=1/3, filter_param_b=1/3)
+        minbig = core.std.Minimum(y).resize.Bicubic(haf_m4(ox*ss), haf_m4(oy*ss), filter_param_a=1/3, filter_param_b=1/3)
+        z2 = core.resize.Lanczos(clp, haf_m4(ox*ss), haf_m4(oy*ss))
         z2 = core.std.Expr([z2, maxbig, minbig], ['x y min z max']).resize.Lanczos(ox, oy)
         z1 = z2  # for simplicity
 
@@ -2618,7 +2606,7 @@ def BlindDeHalo3(clp: vs.VideoNode, rx: float = 3.0, ry: float = 3.0, strength: 
     i = clp if not interlaced else core.std.SeparateFields(clp, tff=True)
     oxi = i.width
     oyi = i.height
-    sm = core.resize.Bicubic(i, haf.m4(oxi/rx), haf.m4(oyi/ry), filter_param_a=1/3, filter_param_b=1/3)
+    sm = core.resize.Bicubic(i, haf_m4(oxi/rx), haf_m4(oyi/ry), filter_param_a=1/3, filter_param_b=1/3)
     mm = core.std.Expr([sm.std.Maximum(), sm.std.Minimum()], ['x y - 4 *']).std.Maximum().std.Deflate().std.Convolution([1]*9)
     mm = mm.std.Inflate().resize.Bicubic(oxi, oyi, filter_param_a=1, filter_param_b=0).std.Inflate()
     sm = core.resize.Bicubic(sm, oxi, oyi, filter_param_a=1, filter_param_b=0)
@@ -2633,7 +2621,7 @@ def BlindDeHalo3(clp: vs.VideoNode, rx: float = 3.0, ry: float = 3.0, strength: 
         LIM = 'x {LL} + y < x {LL} + x {LL} - y > x {LL} - y ? ?'.format(LL=LL)
 
         base = i if PPmode < 0 else clean
-        small = core.resize.Bicubic(base, haf.m4(oxi / math.sqrt(rx * 1.5)), haf.m4(oyi / math.sqrt(ry * 1.5)), filter_param_a=1/3, filter_param_b=1/3)
+        small = core.resize.Bicubic(base, haf_m4(oxi / math.sqrt(rx * 1.5)), haf_m4(oyi / math.sqrt(ry * 1.5)), filter_param_a=1/3, filter_param_b=1/3)
         ex1 = Blur(small.std.Maximum(), 0.5)
         in1 = Blur(small.std.Minimum(), 0.5)
         hull = core.std.Expr([ex1.std.Maximum().std.Convolution(matrix=[1, 2, 1, 2, 4, 2, 1, 2, 1]), ex1, in1,
@@ -2654,7 +2642,7 @@ def BlindDeHalo3(clp: vs.VideoNode, rx: float = 3.0, ry: float = 3.0, strength: 
     if PPlimit != 0:
         postclean = core.std.Expr([base, postclean], [LIM])
 
-    last = haf.Weave(postclean, tff=True) if interlaced else postclean
+    last = haf_Weave(postclean, tff=True) if interlaced else postclean
 
     if not isGray:
         last = core.std.ShufflePlanes([last, clp_src], list(range(clp_src.format.num_planes)), clp_src.format.color_family)
@@ -2747,7 +2735,7 @@ def dfttestMC(input: vs.VideoNode, pp: Optional[vs.VideoNode] = None, mc: int = 
 
         # Prepare supersampled clips.
         pp_super = (
-            haf.DitherLumaRebuild(pp if pp is not None else input, s0=1, chroma=chroma)
+            haf_DitherLumaRebuild(pp if pp is not None else input, s0=1, chroma=chroma)
             .mv.Super(pel=pel, chroma=chroma))
 
         super = core.mv.Super(input, levels=1, pel=pel, chroma=chroma)
@@ -3993,8 +3981,8 @@ def TMinBlur(clip: vs.VideoNode, r: int = 1, thr: float = 2) -> vs.VideoNode:
 
     thr = scale(thr, clip.format.bits_per_sample)
 
-    pre1 = haf.MinBlur(clip, r=r)
-    pre2 = haf.MinBlur(clip, r=r+1)
+    pre1 = haf_MinBlur(clip, r=r)
+    pre2 = haf_MinBlur(clip, r=r+1)
 
     return core.std.Expr([clip, pre1, pre2], ['y z - abs {thr} <= y x ?'.format(thr=thr)])
 
@@ -4300,10 +4288,10 @@ def YAHRmod(clp: vs.VideoNode, blur: int = 2, depth: int = 32, **limit_filter_ar
     else:
         clp_orig = None
 
-    b1 = core.std.Convolution(haf.MinBlur(clp, 2), matrix=[1, 2, 1, 2, 4, 2, 1, 2, 1])
+    b1 = core.std.Convolution(haf_MinBlur(clp, 2), matrix=[1, 2, 1, 2, 4, 2, 1, 2, 1])
     b1D = core.std.MakeDiff(clp, b1)
-    w1 = haf.Padding(clp, 6, 6, 6, 6).warp.AWarpSharp2(blur=blur, depth=depth).std.Crop(6, 6, 6, 6)
-    w1b1 = core.std.Convolution(haf.MinBlur(w1, 2), matrix=[1, 2, 1, 2, 4, 2, 1, 2, 1])
+    w1 = haf_Padding(clp, 6, 6, 6, 6).warp.AWarpSharp2(blur=blur, depth=depth).std.Crop(6, 6, 6, 6)
+    w1b1 = core.std.Convolution(haf_MinBlur(w1, 2), matrix=[1, 2, 1, 2, 4, 2, 1, 2, 1])
     w1b1D = core.std.MakeDiff(w1, w1b1)
     w1b1D = mvf.LimitFilter(b1D, w1b1D, **limit_filter_args) # The only modification
     DD = core.rgvs.Repair(b1D, w1b1D, 13)
@@ -4578,7 +4566,7 @@ def super_resolution(clip: vs.VideoNode, model_filename: str, epoch: int = 0, up
             if (pad[0]-crop[0]//up_scale > 0 or pad[1]-crop[1]//up_scale > 0 or # type: ignore
                 pad[2]-crop[2]//up_scale > 0 or pad[3]-crop[3]//up_scale > 0): # type: ignore
 
-                clip = haf.Padding(clip, pad[2]-crop[2]//up_scale, pad[3]-crop[3]//up_scale, # type: ignore
+                clip = haf_Padding(clip, pad[2]-crop[2]//up_scale, pad[3]-crop[3]//up_scale, # type: ignore
                     pad[0]-crop[0]//up_scale, pad[1]-crop[1]//up_scale) # type: ignore
 
             super_res = core.mx.Predict(clip, symbol=symbol_filename, param=param_filename,
@@ -4598,7 +4586,7 @@ def super_resolution(clip: vs.VideoNode, model_filename: str, epoch: int = 0, up
                 if (pad[0]-crop[0]//up_scale > 0 or pad[1]-crop[1]//up_scale > 0 or # type: ignore
                     pad[2]-crop[2]//up_scale > 0 or pad[3]-crop[3]//up_scale > 0): # type: ignore
 
-                    yuv_list[i] = haf.Padding(yuv_list[i], pad[2]-crop[2]//up_scale, pad[3]-crop[3]//up_scale, # type: ignore
+                    yuv_list[i] = haf_Padding(yuv_list[i], pad[2]-crop[2]//up_scale, pad[3]-crop[3]//up_scale, # type: ignore
                         pad[0]-crop[0]//up_scale, pad[1]-crop[1]//up_scale) # type: ignore
 
                 yuv_list[i] = core.mx.Predict(yuv_list[i], symbol=symbol_filename, param=param_filename,
@@ -5097,8 +5085,8 @@ def _multi_scale_filtering(clip: vs.VideoNode, func: Callable[..., vs.VideoNode]
         return clip
 
     else:
-        down_w = haf.m4(clip.width / down_scale)
-        down_h = haf.m4(clip.height / down_scale)
+        down_w = haf_m4(clip.width / down_scale)
+        down_h = haf_m4(clip.height / down_scale)
 
         # current level of unfiltered gaussian pyramid (low-res)
         low_res = down_scale_func(clip, down_w, down_h)
@@ -5242,17 +5230,17 @@ def YAHRmask(clp: vs.VideoNode, expand: float = 5, warpdepth: int = 32, blur: in
 
     if yahr is None:
         # YAHR2(warpdepth, blur, useawarp4)
-        b1 = core.std.Convolution(haf.MinBlur(clp, 2), matrix=[1, 2, 1, 2, 4, 2, 1, 2, 1])
+        b1 = core.std.Convolution(haf_MinBlur(clp, 2), matrix=[1, 2, 1, 2, 4, 2, 1, 2, 1])
         b1D = core.std.MakeDiff(clp, b1)
 
         if not useawarp4:
-            w1 = haf.Padding(clp, 6, 6, 6, 6).warp.AWarpSharp2(blur=blur, depth=warpdepth).std.Crop(6, 6, 6, 6)
+            w1 = haf_Padding(clp, 6, 6, 6, 6).warp.AWarpSharp2(blur=blur, depth=warpdepth).std.Crop(6, 6, 6, 6)
         else:
             awarp_mask = core.warp.ASobel(clp).warp.ABlur(blur=blur)
             clp4 = clp.resize.Bilinear(clp.width*4, clp.height*4, src_left=0.375, src_top=0.375)
             w1 = core.warp.AWarp(clp4, awarp_mask, depth=warpdepth)
 
-        w1b1 = core.std.Convolution(haf.MinBlur(w1, 2), matrix=[1, 2, 1, 2, 4, 2, 1, 2, 1])
+        w1b1 = core.std.Convolution(haf_MinBlur(w1, 2), matrix=[1, 2, 1, 2, 4, 2, 1, 2, 1])
         w1b1D = core.std.MakeDiff(w1, w1b1)
         DD = core.rgvs.Repair(b1D, w1b1D, 13)
         DD2 = core.std.MakeDiff(b1D, DD)
@@ -5462,7 +5450,7 @@ def Cdeblend(input: vs.VideoNode, omode: int = 0, bthresh: float = 0.1, mthresh:
 
     last = core.std.FrameEval(input, functools.partial(evaluate, clip=input, core=core), prop_src=[Cdiff, Cbval])
 
-    recl = haf.ChangeFPS(haf.ChangeFPS(last, last.fps_num * 2, last.fps_den * 2), last.fps_num, last.fps_den).std.Cache(make_linear=True)
+    recl = haf_ChangeFPS(haf_ChangeFPS(last, last.fps_num * 2, last.fps_den * 2), last.fps_num, last.fps_den).std.Cache(make_linear=True)
 
     return recl
 
@@ -6762,3 +6750,851 @@ def SSFDeband(
     hrz_deband = core.akarin.Expr(vrt_deband, hrz_exprs)
 
     return hrz_deband
+
+
+#####################
+## Toon v0.82 edit ##
+#####################
+#
+# function created by mf
+#   support by Soulhunter ;-)
+#   ported to masktools v2 and optimized by Didee (0.82)
+#   added parameters and smaller changes by MOmonster (0.82 edited)
+#
+# toon v0.8 is the newest light-weight build of mf´s nice line darken function mf_toon
+#
+# Parameters:
+#  str (float) - Strength of the line darken. Default is 1.0
+#  l_thr (int) - Lower threshold for the linemask. Default is 2
+#  u_thr (int) - Upper threshold for the linemask. Default is 12
+#  blur (int)  - "blur" parameter of AWarpSharp2. Default is 2
+#  depth (int) - "depth" parameter of AWarpSharp2. Default is 32
+def haf_Toon(input, str=1.0, l_thr=2, u_thr=12, blur=2, depth=32):
+    if not isinstance(input, vs.VideoNode):
+        raise vs.Error('Toon: this is not a clip')
+
+    if input.format.color_family == vs.RGB:
+        raise vs.Error('Toon: RGB format is not supported')
+
+    neutral = 1 << (input.format.bits_per_sample - 1)
+    peak = (1 << input.format.bits_per_sample) - 1
+    multiple = peak / 255
+
+    if input.format.color_family != vs.GRAY:
+        input_orig = input
+        input = mvf.GetPlane(input, 0)
+    else:
+        input_orig = None
+
+    lthr = neutral + scale(l_thr, peak)
+    lthr8 = lthr / multiple
+    uthr = neutral + scale(u_thr, peak)
+    uthr8 = uthr / multiple
+    ludiff = u_thr - l_thr
+
+    last = core.std.MakeDiff(input.std.Maximum().std.Minimum(), input)
+    last = core.std.Expr([last, haf_Padding(last, 6, 6, 6, 6).warp.AWarpSharp2(blur=blur, depth=depth).std.Crop(6, 6, 6, 6)], expr=['x y min'])
+    expr = f'y {lthr} <= {neutral} y {uthr} >= x {uthr8} y {multiple} / - 128 * x {multiple} / y {multiple} / {lthr8} - * + {ludiff} / {multiple} * ? {neutral} - {str} * {neutral} + ?'
+    last = core.std.MakeDiff(input, core.std.Expr([last, last.std.Maximum()], expr=[expr]))
+
+    if input_orig is not None:
+        last = core.std.ShufflePlanes([last, input_orig], planes=[0, 1, 2], colorfamily=input_orig.format.color_family)
+    return last
+
+
+################################################################################################
+###                                                                                          ###
+###                       LimitedSharpenFaster MOD : function LSFmod()                       ###
+###                                                                                          ###
+###                                Modded Version by LaTo INV.                               ###
+###                                                                                          ###
+###                                  v1.9 - 05 October 2009                                  ###
+###                                                                                          ###
+################################################################################################
+###
+### +--------------+
+### | DEPENDENCIES |
+### +--------------+
+###
+### -> RGVS
+### -> CAS
+###
+###
+###
+### +---------+
+### | GENERAL |
+### +---------+
+###
+### strength [int]
+### --------------
+### Strength of the sharpening
+###
+### Smode [int: 1,2,3]
+### ----------------------
+### Sharpen mode:
+###    =1 : Range sharpening
+###    =2 : Nonlinear sharpening (corrected version)
+###    =3 : Contrast Adaptive Sharpening
+###
+### Smethod [int: 1,2,3]
+### --------------------
+### Sharpen method: (only used in Smode=1,2)
+###    =1 : 3x3 kernel
+###    =2 : Min/Max
+###    =3 : Min/Max + 3x3 kernel
+###
+### kernel [int: 11,12,19,20]
+### -------------------------
+### Kernel used in Smethod=1&3
+### In strength order: + 19 > 12 >> 20 > 11 -
+###
+###
+###
+### +---------+
+### | SPECIAL |
+### +---------+
+###
+### preblur [int: 0,1,2,3]
+### --------------------------------
+### Mode to avoid noise sharpening & ringing:
+###    =-1 : No preblur
+###    = 0 : MinBlur(0)
+###    = 1 : MinBlur(1)
+###    = 2 : MinBlur(2)
+###    = 3 : DFTTest
+###
+### secure [bool]
+### -------------
+### Mode to avoid banding & oil painting (or face wax) effect of sharpening
+###
+### source [clip]
+### -------------
+### If source is defined, LSFmod doesn't sharp more a denoised clip than this source clip
+### In this mode, you can safely set Lmode=0 & PP=off
+###    Usage:   denoised.LSFmod(source=source)
+###    Example: last.FFT3DFilter().LSFmod(source=last,Lmode=0,soft=0)
+###
+###
+###
+### +----------------------+
+### | NONLINEAR SHARPENING |
+### +----------------------+
+###
+### Szrp [int]
+### ----------
+### Zero Point:
+###    - differences below Szrp are amplified (overdrive sharpening)
+###    - differences above Szrp are reduced   (reduced sharpening)
+###
+### Spwr [int]
+### ----------
+### Power: exponent for sharpener
+###
+### SdmpLo [int]
+### ------------
+### Damp Low: reduce sharpening for small changes [0:disable]
+###
+### SdmpHi [int]
+### ------------
+### Damp High: reduce sharpening for big changes [0:disable]
+###
+###
+###
+### +----------+
+### | LIMITING |
+### +----------+
+###
+### Lmode [int: ...,0,1,2,3,4]
+### --------------------------
+### Limit mode:
+###    <0 : Limit with repair (ex: Lmode=-1 --> repair(1), Lmode=-5 --> repair(5)...)
+###    =0 : No limit
+###    =1 : Limit to over/undershoot
+###    =2 : Limit to over/undershoot on edges and no limit on not-edges
+###    =3 : Limit to zero on edges and to over/undershoot on not-edges
+###    =4 : Limit to over/undershoot on edges and to over/undershoot2 on not-edges
+###
+### overshoot [int]
+### ---------------
+### Limit for pixels that get brighter during sharpening
+###
+### undershoot [int]
+### ----------------
+### Limit for pixels that get darker during sharpening
+###
+### overshoot2 [int]
+### ----------------
+### Same as overshoot, only for Lmode=4
+###
+### undershoot2 [int]
+### -----------------
+### Same as undershoot, only for Lmode=4
+###
+###
+###
+### +-----------------+
+### | POST-PROCESSING |
+### +-----------------+
+###
+### soft [int: -2,-1,0...100]
+### -------------------------
+### Soft the sharpening effect (-1 = old autocalculate, -2 = new autocalculate)
+###
+### soothe [bool]
+### -------------
+###    =True  : Enable soothe temporal stabilization
+###    =False : Disable soothe temporal stabilization
+###
+### keep [int: 0...100]
+### -------------------
+### Minimum percent of the original sharpening to keep (only with soothe=True)
+###
+###
+###
+### +-------+
+### | EDGES |
+### +-------+
+###
+### edgemode [int: -1,0,1,2]
+### ------------------------
+###    =-1 : Show edgemask
+###    = 0 : Sharpening all
+###    = 1 : Sharpening only edges
+###    = 2 : Sharpening only not-edges
+###
+### edgemaskHQ [bool]
+### -----------------
+###    =True  : Original edgemask
+###    =False : Faster edgemask
+###
+###
+###
+### +------------+
+### | UPSAMPLING |
+### +------------+
+###
+### ss_x ; ss_y [float]
+### -------------------
+### Supersampling factor (reduce aliasing on edges)
+###
+### dest_x ; dest_y [int]
+### ---------------------
+### Output resolution after sharpening (avoid a resizing step)
+###
+###
+###
+### +----------+
+### | SETTINGS |
+### +----------+
+###
+### defaults [string: "old" or "slow" or "fast"]
+### --------------------------------------------
+###    = "old"  : Reset settings to original version (output will be THE SAME AS LSF)
+###    = "slow" : Enable SLOW modded version settings
+###    = "fast" : Enable FAST modded version settings
+###  --> /!\ [default:"fast"]
+###
+###
+### defaults="old" :  - strength    = 100
+### ----------------  - Smode       = 1
+###                   - Smethod     = Smode==1?2:1
+###                   - kernel      = 11
+###
+###                   - preblur     = -1
+###                   - secure      = false
+###                   - source      = undefined
+###
+###                   - Szrp        = 16
+###                   - Spwr        = 2
+###                   - SdmpLo      = strength/25
+###                   - SdmpHi      = 0
+###
+###                   - Lmode       = 1
+###                   - overshoot   = 1
+###                   - undershoot  = overshoot
+###                   - overshoot2  = overshoot*2
+###                   - undershoot2 = overshoot2
+###
+###                   - soft        = 0
+###                   - soothe      = false
+###                   - keep        = 25
+###
+###                   - edgemode    = 0
+###                   - edgemaskHQ  = true
+###
+###                   - ss_x        = Smode==1?1.50:1.25
+###                   - ss_y        = ss_x
+###                   - dest_x      = ox
+###                   - dest_y      = oy
+###
+###
+### defaults="slow" : - strength    = 100
+### ----------------- - Smode       = 2
+###                   - Smethod     = 3
+###                   - kernel      = 11
+###
+###                   - preblur     = -1
+###                   - secure      = true
+###                   - source      = undefined
+###
+###                   - Szrp        = 16
+###                   - Spwr        = 4
+###                   - SdmpLo      = 4
+###                   - SdmpHi      = 48
+###
+###                   - Lmode       = 4
+###                   - overshoot   = strength/100
+###                   - undershoot  = overshoot
+###                   - overshoot2  = overshoot*2
+###                   - undershoot2 = overshoot2
+###
+###                   - soft        = -2
+###                   - soothe      = true
+###                   - keep        = 20
+###
+###                   - edgemode    = 0
+###                   - edgemaskHQ  = true
+###
+###                   - ss_x        = Smode==3?1.00:1.50
+###                   - ss_y        = ss_x
+###                   - dest_x      = ox
+###                   - dest_y      = oy
+###
+###
+### defaults="fast" : - strength    = 80
+### ----------------- - Smode       = 3
+###                   - Smethod     = 2
+###                   - kernel      = 11
+###
+###                   - preblur     = 0
+###                   - secure      = true
+###                   - source      = undefined
+###
+###                   - Szrp        = 16
+###                   - Spwr        = 4
+###                   - SdmpLo      = 4
+###                   - SdmpHi      = 48
+###
+###                   - Lmode       = 0
+###                   - overshoot   = strength/100
+###                   - undershoot  = overshoot
+###                   - overshoot2  = overshoot*2
+###                   - undershoot2 = overshoot2
+###
+###                   - soft        = 0
+###                   - soothe      = false
+###                   - keep        = 20
+###
+###                   - edgemode    = 0
+###                   - edgemaskHQ  = false
+###
+###                   - ss_x        = Smode==3?1.00:1.25
+###                   - ss_y        = ss_x
+###                   - dest_x      = ox
+###                   - dest_y      = oy
+###
+################################################################################################
+def haf_LSFmod(input, strength=None, Smode=None, Smethod=None, kernel=11, preblur=None, secure=None, source=None, Szrp=16, Spwr=None, SdmpLo=None, SdmpHi=None, Lmode=None, overshoot=None, undershoot=None,
+           overshoot2=None, undershoot2=None, soft=None, soothe=None, keep=None, edgemode=0, edgemaskHQ=None, ss_x=None, ss_y=None, dest_x=None, dest_y=None, defaults='fast'):
+    if not isinstance(input, vs.VideoNode):
+        raise vs.Error('LSFmod: this is not a clip')
+
+    if input.format.color_family == vs.RGB:
+        raise vs.Error('LSFmod: RGB format is not supported')
+
+    if source is not None and (not isinstance(source, vs.VideoNode) or source.format.id != input.format.id):
+        raise vs.Error("LSFmod: 'source' must be the same format as input")
+
+    isGray = (input.format.color_family == vs.GRAY)
+    isInteger = (input.format.sample_type == vs.INTEGER)
+
+    if isInteger:
+        neutral = 1 << (input.format.bits_per_sample - 1)
+        peak = (1 << input.format.bits_per_sample) - 1
+        factor = 1 << (input.format.bits_per_sample - 8)
+    else:
+        neutral = 0.0
+        peak = 1.0
+        factor = 255.0
+
+    ### DEFAULTS
+    try:
+        num = ['old', 'slow', 'fast'].index(defaults.lower())
+    except:
+        raise vs.Error('LSFmod: defaults must be "old" or "slow" or "fast"')
+
+    ox = input.width
+    oy = input.height
+
+    if strength is None:
+        strength = [100, 100, 80][num]
+    if Smode is None:
+        Smode = [1, 2, 3][num]
+    if Smethod is None:
+        Smethod = [2 if Smode == 1 else 1, 3, 2][num]
+    if preblur is None:
+        preblur = [-1, -1, 0][num]
+    if secure is None:
+        secure = [False, True, True][num]
+    if Spwr is None:
+        Spwr = [2, 4, 4][num]
+    if SdmpLo is None:
+        SdmpLo = [strength // 25, 4, 4][num]
+    if SdmpHi is None:
+        SdmpHi = [0, 48, 48][num]
+    if Lmode is None:
+        Lmode = [1, 4, 0][num]
+    if overshoot is None:
+        overshoot = [1, strength // 100, strength // 100][num]
+    if undershoot is None:
+        undershoot = overshoot
+    if overshoot2 is None:
+        overshoot2 = overshoot * 2
+    if undershoot2 is None:
+        undershoot2 = overshoot2
+    if soft is None:
+        soft = [0, -2, 0][num]
+    if soothe is None:
+        soothe = [False, True, False][num]
+    if keep is None:
+        keep = [25, 20, 20][num]
+    if edgemaskHQ is None:
+        edgemaskHQ = [True, True, False][num]
+    if ss_x is None:
+        ss_x = [1.5 if Smode == 1 else 1.25, 1.0 if Smode == 3 else 1.5, 1.0 if Smode == 3 else 1.25][num]
+    if ss_y is None:
+        ss_y = ss_x
+    if dest_x is None:
+        dest_x = ox
+    if dest_y is None:
+        dest_y = oy
+
+    if kernel == 4:
+        RemoveGrain = functools.partial(core.std.Median)
+    elif kernel in [11, 12]:
+        RemoveGrain = functools.partial(core.std.Convolution, matrix=[1, 2, 1, 2, 4, 2, 1, 2, 1])
+    elif kernel == 19:
+        RemoveGrain = functools.partial(core.std.Convolution, matrix=[1, 1, 1, 1, 0, 1, 1, 1, 1])
+    elif kernel == 20:
+        RemoveGrain = functools.partial(core.std.Convolution, matrix=[1, 1, 1, 1, 1, 1, 1, 1, 1])
+    else:
+        RemoveGrain = functools.partial(core.rgvs.RemoveGrain, mode=[kernel])
+
+    if soft == -1:
+        soft = math.sqrt(((ss_x + ss_y) / 2 - 1) * 100) * 10
+    elif soft <= -2:
+        soft = int((1 + 2 / (ss_x + ss_y)) * math.sqrt(strength))
+    soft = min(soft, 100)
+
+    xxs = haf_cround(ox * ss_x / 8) * 8
+    yys = haf_cround(oy * ss_y / 8) * 8
+
+    Str = strength / 100
+
+    ### SHARP
+    if ss_x > 1 or ss_y > 1:
+        tmp = input.resize.Spline36(xxs, yys)
+    else:
+        tmp = input
+
+    if not isGray:
+        tmp_orig = tmp
+        tmp = mvf.GetPlane(tmp, 0)
+
+    if preblur <= -1:
+        pre = tmp
+    elif preblur >= 3:
+        expr = 'x {i} < {peak} x {j} > 0 {peak} x {i} - {peak} {j} {i} - / * - ? ?'.format(i=scale(16, peak), j=scale(75, peak), peak=peak)
+        pre = core.std.MaskedMerge(tmp.dfttest.DFTTest(tbsize=1, slocation=[0.0,4.0, 0.2,9.0, 1.0,15.0]), tmp, tmp.std.Expr(expr=[expr]))
+    else:
+        pre = haf_MinBlur(tmp, r=preblur)
+
+    dark_limit = pre.std.Minimum()
+    bright_limit = pre.std.Maximum()
+
+    if Smode < 3:
+        if Smethod <= 1:
+            method = RemoveGrain(pre)
+        elif Smethod == 2:
+            method = core.std.Merge(dark_limit, bright_limit)
+        else:
+            method = RemoveGrain(core.std.Merge(dark_limit, bright_limit))
+
+        if secure:
+            method = core.std.Expr([method, pre], expr=['x y < x {i} + x y > x {i} - x ? ?'.format(i=scale(1, peak))])
+
+        if preblur > -1:
+            method = core.std.MakeDiff(tmp, core.std.MakeDiff(pre, method))
+
+        if Smode <= 1:
+            normsharp = core.std.Expr([tmp, method], expr=[f'x x y - {Str} * +'])
+        else:
+            tmpScaled = tmp.std.Expr(expr=[f'x {1 / factor if isInteger else factor} *'], format=tmp.format.replace(sample_type=vs.FLOAT, bits_per_sample=32))
+            methodScaled = method.std.Expr(expr=[f'x {1 / factor if isInteger else factor} *'], format=method.format.replace(sample_type=vs.FLOAT, bits_per_sample=32))
+            expr = f'x y = x x x y - abs {Szrp} / {1 / Spwr} pow {Szrp} * {Str} * x y - dup abs / * x y - dup * {Szrp * Szrp} {SdmpLo} + * x y - dup * {SdmpLo} + {Szrp * Szrp} * / * 1 {SdmpHi} 0 = 0 {(Szrp / SdmpHi) ** 4} ? + 1 {SdmpHi} 0 = 0 x y - abs {SdmpHi} / 4 pow ? + / * + ? {factor if isInteger else 1 / factor} *'
+            normsharp = core.std.Expr([tmpScaled, methodScaled], expr=[expr], format=tmp.format)
+    else:
+        normsharp = pre.cas.CAS(sharpness=min(Str, 1))
+
+        if secure:
+            normsharp = core.std.Expr([normsharp, pre], expr=['x y < x {i} + x y > x {i} - x ? ?'.format(i=scale(1, peak))])
+
+        if preblur > -1:
+            normsharp = core.std.MakeDiff(tmp, core.std.MakeDiff(pre, normsharp))
+
+    ### LIMIT
+    normal = haf_Clamp(normsharp, bright_limit, dark_limit, scale(overshoot, peak), scale(undershoot, peak))
+    second = haf_Clamp(normsharp, bright_limit, dark_limit, scale(overshoot2, peak), scale(undershoot2, peak))
+    zero = haf_Clamp(normsharp, bright_limit, dark_limit, 0, 0)
+
+    if edgemaskHQ:
+        edge = tmp.std.Sobel(scale=2)
+    else:
+        edge = core.std.Expr([tmp.std.Maximum(), tmp.std.Minimum()], expr=['x y -'])
+    edge = edge.std.Expr(expr=[f'x {1 / factor if isInteger else factor} * {128 if edgemaskHQ else 32} / 0.86 pow 255 * {factor if isInteger else 1 / factor} *'])
+
+    if Lmode < 0:
+        limit1 = core.rgvs.Repair(normsharp, tmp, mode=[abs(Lmode)])
+    elif Lmode == 0:
+        limit1 = normsharp
+    elif Lmode == 1:
+        limit1 = normal
+    elif Lmode == 2:
+        limit1 = core.std.MaskedMerge(normsharp, normal, edge.std.Inflate())
+    elif Lmode == 3:
+        limit1 = core.std.MaskedMerge(normal, zero, edge.std.Inflate())
+    else:
+        limit1 = core.std.MaskedMerge(second, normal, edge.std.Inflate())
+
+    if edgemode <= 0:
+        limit2 = limit1
+    elif edgemode == 1:
+        limit2 = core.std.MaskedMerge(tmp, limit1, edge.std.Inflate().std.Inflate().std.Convolution(matrix=[1, 2, 1, 2, 4, 2, 1, 2, 1]))
+    else:
+        limit2 = core.std.MaskedMerge(limit1, tmp, edge.std.Inflate().std.Inflate().std.Convolution(matrix=[1, 2, 1, 2, 4, 2, 1, 2, 1]))
+
+    ### SOFT
+    if soft == 0:
+        PP1 = limit2
+    else:
+        sharpdiff = core.std.MakeDiff(tmp, limit2)
+        sharpdiff = core.std.Expr([sharpdiff, sharpdiff.std.Convolution(matrix=[1, 1, 1, 1, 0, 1, 1, 1, 1])], expr=[f'x {neutral} - abs y {neutral} - abs > y {soft} * x {100 - soft} * + 100 / x ?'])
+        PP1 = core.std.MakeDiff(tmp, sharpdiff)
+
+    ### SOOTHE
+    if soothe:
+        diff = core.std.MakeDiff(tmp, PP1)
+        diff = core.std.Expr([diff, diff.focus2.TemporalSoften2(1, 255 << (input.format.bits_per_sample - 8), 0, 32, 2)],
+                             expr=[f'x {neutral} - y {neutral} - * 0 < x {neutral} - 100 / {keep} * {neutral} + x {neutral} - abs y {neutral} - abs > x {keep} * y {100 - keep} * + 100 / x ? ?'])
+        PP2 = core.std.MakeDiff(tmp, diff)
+    else:
+        PP2 = PP1
+
+    ### OUTPUT
+    if dest_x != ox or dest_y != oy:
+        if not isGray:
+            PP2 = core.std.ShufflePlanes([PP2, tmp_orig], planes=[0, 1, 2], colorfamily=input.format.color_family)
+        out = PP2.resize.Spline36(dest_x, dest_y)
+    elif ss_x > 1 or ss_y > 1:
+        out = PP2.resize.Spline36(dest_x, dest_y)
+        if not isGray:
+            out = core.std.ShufflePlanes([out, input], planes=[0, 1, 2], colorfamily=input.format.color_family)
+    elif not isGray:
+        out = core.std.ShufflePlanes([PP2, input], planes=[0, 1, 2], colorfamily=input.format.color_family)
+    else:
+        out = PP2
+
+    if edgemode <= -1:
+        return edge.resize.Spline36(dest_x, dest_y, format=input.format)
+    elif source is not None:
+        if dest_x != ox or dest_y != oy:
+            src = source.resize.Spline36(dest_x, dest_y)
+            In = input.resize.Spline36(dest_x, dest_y)
+        else:
+            src = source
+            In = input
+
+        shrpD = core.std.MakeDiff(In, out, planes=[0])
+        expr = f'x {neutral} - abs y {neutral} - abs < x y ?'
+        shrpL = core.std.Expr([core.rgvs.Repair(shrpD, core.std.MakeDiff(In, src, planes=[0]), mode=[1] if isGray else [1, 0]), shrpD], expr=[expr] if isGray else [expr, ''])
+        return core.std.MakeDiff(In, shrpL, planes=[0])
+    else:
+        return out
+
+
+def haf_ChangeFPS(clip, fpsnum, fpsden=1):
+    if not isinstance(clip, vs.VideoNode):
+        raise vs.Error('ChangeFPS: this is not a clip')
+
+    factor = (fpsnum / fpsden) * (clip.fps_den / clip.fps_num)
+
+    def frame_adjuster(n):
+        real_n = math.floor(n / factor)
+        one_frame_clip = clip[real_n] * (len(clip) + 100)
+        return one_frame_clip
+
+    attribute_clip = clip.std.BlankClip(length=math.floor(len(clip) * factor), fpsnum=fpsnum, fpsden=fpsden)
+    return attribute_clip.std.FrameEval(eval=frame_adjuster)
+
+
+def haf_Clamp(clip, bright_limit, dark_limit, overshoot=0, undershoot=0, planes=None):
+    if not (isinstance(clip, vs.VideoNode) and isinstance(bright_limit, vs.VideoNode) and isinstance(dark_limit, vs.VideoNode)):
+        raise vs.Error('Clamp: this is not a clip')
+
+    if bright_limit.format.id != clip.format.id or dark_limit.format.id != clip.format.id:
+        raise vs.Error('Clamp: clips must have the same format')
+
+    if planes is None:
+        planes = list(range(clip.format.num_planes))
+    elif isinstance(planes, int):
+        planes = [planes]
+
+    expr = f'x y {overshoot} + > y {overshoot} + x ? z {undershoot} - < z {undershoot} - x y {overshoot} + > y {overshoot} + x ? ?'
+    return core.std.Expr([clip, bright_limit, dark_limit], expr=[expr if i in planes else '' for i in range(clip.format.num_planes)])
+
+
+def haf_TemporalSoften(clip, radius=4, luma_threshold=4, chroma_threshold=8, scenechange=15, mode=2):
+    if not isinstance(clip, vs.VideoNode):
+        raise TypeError('TemporalSoften: This is not a clip')
+    
+    if scenechange:
+        clip = haf_set_scenechange(clip, scenechange)
+    return core.focus2.TemporalSoften2(clip, radius, luma_threshold, chroma_threshold, scenechange)
+
+
+def haf_set_scenechange(clip, thresh=15):
+    if not isinstance(clip, vs.VideoNode):
+        raise TypeError('set_scenechange: This is not a clip')
+    
+    def set_props(n, f):
+        fout = f[0].copy()
+        fout.props._SceneChangePrev = f[1].props._SceneChangePrev
+        fout.props._SceneChangeNext = f[1].props._SceneChangeNext
+        return fout
+    
+    sc = clip
+    
+    if clip.format.color_family == vs.RGB:
+        sc = core.resize.Bicubic(clip, format=vs.GRAY16, matrix_s='709')
+        if sc.format.bits_per_sample != clip.format.bits_per_sample:
+            sc = core.fmtc.bitdepth(sc, bits=clip.format.bits_per_sample, dmode=1)
+    
+    sc = core.scd.Detect(sc, thresh)
+    
+    if clip.format.color_family == vs.RGB:
+        sc = core.std.ModifyFrame(clip, clips=[clip, sc], selector=set_props)
+    
+    return sc
+
+
+def haf_Padding(clip, left=0, right=0, top=0, bottom=0):
+    if not isinstance(clip, vs.VideoNode):
+        raise vs.Error('Padding: this is not a clip')
+
+    if left < 0 or right < 0 or top < 0 or bottom < 0:
+        raise vs.Error('Padding: border size to pad must not be negative')
+
+    return clip.resize.Point(clip.width + left + right, clip.height + top + bottom, src_left=-left, src_top=-top, src_width=clip.width + left + right, src_height=clip.height + top + bottom)
+
+
+def haf_SCDetect(clip, threshold=None):
+    def copy_property(n, f):
+        fout = f[0].copy()
+        fout.props['_SceneChangePrev'] = f[1].props['_SceneChangePrev']
+        fout.props['_SceneChangeNext'] = f[1].props['_SceneChangeNext']
+        return fout
+
+    if not isinstance(clip, vs.VideoNode):
+        raise vs.Error('SCDetect: this is not a clip')
+
+    sc = clip
+    if clip.format.color_family == vs.RGB:
+        sc = clip.resize.Bicubic(format=vs.GRAY8, matrix_s='709')
+    sc = sc.misc.SCDetect(threshold=threshold)
+
+    if clip.format.color_family == vs.RGB:
+        sc = clip.std.ModifyFrame(clips=[clip, sc], selector=copy_property)
+    return sc
+
+
+def haf_Weave(clip, tff):
+    if not isinstance(clip, vs.VideoNode):
+        raise vs.Error('Weave: this is not a clip')
+
+    return clip.std.DoubleWeave(tff=tff)[::2]
+
+
+# MinBlur   by Didée (http://avisynth.nl/index.php/MinBlur)
+# Nifty Gauss/Median combination
+def haf_MinBlur(clp, r=1, planes=None):
+    if not isinstance(clp, vs.VideoNode):
+        raise vs.Error('MinBlur: this is not a clip')
+
+    if planes is None:
+        planes = list(range(clp.format.num_planes))
+    elif isinstance(planes, int):
+        planes = [planes]
+
+    matrix1 = [1, 2, 1, 2, 4, 2, 1, 2, 1]
+    matrix2 = [1, 1, 1, 1, 1, 1, 1, 1, 1]
+
+    if r <= 0:
+        RG11 = sbr(clp, planes=planes)
+        RG4 = clp.std.Median(planes=planes)
+    elif r == 1:
+        RG11 = clp.std.Convolution(matrix=matrix1, planes=planes)
+        RG4 = clp.std.Median(planes=planes)
+    elif r == 2:
+        RG11 = clp.std.Convolution(matrix=matrix1, planes=planes).std.Convolution(matrix=matrix2, planes=planes)
+        RG4 = clp.ctmf.CTMF(radius=2, planes=planes)
+    else:
+        RG11 = clp.std.Convolution(matrix=matrix1, planes=planes).std.Convolution(matrix=matrix2, planes=planes).std.Convolution(matrix=matrix2, planes=planes)
+        if clp.format.bits_per_sample == 16:
+            s16 = clp
+            RG4 = clp.fmtc.bitdepth(bits=12, planes=planes, dmode=1).ctmf.CTMF(radius=3, planes=planes).fmtc.bitdepth(bits=16, planes=planes)
+            RG4 = mvf.LimitFilter(s16, RG4, thr=0.0625, elast=2, planes=planes)
+        else:
+            RG4 = clp.ctmf.CTMF(radius=3, planes=planes)
+
+    expr = 'x y - x z - * 0 < x x y - abs x z - abs < y z ? ?'
+    return core.std.Expr([clp, RG11, RG4], expr=[expr if i in planes else '' for i in range(clp.format.num_planes)])
+
+
+# make a highpass on a blur's difference (well, kind of that)
+def sbr(c, r=1, planes=None):
+    if not isinstance(c, vs.VideoNode):
+        raise vs.Error('sbr: this is not a clip')
+
+    neutral = 1 << (c.format.bits_per_sample - 1) if c.format.sample_type == vs.INTEGER else 0.0
+
+    if planes is None:
+        planes = list(range(c.format.num_planes))
+    elif isinstance(planes, int):
+        planes = [planes]
+
+    matrix1 = [1, 2, 1, 2, 4, 2, 1, 2, 1]
+    matrix2 = [1, 1, 1, 1, 1, 1, 1, 1, 1]
+
+    if r <= 1:
+        RG11 = c.std.Convolution(matrix=matrix1, planes=planes)
+    elif r == 2:
+        RG11 = c.std.Convolution(matrix=matrix1, planes=planes).std.Convolution(matrix=matrix2, planes=planes)
+    else:
+        RG11 = c.std.Convolution(matrix=matrix1, planes=planes).std.Convolution(matrix=matrix2, planes=planes).std.Convolution(matrix=matrix2, planes=planes)
+
+    RG11D = core.std.MakeDiff(c, RG11, planes=planes)
+
+    if r <= 1:
+        RG11DS = RG11D.std.Convolution(matrix=matrix1, planes=planes)
+    elif r == 2:
+        RG11DS = RG11D.std.Convolution(matrix=matrix1, planes=planes).std.Convolution(matrix=matrix2, planes=planes)
+    else:
+        RG11DS = RG11D.std.Convolution(matrix=matrix1, planes=planes).std.Convolution(matrix=matrix2, planes=planes).std.Convolution(matrix=matrix2, planes=planes)
+
+    expr = f'x y - x {neutral} - * 0 < {neutral} x y - abs x {neutral} - abs < x y - {neutral} + x ? ?'
+    RG11DD = core.std.Expr([RG11D, RG11DS], expr=[expr if i in planes else '' for i in range(c.format.num_planes)])
+    return core.std.MakeDiff(c, RG11DD, planes=planes)
+
+
+
+########################################
+## cretindesalpes' functions:
+
+# Converts luma (and chroma) to PC levels, and optionally allows tweaking for pumping up the darks. (for the clip to be fed to motion search only)
+# By courtesy of cretindesalpes. (http://forum.doom9.org/showthread.php?p=1548318#post1548318)
+def haf_DitherLumaRebuild(src, s0=2.0, c=0.0625, chroma=True):
+    if not isinstance(src, vs.VideoNode):
+        raise vs.Error('DitherLumaRebuild: this is not a clip')
+
+    if src.format.color_family == vs.RGB:
+        raise vs.Error('DitherLumaRebuild: RGB format is not supported')
+
+    isGray = (src.format.color_family == vs.GRAY)
+    isInteger = (src.format.sample_type == vs.INTEGER)
+
+    shift = src.format.bits_per_sample - 8
+    neutral = 128 << shift if isInteger else 0.0
+
+    k = (s0 - 1) * c
+    t = f'x {16 << shift if isInteger else 16 / 255} - {219 << shift if isInteger else 219 / 255} / 0 max 1 min'
+    e = f'{k} {1 + c} {(1 + c) * c} {t} {c} + / - * {t} 1 {k} - * + {256 << shift if isInteger else 256 / 255} *'
+    return src.std.Expr(expr=[e] if isGray else [e, f'x {neutral} - 128 * 112 / {neutral} +' if chroma else ''])
+
+
+#=============================================================================
+#   mt_expand_multi
+#   mt_inpand_multi
+#
+#   Calls mt_expand or mt_inpand multiple times in order to grow or shrink
+#   the mask from the desired width and height.
+#
+#   Parameters:
+#   - sw   : Growing/shrinking shape width. 0 is allowed. Default: 1
+#   - sh   : Growing/shrinking shape height. 0 is allowed. Default: 1
+#   - mode : "rectangle" (default), "ellipse" or "losange". Replaces the
+#       mt_xxpand mode. Ellipses are actually combinations of
+#       rectangles and losanges and look more like octogons.
+#       Losanges are truncated (not scaled) when sw and sh are not
+#       equal.
+#   Other parameters are the same as mt_xxpand.
+#=============================================================================
+def haf_mt_expand_multi(src, mode='rectangle', planes=None, sw=1, sh=1):
+    if not isinstance(src, vs.VideoNode):
+        raise vs.Error('mt_expand_multi: this is not a clip')
+
+    if sw > 0 and sh > 0:
+        mode_m = [0, 1, 0, 1, 1, 0, 1, 0] if mode == 'losange' or (mode == 'ellipse' and (sw % 3) != 1) else [1, 1, 1, 1, 1, 1, 1, 1]
+    elif sw > 0:
+        mode_m = [0, 0, 0, 1, 1, 0, 0, 0]
+    elif sh > 0:
+        mode_m = [0, 1, 0, 0, 0, 0, 1, 0]
+    else:
+        mode_m = None
+
+    if mode_m is not None:
+        src = haf_mt_expand_multi(src.std.Maximum(planes=planes, coordinates=mode_m), mode=mode, planes=planes, sw=sw - 1, sh=sh - 1)
+    return src
+
+
+def haf_mt_inpand_multi(src, mode='rectangle', planes=None, sw=1, sh=1):
+    if not isinstance(src, vs.VideoNode):
+        raise vs.Error('mt_inpand_multi: this is not a clip')
+
+    if sw > 0 and sh > 0:
+        mode_m = [0, 1, 0, 1, 1, 0, 1, 0] if mode == 'losange' or (mode == 'ellipse' and (sw % 3) != 1) else [1, 1, 1, 1, 1, 1, 1, 1]
+    elif sw > 0:
+        mode_m = [0, 0, 0, 1, 1, 0, 0, 0]
+    elif sh > 0:
+        mode_m = [0, 1, 0, 0, 0, 0, 1, 0]
+    else:
+        mode_m = None
+
+    if mode_m is not None:
+        src = haf_mt_inpand_multi(src.std.Minimum(planes=planes, coordinates=mode_m), mode=mode, planes=planes, sw=sw - 1, sh=sh - 1)
+    return src
+
+
+def haf_mt_inflate_multi(src, planes=None, radius=1):
+    if not isinstance(src, vs.VideoNode):
+        raise vs.Error('mt_inflate_multi: this is not a clip')
+
+    for i in range(radius):
+        src = core.std.Inflate(src, planes=planes)
+    return src
+
+
+def haf_mt_deflate_multi(src, planes=None, radius=1):
+    if not isinstance(src, vs.VideoNode):
+        raise vs.Error('mt_deflate_multi: this is not a clip')
+
+    for i in range(radius):
+        src = core.std.Deflate(src, planes=planes)
+    return src
+
+
+def haf_cround(x):
+    return math.floor(x + 0.5) if x > 0 else math.ceil(x - 0.5)
+
+
+def haf_m4(x):
+    return 16 if x < 16 else haf_cround(x / 4) * 4
