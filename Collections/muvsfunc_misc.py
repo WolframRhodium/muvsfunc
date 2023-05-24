@@ -14,6 +14,7 @@ Miscellaneous functions:
     sbr_detail
     fade
     fast_mandelbrot
+    pyramid_texture_filter
 """
 
 import functools
@@ -22,6 +23,7 @@ import vapoursynth as vs
 from vapoursynth import core
 import muvsfunc as muf
 import mvsfunc as mvf
+import typing
 
 _is_api4: bool = hasattr(vs, "__api_version__") and vs.__api_version__.api_major == 4
 
@@ -85,8 +87,8 @@ def freq_merge(src, flt, fun=None, **fun_args):
     if fun is None or not callable(fun):
         fun = gauss
 
-    low_src = func(src, **fun_args)
-    low_flt = func(flt, **fun_args)
+    low_src = fun(src, **fun_args)
+    low_flt = fun(flt, **fun_args)
     return core.std.Expr([low_src, flt, low_flt], ['y z - x +'])
 
 
@@ -416,7 +418,7 @@ def GPA(clip, sigmaS=3, sigmaR=0.15, mode=0, iteration=0, eps=1e-3, **depth_args
 
     for i in range(1, iteration+1):
         sqrt_i = math.sqrt(i)
-        inv_sqrt_i = 1 / sqrt_i 
+        inv_sqrt_i = 1 / sqrt_i
         Q = core.std.Expr([Q, G, Fbar], 'x y z * +')
         F = core.std.Expr([H, F], f'x y * {inv_sqrt_i} *')
         Fbar = Filter(F)
@@ -581,7 +583,7 @@ def fade(clip, start=0, end=None, mode='in', base=None):
     return core.std.FrameEval(clip, functools.partial(fade_core, clip=clip, start=start, end=end, mode=mode, base=base))
 
 
-def fast_mandelbrot(width=1920, height=1280, iterations=50, 
+def fast_mandelbrot(width=1920, height=1280, iterations=50,
     real_range=(-2, 1), imag_range=(-1, 1), c=0+0j, julia_set=False, backend=None):
 
     import array
@@ -623,14 +625,14 @@ def fast_mandelbrot(width=1920, height=1280, iterations=50,
             z_real = core.akarin.Expr([ones], f"{real_range[1] - real_range[0]} X * width 1 - / {real_range[0]} +")
         else:
             z_real = core.std.ModifyFrame(
-                ones, ones, 
+                ones, ones,
                 functools.partial(meshgrid_core, horizontal=True, low=real_range[0], high=real_range[1]))
 
         if b"Y" in features and b"height" in features:
             z_imag = core.akarin.Expr([ones], f"{imag_range[0] - imag_range[1]} Y * height 1 - / {imag_range[1]} +")
         else:
             z_imag = core.std.ModifyFrame(
-                ones, ones, 
+                ones, ones,
                 functools.partial(meshgrid_core, horizontal=False, low=imag_range[0], high=imag_range[1]))
 
     if julia_set:
@@ -664,3 +666,94 @@ def fast_mandelbrot(width=1920, height=1280, iterations=50,
             return core.std.Expr([z_real, z_imag, ones], expr)
     else:
         return backend([z_real, z_imag, ones], expr)
+
+
+def pyramid(
+    clip: vs.VideoNode,
+    num_levels: int = 11,
+    scale: float = 0.5,
+    sigma: float = 1.0,
+    resampler: typing.Callable[[vs.VideoNode, int, int], vs.VideoNode] = core.resize.Bilinear
+):
+
+    gaussian_pyramids = [clip]
+    laplacian_pyramids = []
+
+    for _ in range(num_levels):
+        down = resampler(clip.tcanny.TCanny(mode=-1, sigma=sigma), int(clip.width * scale), int(clip.height * scale))
+        gaussian_pyramids.append(down)
+
+        up = resampler(down, clip.width, clip.height).tcanny.TCanny(mode=-1, sigma=sigma)
+        laplacian_pyramids.append(core.std.MakeDiff(clip, up))
+
+        clip = down
+
+    return gaussian_pyramids, laplacian_pyramids
+
+
+def pyramid_texture_filter(
+    clip: vs.VideoNode,
+    sigma_s: float = 5.0,
+    sigma_r: float = 0.05,
+    num_levels: int = 11,
+    sigma_g: float = 1.0,
+    scale: float = 0.8,
+    resampler: typing.Callable[[vs.VideoNode, int, int], vs.VideoNode] = core.resize.Bilinear
+) -> vs.VideoNode:
+    """ Pyramid Texture Filtering
+
+    Pyramid texture filtering is a simple but effective technique to smooth out textures while preserving the prominent structures.
+    It is built upon a key observation that
+    the coarsest level in a Gaussian pyramid often naturally eliminates textures and summarizes the main image structures.
+    This idea is used for texture filtering,
+    which is to progressively upsample the very low-resolution coarsest Gaussian pyramid level
+    to a full-resolution texture smoothing result with well-preserved structures,
+    under the guidance of each fine-scale Gaussian pyramid level and its associated Laplacian pyramid level.
+    The authors claim that it is effective to separate structure from texture of different scales, local contrasts, and forms,
+    without degrading structures or introducing visual artifacts.
+
+    Args:
+        clip: RGB/YUV/Gray, 8..16 bit integer.
+
+        sigma_s: (float) sigmaS of bilateral filter.
+            Default is 5.0.
+
+        sigma_r: (float) sigmaR of bilateral filter.
+            Default is 0.05.
+
+        num_levels: (int) Number of pyramid levels.
+            Default is 11.
+
+        scale: (float) Scaling factor to build pyramid.
+            Default is 0.8.
+
+        sigma_r: (float) Sigma of gaussian filter.
+            Default is 1.0.
+
+        resampler: (Callable[[vs.VideoNode, int, int] -> vs.VideoNode]) Resampler to build pyramid.
+            Default is Bilinear.
+
+    Ref:
+        [1] Zhang, Q., Jiang, H., Nie, Y., & Zheng, W. S. (2023). Pyramid Texture Filtering. In ACM SIGGRAPH 2023 Conference Proceedings.
+        [2] https://github.com/RewindL/pyramid_texture_filtering
+    """
+
+    gaussian_pyramids, laplacian_pyramids = pyramid(clip, num_levels=num_levels, scale=scale, resampler=resampler, sigma=sigma_g)
+
+    r = gaussian_pyramids[-1]
+    for i in range(len(laplacian_pyramids) - 1, -1, -1):
+        adaptive_sigma_s = sigma_s * scale ** i
+
+        # upsample
+        r_up = resampler(r, gaussian_pyramids[i].width, gaussian_pyramids[i].height)
+        r_hat = core.bilateral.Bilateral(r_up, ref=gaussian_pyramids[i], sigmaS=adaptive_sigma_s, sigmaR=sigma_r)
+
+        # laplacian
+        r_laplacian = core.std.MergeDiff(r_hat, laplacian_pyramids[i])
+        r_out = core.bilateral.Bilateral(r_laplacian, ref=r_hat, sigmaS=adaptive_sigma_s, sigmaR=sigma_r)
+
+        # enhancement
+        r_refine = core.bilateral.Bilateral(r_out, sigmaS=adaptive_sigma_s, sigmaR=sigma_r)
+        r = r_refine
+
+    return r
