@@ -6707,7 +6707,7 @@ def SSFDeband(
         planes = list(range(clip.format.num_planes))
     elif isinstance(planes, int):
         planes = [planes]
-    
+
     def get_expr(thr: float, smooth_taps: int, edge_taps: int, stride: int, is_vertical: bool):
         if thr <= 0 or smooth_taps <= 1 or edge_taps <= 0 or stride == 0:
             return ""
@@ -6718,19 +6718,19 @@ def SSFDeband(
             (f"x[0,{i * stride}]" if is_vertical else f"x[{i * stride},0]")
             for i in range(-taps, taps+1)
         )
-        
+
         mask_expr = functools.reduce(lambda x, y: f"{x} {y} and", map(isclose, generate(taps=edge_taps)))
         smooth_expr = functools.reduce(lambda x, y: f"{x} {y} +", generate(taps=smooth_taps)) + f" {2 * smooth_taps + 1} /"
         return f"{mask_expr} {smooth_expr} x ?"
 
     vrt_exprs = [(
             get_expr(
-                thr=thr[plane], 
-                smooth_taps=smooth_taps[plane], 
-                edge_taps=edge_taps[plane], 
-                stride=stride[plane], 
+                thr=thr[plane],
+                smooth_taps=smooth_taps[plane],
+                edge_taps=edge_taps[plane],
+                stride=stride[plane],
                 is_vertical=True
-            ) 
+            )
             if plane in planes else ""
         ) for plane in range(clip.format.num_planes)
     ]
@@ -6738,12 +6738,12 @@ def SSFDeband(
 
     hrz_exprs = [(
             get_expr(
-                thr=thr[plane], 
-                smooth_taps=smooth_taps[plane], 
-                edge_taps=edge_taps[plane], 
-                stride=stride[plane], 
+                thr=thr[plane],
+                smooth_taps=smooth_taps[plane],
+                edge_taps=edge_taps[plane],
+                stride=stride[plane],
                 is_vertical=False
-            ) 
+            )
             if plane in planes else ""
         ) for plane in range(clip.format.num_planes)
     ]
@@ -7356,7 +7356,7 @@ def haf_Clamp(clip, bright_limit, dark_limit, overshoot=0, undershoot=0, planes=
 def haf_TemporalSoften(clip, radius=4, luma_threshold=4, chroma_threshold=8, scenechange=15, mode=2):
     if not isinstance(clip, vs.VideoNode):
         raise TypeError('TemporalSoften: This is not a clip')
-    
+
     if scenechange:
         clip = haf_set_scenechange(clip, scenechange)
     return core.focus2.TemporalSoften2(clip, radius, luma_threshold, chroma_threshold, scenechange)
@@ -7365,25 +7365,25 @@ def haf_TemporalSoften(clip, radius=4, luma_threshold=4, chroma_threshold=8, sce
 def haf_set_scenechange(clip, thresh=15):
     if not isinstance(clip, vs.VideoNode):
         raise TypeError('set_scenechange: This is not a clip')
-    
+
     def set_props(n, f):
         fout = f[0].copy()
         fout.props._SceneChangePrev = f[1].props._SceneChangePrev
         fout.props._SceneChangeNext = f[1].props._SceneChangeNext
         return fout
-    
+
     sc = clip
-    
+
     if clip.format.color_family == vs.RGB:
         sc = core.resize.Bicubic(clip, format=vs.GRAY16, matrix_s='709')
         if sc.format.bits_per_sample != clip.format.bits_per_sample:
             sc = core.fmtc.bitdepth(sc, bits=clip.format.bits_per_sample, dmode=1)
-    
+
     sc = core.scd.Detect(sc, thresh)
-    
+
     if clip.format.color_family == vs.RGB:
         sc = core.std.ModifyFrame(clip, clips=[clip, sc], selector=set_props)
-    
+
     return sc
 
 
