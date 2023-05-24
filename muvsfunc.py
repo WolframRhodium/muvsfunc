@@ -62,6 +62,7 @@ Functions:
     getnative
     downsample
     SSFDeband
+    pyramid_texture_filter
 '''
 
 import functools
@@ -7598,3 +7599,101 @@ def haf_cround(x):
 
 def haf_m4(x):
     return 16 if x < 16 else haf_cround(x / 4) * 4
+
+
+def pyramid(
+    clip: vs.VideoNode,
+    num_levels: int = 11,
+    scale: float = 0.5,
+    sigma: float = 1.0,
+    resampler: typing.Callable[[vs.VideoNode, int, int], vs.VideoNode] = core.resize.Bilinear
+) -> typing.Tuple[typing.List[vs.VideoNode], typing.List[vs.VideoNode]]:
+
+    gaussian_pyramids = [clip]
+    laplacian_pyramids = []
+
+    for _ in range(num_levels):
+        down = resampler(clip.tcanny.TCanny(mode=-1, sigma=sigma), int(clip.width * scale), int(clip.height * scale))
+        gaussian_pyramids.append(down)
+
+        up = resampler(down, clip.width, clip.height).tcanny.TCanny(mode=-1, sigma=sigma)
+        laplacian_pyramids.append(core.std.MakeDiff(clip, up))
+
+        clip = down
+
+    return gaussian_pyramids, laplacian_pyramids
+
+
+def pyramid_texture_filter(
+    clip: vs.VideoNode,
+    sigma_s: float = 5.0,
+    sigma_r: float = 0.05,
+    num_levels: int = 11,
+    sigma_g: float = 1.0,
+    scale: float = 0.8,
+    resampler: typing.Callable[[vs.VideoNode, int, int], vs.VideoNode] = core.resize.Bilinear
+) -> vs.VideoNode:
+    """ Pyramid Texture Filtering
+
+    Pyramid texture filtering is a simple but effective technique to smooth out textures while preserving the prominent structures.
+    It is built upon a key observation that
+    the coarsest level in a Gaussian pyramid often naturally eliminates textures and summarizes the main image structures.
+    This idea is used for texture filtering,
+    which is to progressively upsample the very low-resolution coarsest Gaussian pyramid level
+    to a full-resolution texture smoothing result with well-preserved structures,
+    under the guidance of each fine-scale Gaussian pyramid level and its associated Laplacian pyramid level.
+    The authors claim that it is effective to separate structure from texture of different scales, local contrasts, and forms,
+    without degrading structures or introducing visual artifacts.
+
+    Personally this filter creates too much aliasing and still cannot efficiently differentiate textures from structures.
+
+    Args:
+        clip: RGB/YUV/Gray, 8..16 bit integer.
+
+        sigma_s: (float) sigmaS of bilateral filter.
+            Default is 5.0.
+
+        sigma_r: (float) sigmaR of bilateral filter.
+            Default is 0.05.
+
+        num_levels: (int) Number of pyramid levels.
+            Default is 11.
+
+        scale: (float) Scaling factor to build pyramid.
+            Default is 0.8.
+
+        sigma_g: (float) Sigma of gaussian filter.
+            Default is 1.0.
+
+        resampler: (Callable[[vs.VideoNode, int, int] -> vs.VideoNode]) Resampler to build pyramid.
+            Default is Bilinear.
+
+    Ref:
+        [1] Zhang, Q., Jiang, H., Nie, Y., & Zheng, W. S. (2023). Pyramid Texture Filtering. In ACM SIGGRAPH 2023 Conference Proceedings.
+        [2] https://github.com/RewindL/pyramid_texture_filtering
+    """
+
+    funcName = "pyramid_texture_filter"
+
+    if not isinstance(clip, vs.VideoNode):
+        raise TypeError(f'{funcName}: "clip" must be a clip!')
+
+    gaussian_pyramids, laplacian_pyramids = pyramid(clip, num_levels=num_levels, scale=scale, resampler=resampler, sigma=sigma_g)
+
+    r = gaussian_pyramids[-1]
+    for i in range(len(laplacian_pyramids) - 1, -1, -1):
+        adaptive_sigma_s = sigma_s * scale ** i
+
+        # upsample
+        r_up = resampler(r, gaussian_pyramids[i].width, gaussian_pyramids[i].height)
+        r_hat = core.bilateral.Bilateral(r_up, ref=gaussian_pyramids[i], sigmaS=adaptive_sigma_s, sigmaR=sigma_r)
+
+        # laplacian
+        r_laplacian = core.std.MergeDiff(r_hat, laplacian_pyramids[i])
+        r_out = core.bilateral.Bilateral(r_laplacian, ref=r_hat, sigmaS=adaptive_sigma_s, sigmaR=sigma_r)
+
+        # enhancement
+        r_refine = core.bilateral.Bilateral(r_out, sigmaS=adaptive_sigma_s, sigmaR=sigma_r)
+        r = r_refine
+
+    return r
