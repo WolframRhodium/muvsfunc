@@ -63,6 +63,7 @@ Functions:
     downsample
     SSFDeband
     pyramid_texture_filter
+    flip
 '''
 
 import functools
@@ -7697,3 +7698,282 @@ def pyramid_texture_filter(
         r = r_refine
 
     return r
+
+
+def pixels_per_degree(
+    distance: float = 0.7,
+    monitor_width: float = 0.7,
+    resolution: float = 3840
+) -> float:
+    return distance / monitor_width * math.pi * (resolution / 180)
+
+
+def flip(
+    reference: vs.VideoNode,
+    test: vs.VideoNode,
+    pixels_per_degree: float = pixels_per_degree(distance=0.7, monitor_width=0.7, resolution=3840),
+    map_type: int = 0
+) -> vs.VideoNode:
+    """ ꟻLIP Image Difference Evaluator
+
+    ꟻLIP is a full-reference image difference algorithm. Given two input RGBS images in sRGB space,
+    it returns a GRAYS image indicating the magnitude of the perceived difference between two images at each pixel.
+
+    It takes into account perceptual difference in the YCxCz color space and also edges and points in images.
+
+    Example:
+        # monitor of width 0.8 meter, resolution 3840 in width for an observer at distance 0.7 meter
+        diff = muf.flip(src, flt, muf.pixels_per_degree(distance=0.7, monitor_width=0.8, resolution=3840))
+
+    Args:
+        reference, test: Input clip. Must be of the same resolution and of RGBS color format.
+
+        pixels_per_degree: (float) Number of pixels per degree of the viewing environment.
+
+        map_type: (int, 0~2) Type of the output map.
+            0: Original ꟻLIP map.
+            1: Color-only map.
+            2: Features-only (points and edges) map.
+
+    Ref:
+        [1] Andersson, P., Nilsson, J., Akenine-Möller, T., Oskarsson, M., Åström, K., & Fairchild, M. D. (2020).
+            FLIP: A Difference Evaluator for Alternating Images.
+            Proc. ACM Comput. Graph. Interact. Tech., 3(2), 15-1.
+        [2] https://github.com/NVlabs/flip
+    """
+
+    funcName = "flip"
+
+    if not isinstance(reference, vs.VideoNode) or reference.format.id != vs.RGBS:
+        raise TypeError(f'{funcName}: "reference" must be an RGBS clip!')
+
+    if not isinstance(test, vs.VideoNode) or test.format.id != vs.RGBS:
+        raise TypeError(f'{funcName}: "test" must be a clip!')
+
+    if reference.width != test.width or reference.height != test.height:
+        raise TypeError(f'{funcName}: "reference" and "test" must be of the same resolution!')
+
+    def srgb2ycxcz(clip: vs.VideoNode) -> typing.Tuple[vs.VideoNode, vs.VideoNode, vs.VideoNode]:
+        r = core.std.ShufflePlanes(clip, [0], vs.GRAY)
+        g = core.std.ShufflePlanes(clip, [1], vs.GRAY)
+        b = core.std.ShufflePlanes(clip, [2], vs.GRAY)
+
+        # linear rgb -> xyz
+        A1 = [
+            [10135552 / 24577794, 8788810 / 24577794, 4435075 / 24577794],
+            [2613072 / 12288897, 8788810 / 12288897, 887015 / 12288897],
+            [1425312 / 73733382, 8788810 / 73733382, 70074185 / 73733382]
+        ]
+
+        # xyz -> YCxCz
+        A2 = [
+            [0, 116, 0],
+            [500 * 1.052156925, -500, 0],
+            [0, 200, -200 * 0.918357670]
+        ] # type: list[list[float]]
+        B2 = [-16, 0, 0]
+
+        return tuple(
+            core.akarin.Expr(
+                [r, g, b],
+                f"x 0.04045 > x 0.055 + 1.055 / 2.4 pow x 12.92 / ? {math.fsum(A2[j][i] * A1[i][0] for i in range(3))} * "
+                f"y 0.04045 > y 0.055 + 1.055 / 2.4 pow y 12.92 / ? {math.fsum(A2[j][i] * A1[i][1] for i in range(3))} * + "
+                f"z 0.04045 > z 0.055 + 1.055 / 2.4 pow z 12.92 / ? {math.fsum(A2[j][i] * A1[i][2] for i in range(3))} * + "
+                f"{B2[j]} +"
+            )
+            for j in range(3)
+        ) # type: ignore
+
+    def ycxcz2pre_lab(y: vs.VideoNode, cx: vs.VideoNode, cz: vs.VideoNode) -> typing.Tuple[vs.VideoNode, vs.VideoNode, vs.VideoNode]:
+        # ycxcz -> xyz
+        A1 = [
+            [1 / 116, 1 / 500, 0],
+            [1 / 116, 0, 0],
+            [1 / 116, 0, -1/200]
+        ]
+        B1 = [
+            16 / 116,
+            16 / 116,
+            16 / 116
+        ]
+
+        # xyz -> linrgb -> clamp
+        A2 = [
+            [3.241003275, -1.537398934, -0.498615861],
+            [-0.969224334, 1.875930071, 0.041554224],
+            [0.055639423, -0.204011202, 1.057148933]
+        ]
+        linrgb = tuple(
+            core.akarin.Expr(
+                [y, cx, cz],
+                f"x {math.fsum(A2[j][i] * A1[i][0] for i in range(3))} * "
+                f"y {math.fsum(A2[j][i] * A1[i][1] for i in range(3))} * + "
+                f"z {math.fsum(A2[j][i] * A1[i][2] for i in range(3))} * + "
+                f"{math.fsum(A2[j][i] * B1[i] for i in range(3))} + 0 1 clip"
+            )
+            for j in range(3)
+        )
+
+        # linrgb -> xyz
+        A3 = [
+            [10135552 / 24577794, 8788810 / 24577794, 4435075 / 24577794],
+            [2613072 / 12288897, 8788810 / 12288897, 887015 / 12288897],
+            [1425312 / 73733382, 8788810 / 73733382, 70074185 / 73733382]
+        ]
+
+        # linrgb -> xyz -> pre-lab
+        return tuple(
+            core.akarin.Expr(
+                linrgb,
+                f"x {A3[i][0]} * "
+                f"y {A3[i][1]} * + "
+                f"z {A3[i][2]} * + T! "
+                f"T@ {6 ** 3 / 29 ** 3} > T@ {1/3} pow T@ {29 ** 3 / (3 * 6 ** 3)} * {4 / 29} + ?"
+            )
+            for i in range(3)
+        ) # type: ignore
+
+    def get_filter(
+        pixels_per_degree: float
+    ) -> typing.Tuple[typing.List[float], typing.List[float], typing.List[float]]:
+        a1 = [1, 1, 34.1]
+        a2 = [0, 0, 13.5]
+        b1 = [0.0047, 0.0053, 0.04]
+        b2 = [1e-5, 1e-5, 0.025]
+
+        max_scale_parameter = max(*b1, *b2)
+        r = math.ceil(3 * math.sqrt(max_scale_parameter / 2) / math.pi * pixels_per_degree)
+        zs = [
+            (x / pixels_per_degree) ** 2 + (y / pixels_per_degree) ** 2
+            for y in range(-r, r + 1)
+            for x in range(-r, r + 1)
+        ]
+        ss = [
+            [
+                a1[i] * math.sqrt(math.pi / b1[i]) * math.exp(-math.pi**2 * z / b1[i]) +
+                a2[i] * math.sqrt(math.pi / b2[i]) * math.exp(-math.pi**2 * z / b2[i])
+                for z in zs
+            ]
+            for i in range(3)
+        ]
+        sums = [math.fsum(s) for s in ss]
+        ss = [[s / sums[i] if s / sums[i] > 1e-5 else 0 for s in ss[i]] for i in range(len(ss))]
+
+        return ss # type: ignore
+
+    def calc_color_error(
+        l1: vs.VideoNode, a1: vs.VideoNode, b1: vs.VideoNode,
+        l2: vs.VideoNode, a2: vs.VideoNode, b2: vs.VideoNode
+    ) -> vs.VideoNode:
+
+        qc = 0.7
+        cmax = 203.30165581011028 ** qc
+        pc = 0.4
+        pt = 0.95
+        pccmax = pc * cmax
+
+        return core.akarin.Expr(
+            [l1, a1, b1, l2, a2, b2],
+            "116 y * 16 - L1! "
+            "x y - 5 * L1@ * A1! "
+            "y z - 2 * L1@ * B1! "
+            "116 b * 16 - L2! "
+            "a b - 5 * L2@ * A2! "
+            "b c - 2 * L2@ * B2! "
+            f"L1@ L2@ - abs A1@ A2@ - dup * B1@ B2@ - dup * + sqrt + {qc} pow HYAB! "
+            f"HYAB@ {pccmax} < {pt / pccmax} HYAB@ * {pt} HYAB@ {pccmax} - {cmax - pccmax} / {1 - pt} * + ?"
+        )
+
+    def convolution(clip: vs.VideoNode, matrix: typing.Sequence[float]) -> vs.VideoNode:
+        radius = (math.isqrt(len(matrix)) - 1) // 2
+        return core.akarin.Expr(
+            clip,
+            ' '.join(
+                f"x[{x},{y}]:c {matrix[(y + radius) * (2 * radius + 1) + (x + radius)]} * {'+' if y > -radius or x > -radius else ''}"
+                for y in range(-radius, radius + 1)
+                for x in range(-radius, radius + 1)
+            )
+        )
+
+    def output(clip: vs.VideoNode) -> vs.VideoNode:
+        return (
+            clip
+            .std.SetFrameProp(prop="_Matrix", intval=2)
+            .std.SetFrameProp(prop="_Primaries", intval=1)
+            .std.SetFrameProp(prop="_Transfer", intval=1)
+            .std.SetFrameProp(prop="_ColorRange", intval=0)
+        )
+
+    src = reference
+    src_ycxcz = srgb2ycxcz(src)
+    src_y = src_ycxcz[0]
+
+    dst = test
+    dst_ycxcz = srgb2ycxcz(dst)
+    dst_y = dst_ycxcz[0]
+
+    if map_type == 0 or map_type == 1:
+        filters = get_filter(pixels_per_degree=pixels_per_degree)
+
+        filtered_src_ycxcz = [
+            convolution(c, matrix=filters[i])
+            for i, c in enumerate(src_ycxcz)
+        ]
+        src_prelab = ycxcz2pre_lab(*filtered_src_ycxcz)
+
+        filtered_dst_ycxcz = [
+            convolution(c, matrix=filters[i])
+            for i, c in enumerate(dst_ycxcz)
+        ]
+        dst_prelab = ycxcz2pre_lab(*filtered_dst_ycxcz)
+
+        color_error = calc_color_error(*src_prelab, *dst_prelab)
+
+        if map_type == 1:
+            return output(color_error)
+
+    if map_type == 0 or map_type == 2:
+        qf = 0.5
+        w = 0.082
+        sd = 0.5 * w * pixels_per_degree
+        radius = math.ceil(3 * sd)
+
+        flatten = lambda matrix: [matrix[y][x] for x in range(len(matrix[0])) for y in range(len(matrix))]
+        transpose = lambda matrix: [[matrix[y][x] for y in range(len(matrix))] for x in range(len(matrix[0]))]
+
+        x_vec = y_vec = list(range(-radius, radius + 1))
+        Gx1 = [[-x * math.exp(-(x ** 2 + y ** 2) / (2 * sd ** 2)) for x in x_vec] for y in y_vec]
+        negative_weights_sum = -math.fsum(v for v in flatten(Gx1) if v < 0)
+        positive_weights_sum = math.fsum(v for v in flatten(Gx1) if v > 0)
+        Gx1 = [[(v / negative_weights_sum if v < 0 else v / positive_weights_sum) for v in t] for t in Gx1]
+
+        Gx2 = [[(x ** 2 / sd ** 2 - 1) * math.exp(-(x ** 2 + y ** 2) / (2 * sd ** 2)) for x in x_vec] for y in y_vec]
+        negative_weights_sum = -math.fsum(v for v in flatten(Gx2) if v < 0)
+        positive_weights_sum = math.fsum(v for v in flatten(Gx2) if v > 0)
+        Gx2 = [[(v / negative_weights_sum if v < 0 else v / positive_weights_sum) for v in t] for t in Gx2]
+
+        src_y = core.akarin.Expr([src_y], "x 16 + 116 /")
+        src_y1 = convolution(src_y, flatten(Gx1))
+        src_y2 = convolution(src_y, flatten(transpose(Gx1)))
+        src_y3 = convolution(src_y, flatten(Gx2))
+        src_y4 = convolution(src_y, flatten(transpose(Gx2)))
+        dst_y = core.akarin.Expr([dst_y], "x 16 + 116 /")
+        dst_y1 = convolution(dst_y, flatten(Gx1))
+        dst_y2 = convolution(dst_y, flatten(transpose(Gx1)))
+        dst_y3 = convolution(dst_y, flatten(Gx2))
+        dst_y4 = convolution(dst_y, flatten(transpose(Gx2)))
+
+        if map_type == 0:
+            return output(core.akarin.Expr(
+                [src_y1, src_y2, src_y3, src_y4, dst_y1, dst_y2, dst_y3, dst_y4, color_error],
+                "f 1 x dup * y dup * + sqrt b dup * c dup * + sqrt - abs "
+                f"z dup * a dup * + sqrt d dup * e dup * + sqrt - abs max {math.sqrt(2)} / {qf} pow - pow"
+            ))
+        else:
+            return output(core.akarin.Expr(
+                [src_y1, src_y2, src_y3, src_y4, dst_y1, dst_y2, dst_y3, dst_y4],
+                "x dup * y dup * + sqrt b dup * c dup * + sqrt - abs "
+                f"z dup * a dup * + sqrt d dup * e dup * + sqrt - abs max {math.sqrt(2)} / {qf} pow"
+            ))
+    else:
+        raise ValueError(f'{funcName}: "map_type" must be 0, 1 or 2!')
