@@ -64,6 +64,8 @@ Functions:
     SSFDeband
     pyramid_texture_filter
     flip
+    temporal_dft
+    temporal_idft
 '''
 
 import functools
@@ -7977,3 +7979,113 @@ def flip(
             ))
     else:
         raise ValueError(f'{funcName}: "map_type" must be 0, 1 or 2!')
+
+
+def expr_join(iterable: typing.Iterable[str], op: str) -> str:
+    iterator = iter(iterable)
+    ret = next(iterator)
+    for item in iterator:
+        ret = f"{ret} {item} {op}"
+    return ret
+
+
+def temporal_dft(clip: vs.VideoNode, radius: int = 1) -> typing.List[vs.VideoNode]:
+    """ Temporal Discrete Fourier Transform
+
+    Performs temporal dft on real input data.
+
+    With (n := 2 * radius + 1), dft is defined as
+        y[k]: complex = sum(x[k] * exp(-2 * pi * j * k / n) for k in range(n)) / sqrt(n)
+    i.e. orthogonal dft. Output in interleaved complex format in float.
+
+    Similarly, inverse dft is similarly defined as
+        z[k]: float = sum(y[k] * exp(2 * pi * j * k / n) for k in range(n)) / sqrt(n)
+
+    Example (frequency thresholding):
+        # y1_real, y1_imag, y2_real, y2_imag, y3_real, y3_imag
+        dfts = temporal_dft(clip)
+
+        for i in range(len(dfts)):
+            dfts[i] = core.akarin.Expr('x {thr} < 0 x')
+
+        outputs = temporal_idft(dfts)
+
+        output = outputs[1]
+
+    Args:
+        clip: Input clip.
+
+        radius: (int) Temporal radius. Must be positive.
+            Default is 1.
+    """
+
+    funcName = "temporal_dft"
+
+    if not isinstance(clip, vs.VideoNode):
+        raise TypeError(f'{funcName}: "reference" must be a clip!')
+
+    if radius <= 0:
+        raise ValueError(f'{funcName}: "radius" must be positive!')
+
+    dft_width = 2 * radius + 1
+
+    def shift(clip: vs.VideoNode, delta: int) -> vs.VideoNode:
+        if delta == 0:
+            return clip
+        elif delta < 0:
+            return core.std.Splice([clip[0]] * -delta + [clip[:delta]])
+        else:
+            return core.std.Splice([clip[delta:]] + [clip[-1]] * delta)
+
+    def coeff(i: int, j: int) -> float:
+        pos = -2 * i * (j // 2) / dft_width * math.pi
+        if j % 2 == 0: # real part
+            return math.cos(pos) / math.sqrt(dft_width)
+        else:
+            return math.sin(pos) / math.sqrt(dft_width)
+
+    clips = [shift(clip, i) for i in range(-radius, radius + 1)]
+
+    if clip.format.sample_type == vs.FLOAT:
+        norm_expr = ""
+        format = clip.format
+    else:
+        norm_expr = f" {(2 ** clip.format.bits_per_sample) - 1} /"
+        format = clip.format.replace(core=core, sample_type=vs.FLOAT, bits_per_sample=32)
+
+    dfts = [
+        core.akarin.Expr(
+            clips,
+            expr_join((f"src{i}{norm_expr} {coeff(i, j)} *" for i in range(dft_width)), '+'),
+            format=format.id
+        )
+        for j in range(2 * dft_width)
+    ]
+
+    return dfts
+
+
+def temporal_idft(clips: typing.Sequence[vs.VideoNode]) -> typing.List[vs.VideoNode]:
+    """ Temporal Inverse Discrete Fourier Transform
+
+    Check `temporal_dft()` for details.
+    """
+
+    dft_width = len(clips) // 2
+
+    def coeff(i: int, j: int) -> float:
+        pos = 2 * (i // 2) * j / dft_width * math.pi
+        if i % 2 == 0: # real part
+            return math.cos(pos) / math.sqrt(dft_width)
+        else:
+            return -math.sin(pos) / math.sqrt(dft_width)
+
+    idfts = [
+        core.akarin.Expr(
+            clips,
+            expr_join((f"src{i} {coeff(i, j)} *" for i in range(2 * dft_width)), '+')
+        )
+        for j in range(dft_width)
+    ]
+
+    return idfts
