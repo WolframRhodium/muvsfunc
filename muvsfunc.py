@@ -8006,11 +8006,11 @@ def temporal_dft(clip: vs.VideoNode, radius: int = 1) -> typing.List[vs.VideoNod
         dfts = temporal_dft(clip)
 
         for i in range(len(dfts)):
-            dfts[i] = core.akarin.Expr('x {thr} < 0 x')
+            dfts[i] = core.akarin.Expr('x {thr} < 0 x ?')
 
         outputs = temporal_idft(dfts)
 
-        output = outputs[1]
+        output = outputs[len(outputs) // 2]
 
     Args:
         clip: Input clip.
@@ -8041,7 +8041,7 @@ def temporal_dft(clip: vs.VideoNode, radius: int = 1) -> typing.List[vs.VideoNod
         pos = -2 * i * (j // 2) / dft_width * math.pi
         if j % 2 == 0: # real part
             return math.cos(pos) / math.sqrt(dft_width)
-        else:
+        else: # imaginary part
             return math.sin(pos) / math.sqrt(dft_width)
 
     clips = [shift(clip, i) for i in range(-radius, radius + 1)]
@@ -8077,7 +8077,7 @@ def temporal_idft(clips: typing.Sequence[vs.VideoNode]) -> typing.List[vs.VideoN
         pos = 2 * (i // 2) * j / dft_width * math.pi
         if i % 2 == 0: # real part
             return math.cos(pos) / math.sqrt(dft_width)
-        else:
+        else: # imaginary part
             return -math.sin(pos) / math.sqrt(dft_width)
 
     idfts = [
