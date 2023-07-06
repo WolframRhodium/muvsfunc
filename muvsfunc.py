@@ -8047,16 +8047,16 @@ def temporal_dft(clip: vs.VideoNode, radius: int = 1) -> typing.List[vs.VideoNod
     clips = [shift(clip, i) for i in range(-radius, radius + 1)]
 
     if clip.format.sample_type == vs.FLOAT:
-        norm_expr = ""
+        norm = 1
         format = clip.format
     else:
-        norm_expr = f" {(2 ** clip.format.bits_per_sample) - 1} /"
+        norm = (2 ** clip.format.bits_per_sample) - 1
         format = clip.format.replace(core=core, sample_type=vs.FLOAT, bits_per_sample=32)
 
     dfts = [
         core.akarin.Expr(
             clips,
-            expr_join((f"src{i}{norm_expr} {coeff(i, j)} *" for i in range(dft_width)), '+'),
+            expr_join((f"src{i} {coeff(i, j) / norm} *" for i in range(dft_width)), '+'),
             format=format.id
         )
         for j in range(2 * dft_width)
