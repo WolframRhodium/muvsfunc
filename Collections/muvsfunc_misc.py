@@ -128,7 +128,7 @@ def detail_enhancement(clip, guidance=None, iter=3, radius=4, regulation=0.0005,
 
     """
 
-    return muf.DeFilter(clip, muf.GuidedFilter, guidance=guidance, radius=radius, regulation=regulation, fast=fast, iter=iter, **args)
+    return muf.DeFilter(clip, muf.GuidedFilter, guidance=guidance, radius=radius, regulation=regulation, fast=fast, iteration=iter, **args)
 
 
 def SSR(clip, sigma=50, full=None, **args):
