@@ -5348,34 +5348,37 @@ def Cdeblend(input: vs.VideoNode, omode: int = 0, bthresh: float = 0.1, mthresh:
             raise TypeError(f'{funcName}: "dclip" must of the same number of frames as "input"!')
 
     # coefficients
-    Cbp3 = 128.0 if bthresh > 0 else 2.0
+    # Cbp3 = 128.0 if bthresh > 0 else 2.0
     Cbp2 = 128.0 if bthresh > 0 else 2.0
     Cbp1 = 128.0 if bthresh > 0 else 2.0
     Cbc0 = 128.0 if bthresh > 0 else 2.0
     Cbn1 = 128.0 if bthresh > 0 else 2.0
     Cbn2 = 128.0 if bthresh > 0 else 2.0
 
-    Cdp3 = mthresh * 0.5
-    Cdp2 = mthresh * 0.5
+    # Cdp3 = mthresh * 0.5
+    # Cdp2 = mthresh * 0.5
     Cdp1 = mthresh * 0.5
     Cdc0 = mthresh * 0.5
     Cdn1 = mthresh * 0.5
 
     current = 0
 
+    preproc = {i: input[0:2] + input[2+i:] for i in range(-2, 3)}
+
     def evaluate(n: int, f: List[vs.VideoFrame], clip: vs.VideoNode, core: vs.Core) -> vs.VideoNode:
-        nonlocal Cdp3, Cdp2, Cdp1, Cdc0, Cdn1, Cbp3, Cbp2, Cbp1, Cbc0, Cbn1, Cbn2, current
+        # nonlocal Cdp3, Cdp2, Cbp3
+        nonlocal Cdp1, Cdc0, Cdn1, Cbp2, Cbp1, Cbc0, Cbn1, Cbn2, current
 
         Cdiff = f[0].props["PlaneMAE"] * 255 # type: ignore
         Cbval = f[1].props["PlaneMean"] * 255 # type: ignore
 
-        Cdp3 = Cdp2
-        Cdp2 = Cdp1
+        # Cdp3 = Cdp2
+        # Cdp2 = Cdp1
         Cdp1 = Cdc0
         Cdc0 = Cdn1 if omode > 1 else Cdiff # type: ignore
         Cdn1 = Cdiff # type: ignore
 
-        Cbp3 = Cbp2
+        # Cbp3 = Cbp2
         Cbp2 = Cbp1
         Cbp1 = Cbc0
         Cbc0 = Cbn1 if omode > 1 else (0.0 if Cdc0 < mthresh else (Cbval - Cbn2) / ((max(Cdc0, Cdp1) + mthresh) ** 0.8)) # type: ignore
@@ -5399,7 +5402,7 @@ def Cdeblend(input: vs.VideoNode, omode: int = 0, bthresh: float = 0.1, mthresh:
                        1)
 
         if omode != 4:
-            return clip[0:2] + clip[2+current:]
+            return preproc[current]
         else:
             text = f'{min(-Cbp1, Cbc0) if Cbc0 > 0 and Cbp1 < 0 else 0.0}{" -> BLEND!!" if min(-Cbp1, Cbc0) >= bthresh else " "}'
             return core.text.Text(clip, text)
@@ -5407,7 +5410,8 @@ def Cdeblend(input: vs.VideoNode, omode: int = 0, bthresh: float = 0.1, mthresh:
     # process
     blendclip = input if dclip is None else dclip
     blendclip = mvf.GetPlane(blendclip, 0)
-    blendclip = core.median.TemporalMedian(blendclip, radius=1) # type: ignore
+    if fnr:
+        blendclip = core.median.TemporalMedian(blendclip, radius=1) # type: ignore
     blendclip = core.resize.Bilinear(blendclip, int(blendclip.width * 0.125 / xr) * 8, int(blendclip.height * 0.125 / yr) * 8)
 
     diff = core.std.MakeDiff(blendclip, blendclip[1:])
@@ -5454,7 +5458,10 @@ def Cdeblend(input: vs.VideoNode, omode: int = 0, bthresh: float = 0.1, mthresh:
 
     last = core.std.FrameEval(input, functools.partial(evaluate, clip=input, core=core), prop_src=[Cdiff, Cbval])
 
-    recl = haf_ChangeFPS(haf_ChangeFPS(last, last.fps_num * 2, last.fps_den * 2), last.fps_num, last.fps_den).std.Cache(make_linear=True)
+    recl = haf_ChangeFPS(haf_ChangeFPS(last, last.fps_num * 2, last.fps_den * 2), last.fps_num, last.fps_den)
+
+    if not _is_api4:
+        recl = recl.std.Cache(make_linear=True)
 
     return recl
 
