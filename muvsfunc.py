@@ -5281,7 +5281,8 @@ def YAHRmask(clp: vs.VideoNode, expand: float = 5, warpdepth: int = 32, blur: in
 
 def Cdeblend(input: vs.VideoNode, omode: int = 0, bthresh: float = 0.1, mthresh: float = 0.6,
              xr: float = 1.5, yr: float = 2.0, fnr: bool = False,
-             dclip: Optional[vs.VideoNode] = None
+             dclip: Optional[vs.VideoNode] = None,
+             sequential: Optional[bool] = None
              ) -> vs.VideoNode:
     """A simple blend replacing function like unblend or removeblend
 
@@ -5325,13 +5326,12 @@ def Cdeblend(input: vs.VideoNode, omode: int = 0, bthresh: float = 0.1, mthresh:
             This clip is only used for the blend detection and not for output.
             Must be a YUV/Gray clip and must be of the same number of frames as "input".
             Default: "input".
+
+        sequential: (bool) Experimental support for sequential processing.
+            Default: False
     """
 
     funcName = 'Cdeblend'
-
-    if _is_api4:
-        import warnings
-        warnings.warn("this function may produce visible incorrect output")
 
     # check
     if not isinstance(input, vs.VideoNode):
@@ -5346,6 +5346,13 @@ def Cdeblend(input: vs.VideoNode, omode: int = 0, bthresh: float = 0.1, mthresh:
 
         if dclip.num_frames != input.num_frames:
             raise TypeError(f'{funcName}: "dclip" must of the same number of frames as "input"!')
+
+    if sequential is None:
+        sequential = False
+
+    if not sequential:
+        import warnings
+        warnings.warn("this function may produce visible incorrect output")
 
     # coefficients
     # Cbp3 = 128.0 if bthresh > 0 else 2.0
@@ -5407,6 +5414,84 @@ def Cdeblend(input: vs.VideoNode, omode: int = 0, bthresh: float = 0.1, mthresh:
             text = f'{min(-Cbp1, Cbc0) if Cbc0 > 0 and Cbp1 < 0 else 0.0}{" -> BLEND!!" if min(-Cbp1, Cbc0) >= bthresh else " "}'
             return core.text.Text(clip, text)
 
+    def evaluate_seq(n: int, f: List[vs.VideoFrame], clip: vs.VideoNode, core: vs.Core, real_n: int) -> vs.VideoNode:
+        # nonlocal Cdp3, Cdp2, Cbp3
+        # nonlocal Cdp1, Cdc0, Cdn1, Cbp2, Cbp1, Cbc0, Cbn1, Cbn2, current
+
+        Cdiff = f[0].props["PlaneMAE"] * 255 # type: ignore
+        Cbval = f[1].props["PlaneMean"] * 255 # type: ignore
+
+        if real_n > 0:
+            state = f[2].props
+            Cdp1 = state["Cdp1"]
+            Cdc0 = state["Cdc0"]
+            Cdn1 = state["Cdn1"]
+            Cbp2 = state["Cbp2"]
+            Cbp1 = state["Cbp1"]
+            Cbc0 = state["Cbc0"]
+            Cbn1 = state["Cbn1"]
+            Cbn2 = state["Cbn2"]
+            current = state["current"]
+        else:
+            # coefficients
+            # Cbp3 = 128.0 if bthresh > 0 else 2.0
+            Cbp2 = 128.0 if bthresh > 0 else 2.0
+            Cbp1 = 128.0 if bthresh > 0 else 2.0
+            Cbc0 = 128.0 if bthresh > 0 else 2.0
+            Cbn1 = 128.0 if bthresh > 0 else 2.0
+            Cbn2 = 128.0 if bthresh > 0 else 2.0
+
+            # Cdp3 = mthresh * 0.5
+            # Cdp2 = mthresh * 0.5
+            Cdp1 = mthresh * 0.5
+            Cdc0 = mthresh * 0.5
+            Cdn1 = mthresh * 0.5
+
+            current = 0 
+
+        # Cdp3 = Cdp2
+        # Cdp2 = Cdp1
+        Cdp1 = Cdc0
+        Cdc0 = Cdn1 if omode > 1 else Cdiff # type: ignore
+        Cdn1 = Cdiff # type: ignore
+
+        # Cbp3 = Cbp2
+        Cbp2 = Cbp1
+        Cbp1 = Cbc0
+        Cbc0 = Cbn1 if omode > 1 else (0.0 if Cdc0 < mthresh else (Cbval - Cbn2) / ((max(Cdc0, Cdp1) + mthresh) ** 0.8)) # type: ignore
+        Cbn1 = 0.0 if (Cdc0 < mthresh or Cdn1 < mthresh) else (Cbval - Cbn2) / ((max(Cdc0, Cdp1) + mthresh) ** 0.8) # type: ignore
+        Cbn2 = Cbval # type: ignore
+
+        current = (1 if ((Cbn1 < -bthresh and Cbc0 > bthresh) or (Cbn1 < 0 and Cbc0 > 0 and Cbc0 + Cbp1 > 0 and Cbc0 + Cbp1 + Cbp2 > 0)) else
+                   0 if ((Cbc0 < -bthresh and Cbp1 > bthresh) or (Cbc0 < 0 and Cbc0 + Cbn1 < 0 and Cbp1 > 0 and Cbp1 + Cbp2 > 0)) else
+                   (2 if Cbn1 > 0 else 1) if current == -2 else
+                   current - 1)
+
+        if omode == 2:
+            current = (-1 if min(-Cbp1, Cbc0 + Cbn1) > bthresh and abs(Cbn1) > abs(Cbc0) else
+                       1 if min(-Cbp2 - Cbp1, Cbc0) > bthresh and abs(Cbp2) > abs(Cbp1) else
+                       -1 if min(-Cbp1, Cbc0) > bthresh else
+                       0)
+
+        if omode <= 1:
+            current = (0 if min(-Cbp1, Cbc0) < bthresh else
+                       -1 if omode == 0 else
+                       1)
+
+        if omode != 4:
+            ret = preproc[current][real_n]
+        else:
+            text = f'{min(-Cbp1, Cbc0) if Cbc0 > 0 and Cbp1 < 0 else 0.0}{" -> BLEND!!" if min(-Cbp1, Cbc0) >= bthresh else " "}'
+            ret = core.text.Text(clip, text)
+
+        kwargs = dict(Cdp1=Cdp1, Cdc0=Cdc0, Cdn1=Cdn1, Cbp2=Cbp2, Cbp1=Cbp1, Cbc0=Cbc0, Cbn1=Cbn1, Cbn2=Cbn2, current=current)
+        if hasattr(core.std, "SetFrameProps"):
+            return core.std.SetFrameProps(ret, **kwargs)
+        else:
+            for k, v in kwargs.items():
+                ret = core.std.SetFrameProp(ret, prop=k, intval=v)
+            return ret
+
     # process
     blendclip = input if dclip is None else dclip
     blendclip = mvf.GetPlane(blendclip, 0)
@@ -5456,7 +5541,18 @@ def Cdeblend(input: vs.VideoNode, omode: int = 0, bthresh: float = 0.1, mthresh:
         # AverageLuma(mask)
         Cbval = mvf.PlaneStatistics(mask, mean=True, mad=False, var=False, std=False, rms=False)
 
-    last = core.std.FrameEval(input, functools.partial(evaluate, clip=input, core=core), prop_src=[Cdiff, Cbval])
+    if sequential:
+        states = []
+        for n, (input_frame, Cdiff_frame, Cbval_frame) in enumerate(zip(input, Cdiff, Cbval)):
+            state = core.std.FrameEval(
+                input_frame, 
+                functools.partial(evaluate_seq, clip=input_frame, core=core, real_n=n), 
+                prop_src=[Cdiff_frame, Cbval_frame] + ([] if n == 0 else [state])
+            )
+            states.append(state)
+        last = core.std.Splice(states)
+    else:
+        last = core.std.FrameEval(input, functools.partial(evaluate, clip=input, core=core), prop_src=[Cdiff, Cbval])
 
     recl = haf_ChangeFPS(haf_ChangeFPS(last, last.fps_num * 2, last.fps_den * 2), last.fps_num, last.fps_den)
 
