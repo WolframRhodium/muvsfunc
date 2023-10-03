@@ -5414,7 +5414,10 @@ def Cdeblend(input: vs.VideoNode, omode: int = 0, bthresh: float = 0.1, mthresh:
             text = f'{min(-Cbp1, Cbc0) if Cbc0 > 0 and Cbp1 < 0 else 0.0}{" -> BLEND!!" if min(-Cbp1, Cbc0) >= bthresh else " "}'
             return core.text.Text(clip, text)
 
-    def evaluate_seq(n: int, f: List[vs.VideoFrame], clip: vs.VideoNode, core: vs.Core, real_n: int) -> vs.VideoNode:
+    def evaluate_seq(
+        n: int, f: List[vs.VideoFrame], clip: vs.VideoNode, core: vs.Core, 
+        real_n: int, input: vs.VideoNode
+    ) -> vs.VideoNode:
         # nonlocal Cdp3, Cdp2, Cbp3
         # nonlocal Cdp1, Cdc0, Cdn1, Cbp2, Cbp1, Cbc0, Cbn1, Cbn2, current
 
@@ -5479,7 +5482,7 @@ def Cdeblend(input: vs.VideoNode, omode: int = 0, bthresh: float = 0.1, mthresh:
                        1)
 
         if omode != 4:
-            ret = preproc[current][real_n]
+            ret = input[min(max(0, real_n + current), input.num_frames - 1)]
         else:
             text = f'{min(-Cbp1, Cbc0) if Cbc0 > 0 and Cbp1 < 0 else 0.0}{" -> BLEND!!" if min(-Cbp1, Cbc0) >= bthresh else " "}'
             ret = core.text.Text(clip, text)
@@ -5546,7 +5549,7 @@ def Cdeblend(input: vs.VideoNode, omode: int = 0, bthresh: float = 0.1, mthresh:
         for n, (input_frame, Cdiff_frame, Cbval_frame) in enumerate(zip(input, Cdiff, Cbval)):
             state = core.std.FrameEval(
                 input_frame, 
-                functools.partial(evaluate_seq, clip=input_frame, core=core, real_n=n), 
+                functools.partial(evaluate_seq, clip=input_frame, core=core, real_n=n, input=input), 
                 prop_src=[Cdiff_frame, Cbval_frame] + ([] if n == 0 else [state])
             )
             states.append(state)
