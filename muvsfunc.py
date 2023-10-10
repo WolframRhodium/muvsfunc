@@ -5322,7 +5322,7 @@ def Cdeblend(input: vs.VideoNode, omode: int = 0, bthresh: float = 0.1, mthresh:
             (speed decreasing is not the only negative effect).
             Default: False
 
-        dclip: (clip) The detectionclip can be set to improve the blend detection (cleaning the clip before).
+        dclip: (clip) The detection clip can be set to improve the blend detection (cleaning the clip before).
             This clip is only used for the blend detection and not for output.
             Must be a YUV/Gray clip and must be of the same number of frames as "input".
             Default: "input".
@@ -6757,7 +6757,8 @@ def SSFDeband(
     smooth_taps: Union[int, Sequence[int]] = 2,
     edge_taps: Union[int, Sequence[int]] = 3,
     stride: Union[int, Sequence[int]] = 3,
-    planes: PlanesType = None
+    planes: PlanesType = None,
+    ref: Optional[vs.VideoNode] = None
 ) -> vs.VideoNode:
     """Selective sparse filter debanding in VapourSynth
 
@@ -6785,6 +6786,9 @@ def SSFDeband(
         planes: (int []) Whether to process the corresponding plane. By default, every plane will be processed.
             The unprocessed planes will be copied from "clip".
 
+        ref: (clip). Externally provided clip for banding detection, must be of the same shape as "clip".
+            Default is None.
+
     Ref:
         [1] Song, Q., Su, G. M., & Cosman, P. C. (2016, September).
             Hardware-efficient debanding and visual enhancement filter for inverse tone mapped high dynamic range images and videos.
@@ -6796,6 +6800,13 @@ def SSFDeband(
 
     if not isinstance(clip, vs.VideoNode):
         raise TypeError(f'{funcName}: "clip" must be a clip!')
+
+    if ref is not None:
+        if not isinstance(ref, vs.VideoNode):
+            raise TypeError(f'{funcName}: "ref" must be a clip!')
+
+        if ref.width != clip.width or ref.height != clip.height:
+            raise TypeError(f'{funcName}: "ref" must be of the same size as "clip"!')
 
     def to_list(x):
         if isinstance(x, abc.Sequence):
@@ -6818,20 +6829,23 @@ def SSFDeband(
     elif isinstance(planes, int):
         planes = [planes]
 
-    def get_expr(thr: float, smooth_taps: int, edge_taps: int, stride: int, is_vertical: bool):
+    def get_expr(thr: float, smooth_taps: int, edge_taps: int, stride: int, is_vertical: bool, smooth_var: str):
         if thr <= 0 or smooth_taps <= 1 or edge_taps <= 0 or stride == 0:
             return ""
 
         isclose = lambda x, thr=thr: f"x {x} - abs {thr} <"
 
-        generate = lambda taps, stride=stride: (
-            (f"x[0,{i * stride}]" if is_vertical else f"x[{i * stride},0]")
+        generate = lambda taps, stride=stride, var="x": (
+            (f"{var}[0,{i * stride}]" if is_vertical else f"{var}[{i * stride},0]")
             for i in range(-taps, taps+1)
         )
 
         mask_expr = functools.reduce(lambda x, y: f"{x} {y} and", map(isclose, generate(taps=edge_taps)))
-        smooth_expr = functools.reduce(lambda x, y: f"{x} {y} +", generate(taps=smooth_taps)) + f" {2 * smooth_taps + 1} /"
-        return f"{mask_expr} {smooth_expr} x ?"
+        smooth_expr = functools.reduce(
+            lambda x, y: f"{x} {y} +", 
+            generate(taps=smooth_taps, var=smooth_var)
+        ) + f" {2 * smooth_taps + 1} /"
+        return f"{mask_expr} {smooth_expr} {smooth_var} ?"
 
     vrt_exprs = [(
             get_expr(
@@ -6839,12 +6853,13 @@ def SSFDeband(
                 smooth_taps=smooth_taps[plane],
                 edge_taps=edge_taps[plane],
                 stride=stride[plane],
-                is_vertical=True
+                is_vertical=True,
+                smooth_var="y" if ref is not None else "x"
             )
             if plane in planes else ""
         ) for plane in range(clip.format.num_planes)
     ]
-    vrt_deband = core.akarin.Expr(clip, vrt_exprs)
+    vrt_deband = core.akarin.Expr(([ref] if ref is not None else []) + [clip], vrt_exprs)
 
     hrz_exprs = [(
             get_expr(
@@ -6852,12 +6867,13 @@ def SSFDeband(
                 smooth_taps=smooth_taps[plane],
                 edge_taps=edge_taps[plane],
                 stride=stride[plane],
-                is_vertical=False
+                is_vertical=False,
+                smooth_var="y" if ref is not None else "x"
             )
             if plane in planes else ""
         ) for plane in range(clip.format.num_planes)
     ]
-    hrz_deband = core.akarin.Expr(vrt_deband, hrz_exprs)
+    hrz_deband = core.akarin.Expr(([ref] if ref is not None else []) + [vrt_deband], hrz_exprs)
 
     return hrz_deband
 
