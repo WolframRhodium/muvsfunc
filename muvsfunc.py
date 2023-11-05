@@ -5284,7 +5284,8 @@ def YAHRmask(clp: vs.VideoNode, expand: float = 5, warpdepth: int = 32, blur: in
 def Cdeblend(input: vs.VideoNode, omode: int = 0, bthresh: float = 0.1, mthresh: float = 0.6,
              xr: float = 1.5, yr: float = 2.0, fnr: bool = False,
              dclip: Optional[vs.VideoNode] = None,
-             sequential: Optional[bool] = None
+             sequential: Optional[bool] = None,
+             preroll: int = 14
              ) -> vs.VideoNode:
     """A simple blend replacing function like unblend or removeblend
 
@@ -5331,6 +5332,11 @@ def Cdeblend(input: vs.VideoNode, omode: int = 0, bthresh: float = 0.1, mthresh:
 
         sequential: (bool) Experimental support for sequential processing.
             Default: False
+
+        preroll: (int) How many frames before the current one metrics are computed for.
+            Alternative to true sequential processing.
+            Must be 1 or bigger, consistent results start around 14.
+            Default: 14.
     """
 
     funcName = 'Cdeblend'
@@ -5352,63 +5358,55 @@ def Cdeblend(input: vs.VideoNode, omode: int = 0, bthresh: float = 0.1, mthresh:
     if sequential is None:
         sequential = False
 
-    if not sequential:
-        import warnings
-        warnings.warn("this function may produce visible incorrect output")
-
-    # coefficients
-    # Cbp3 = 128.0 if bthresh > 0 else 2.0
-    Cbp2 = 128.0 if bthresh > 0 else 2.0
-    Cbp1 = 128.0 if bthresh > 0 else 2.0
-    Cbc0 = 128.0 if bthresh > 0 else 2.0
-    Cbn1 = 128.0 if bthresh > 0 else 2.0
-    Cbn2 = 128.0 if bthresh > 0 else 2.0
-
-    # Cdp3 = mthresh * 0.5
-    # Cdp2 = mthresh * 0.5
-    Cdp1 = mthresh * 0.5
-    Cdc0 = mthresh * 0.5
-    Cdn1 = mthresh * 0.5
-
-    current = 0
-
     preproc = {i: input[0:2] + input[2+i:] for i in range(-2, 3)}
 
     def evaluate(n: int, f: List[vs.VideoFrame], clip: vs.VideoNode, core: vs.Core) -> vs.VideoNode:
-        # nonlocal Cdp3, Cdp2, Cbp3
-        nonlocal Cdp1, Cdc0, Cdn1, Cbp2, Cbp1, Cbc0, Cbn1, Cbn2, current
+        # coefficients
+        Cbp2 = 128.0 if bthresh > 0 else 2.0
+        Cbp1 = 128.0 if bthresh > 0 else 2.0
+        Cbc0 = 128.0 if bthresh > 0 else 2.0
+        Cbn1 = 128.0 if bthresh > 0 else 2.0
+        Cbn2 = 128.0 if bthresh > 0 else 2.0
 
-        Cdiff = f[0].props["PlaneMAE"] * 255 # type: ignore
-        Cbval = f[1].props["PlaneMean"] * 255 # type: ignore
+        Cdp1 = mthresh * 0.5
+        Cdc0 = mthresh * 0.5
+        Cdn1 = mthresh * 0.5
 
-        # Cdp3 = Cdp2
-        # Cdp2 = Cdp1
-        Cdp1 = Cdc0
-        Cdc0 = Cdn1 if omode > 1 else Cdiff # type: ignore
-        Cdn1 = Cdiff # type: ignore
+        current = 0
 
-        # Cbp3 = Cbp2
-        Cbp2 = Cbp1
-        Cbp1 = Cbc0
-        Cbc0 = Cbn1 if omode > 1 else (0.0 if Cdc0 < mthresh else (Cbval - Cbn2) / ((max(Cdc0, Cdp1) + mthresh) ** 0.8)) # type: ignore
-        Cbn1 = 0.0 if (Cdc0 < mthresh or Cdn1 < mthresh) else (Cbval - Cbn2) / ((max(Cdc0, Cdp1) + mthresh) ** 0.8) # type: ignore
-        Cbn2 = Cbval # type: ignore
+        def computestate(Cdiff: float, Cbval: float):
+            nonlocal Cdp1, Cdc0, Cdn1, Cbp2, Cbp1, Cbc0, Cbn1, Cbn2, current
+            
+            Cdp1 = Cdc0
+            Cdc0 = Cdn1 if omode > 1 else Cdiff # type: ignore
+            Cdn1 = Cdiff # type: ignore
 
-        current = (1 if ((Cbn1 < -bthresh and Cbc0 > bthresh) or (Cbn1 < 0 and Cbc0 > 0 and Cbc0 + Cbp1 > 0 and Cbc0 + Cbp1 + Cbp2 > 0)) else
-                   0 if ((Cbc0 < -bthresh and Cbp1 > bthresh) or (Cbc0 < 0 and Cbc0 + Cbn1 < 0 and Cbp1 > 0 and Cbp1 + Cbp2 > 0)) else
-                   (2 if Cbn1 > 0 else 1) if current == -2 else
-                   current - 1)
+            Cbp2 = Cbp1
+            Cbp1 = Cbc0
+            Cbc0 = Cbn1 if omode > 1 else (0.0 if Cdc0 < mthresh else (Cbval - Cbn2) / ((max(Cdc0, Cdp1) + mthresh) ** 0.8)) # type: ignore
+            Cbn1 = 0.0 if (Cdc0 < mthresh or Cdn1 < mthresh) else (Cbval - Cbn2) / ((max(Cdc0, Cdp1) + mthresh) ** 0.8) # type: ignore
+            Cbn2 = Cbval # type: ignore
 
-        if omode == 2:
-            current = (-1 if min(-Cbp1, Cbc0 + Cbn1) > bthresh and abs(Cbn1) > abs(Cbc0) else
-                       1 if min(-Cbp2 - Cbp1, Cbc0) > bthresh and abs(Cbp2) > abs(Cbp1) else
-                       -1 if min(-Cbp1, Cbc0) > bthresh else
-                       0)
+            current = (1 if ((Cbn1 < -bthresh and Cbc0 > bthresh) or (Cbn1 < 0 and Cbc0 > 0 and Cbc0 + Cbp1 > 0 and Cbc0 + Cbp1 + Cbp2 > 0)) else
+                       0 if ((Cbc0 < -bthresh and Cbp1 > bthresh) or (Cbc0 < 0 and Cbc0 + Cbn1 < 0 and Cbp1 > 0 and Cbp1 + Cbp2 > 0)) else
+                       (2 if Cbn1 > 0 else 1) if current == -2 else
+                       current - 1)
 
-        if omode <= 1:
-            current = (0 if min(-Cbp1, Cbc0) < bthresh else
-                       -1 if omode == 0 else
-                       1)
+            if omode == 2:
+                current = (-1 if min(-Cbp1, Cbc0 + Cbn1) > bthresh and abs(Cbn1) > abs(Cbc0) else
+                           1 if min(-Cbp2 - Cbp1, Cbc0) > bthresh and abs(Cbp2) > abs(Cbp1) else
+                           -1 if min(-Cbp1, Cbc0) > bthresh else
+                           0)
+
+            if omode <= 1:
+                current = (0 if min(-Cbp1, Cbc0) < bthresh else
+                           -1 if omode == 0 else
+                           1)
+
+        for i in range(max(0, preroll - n), preroll + 1):
+            Cdiff = f[i * 2 + 0].props["PlaneMAE"] * 255 # type: ignore
+            Cbval = f[i * 2 + 1].props["PlaneMean"] * 255 # type: ignore
+            computestate(Cdiff, Cbval)
 
         if omode != 4:
             return preproc[current]
@@ -5557,7 +5555,12 @@ def Cdeblend(input: vs.VideoNode, omode: int = 0, bthresh: float = 0.1, mthresh:
             states.append(state)
         last = core.std.Splice(states)
     else:
-        last = core.std.FrameEval(input, functools.partial(evaluate, clip=input, core=core), prop_src=[Cdiff, Cbval])
+        prop_src = []
+        for i in range(preroll, 0, -1):
+            prop_src.extend([Cdiff[0] * i + Cdiff, Cbval[0] * i + Cbval])
+        prop_src.extend([Cdiff, Cbval])
+            
+        last = core.std.FrameEval(input, functools.partial(evaluate, clip=input, core=core), prop_src=prop_src)
 
     recl = haf_ChangeFPS(haf_ChangeFPS(last, last.fps_num * 2, last.fps_den * 2), last.fps_num, last.fps_den)
 
