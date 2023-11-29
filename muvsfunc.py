@@ -8248,8 +8248,9 @@ def srestore(
     elif dclip.format.color_family != vs.YUV:
         raise vs.Error('srestore: only YUV format is supported')
 
-    neutral = 1 << (source.format.bits_per_sample - 1)
-    peak = (1 << source.format.bits_per_sample) - 1
+    bits = source.format.bits_per_sample
+    neutral = 1 << (bits - 1)
+    peak = (1 << bits) - 1
 
     ###### parameters & other necessary vars ######
     srad = math.sqrt(abs(speed)) * 4 if speed is not None and abs(speed) >= 1 else 12
@@ -8342,7 +8343,7 @@ def srestore(
         bmask = core.std.Expr([qmask1, qmask2], expr=[f'x {neutral} - dup * dup y {neutral} - dup * + / {peak} *', ''])
         expr = (
             'x 2 * y < x {i} < and 0 y 2 * x < y {i} < and {peak} x x y + / {j} * {k} + ? ?'
-            .format(i=scale(4, peak), peak=peak, j=scale(200, peak), k=scale(28, peak))
+            .format(i=scale(4, bits), peak=peak, j=scale(200, bits), k=scale(28, bits))
         )
         dmask = core.std.Expr([diffm, diffm.std.Trim(first=2)], expr=[expr, ''])
         pmask = core.std.Expr([dmask, bmask], expr=[f'y 0 > y {peak} < and x 0 = x {peak} = or and x y ?', ''])
