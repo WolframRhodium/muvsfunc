@@ -5929,6 +5929,7 @@ class rescale:
 
     """
 
+    @staticmethod
     def _get_descale_args(W: int, H: int, width: Union[float, int], height: Union[float, int], base_height: int = None):
         if base_height is None:
             width, height = round(width), round(height)
@@ -5952,6 +5953,7 @@ class rescale:
             "src_height": src_height,
         }
 
+    @staticmethod
     def _get_descale_args_pro(width: Union[float, int], height: Union[float, int], base_height: int = None, base_width: int = None):
         if base_height is None:
             height = round(height)
@@ -5979,6 +5981,7 @@ class rescale:
             "src_height": src_height,
         }
 
+    @staticmethod
     def Upscale(clip: vs.VideoNode, width: int, height: int, kernel: str = "bicubic", taps: int = 3, b: float = 0.0, c: float = 0.5,
         src_left: float = None, src_top: float = None, src_width: float = None, src_height: float = None) -> vs.VideoNode:
         upscaler = getattr(core.resize, kernel.capitalize())
@@ -6055,21 +6058,27 @@ class rescale:
                     raise TypeError("Your upscaler must have resize-like (src_left, src_width) or fmtc-like (sx, sw) argument names")
                 return upscaler(clip, width, height, **kwargs)
 
+    @staticmethod
     def Bilinear():
         return rescale.Rescaler(kernel="bilinear")
 
+    @staticmethod
     def Bicubic(b: float = 0.0, c: float = 0.5):
         return rescale.Rescaler(kernel="bicubic", b=b, c=c)
 
+    @staticmethod
     def Lanczos(taps: int = 3):
         return rescale.Rescaler(kernel="lanczos", taps=taps)
 
+    @staticmethod
     def Spline16():
         return rescale.Rescaler(kernel="spline16")
 
+    @staticmethod
     def Spline36():
         return rescale.Rescaler(kernel="spline36")
 
+    @staticmethod
     def Spline64():
         return rescale.Rescaler(kernel="spline64")
 
