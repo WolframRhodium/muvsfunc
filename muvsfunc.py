@@ -6147,7 +6147,8 @@ def getnative(
         vertical_only: (bool)
             Default is False
 
-        diff_func: (function) Function (clip: VideoNode, rescaled: VideoNode) -> VideoNode that calculates the diff map.
+        diff_func: (function) Function that computes the metric between the source image and the rescaled image.
+            The value is stored in a frame property specified by \`diff_prop\`.
             Default is None.
 
         diff_prop: (str) Property name that diff_func writes to.
