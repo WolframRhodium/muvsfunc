@@ -22,6 +22,7 @@ import vapoursynth as vs
 from vapoursynth import core
 import muvsfunc as muf
 import mvsfunc as mvf
+import typing
 
 _is_api4: bool = hasattr(vs, "__api_version__") and vs.__api_version__.api_major == 4
 
@@ -85,8 +86,8 @@ def freq_merge(src, flt, fun=None, **fun_args):
     if fun is None or not callable(fun):
         fun = gauss
 
-    low_src = func(src, **fun_args)
-    low_flt = func(flt, **fun_args)
+    low_src = fun(src, **fun_args)
+    low_flt = fun(flt, **fun_args)
     return core.std.Expr([low_src, flt, low_flt], ['y z - x +'])
 
 
@@ -127,7 +128,7 @@ def detail_enhancement(clip, guidance=None, iter=3, radius=4, regulation=0.0005,
 
     """
 
-    return muf.DeFilter(clip, muf.GuidedFilter, guidance=guidance, radius=radius, regulation=regulation, fast=fast, iter=iter, **args)
+    return muf.DeFilter(clip, muf.GuidedFilter, guidance=guidance, radius=radius, regulation=regulation, fast=fast, iteration=iter, **args)
 
 
 def SSR(clip, sigma=50, full=None, **args):
@@ -416,7 +417,7 @@ def GPA(clip, sigmaS=3, sigmaR=0.15, mode=0, iteration=0, eps=1e-3, **depth_args
 
     for i in range(1, iteration+1):
         sqrt_i = math.sqrt(i)
-        inv_sqrt_i = 1 / sqrt_i 
+        inv_sqrt_i = 1 / sqrt_i
         Q = core.std.Expr([Q, G, Fbar], 'x y z * +')
         F = core.std.Expr([H, F], f'x y * {inv_sqrt_i} *')
         Fbar = Filter(F)
@@ -581,8 +582,8 @@ def fade(clip, start=0, end=None, mode='in', base=None):
     return core.std.FrameEval(clip, functools.partial(fade_core, clip=clip, start=start, end=end, mode=mode, base=base))
 
 
-def fast_mandelbrot(width=1920, height=1280, iterations=50, 
-    real_range=(-2, 1), imag_range=(-1, 1), c=0+0j, julia_set=False):
+def fast_mandelbrot(width=1920, height=1280, iterations=50,
+    real_range=(-2, 1), imag_range=(-1, 1), c=0+0j, julia_set=False, backend=None):
 
     import array
 
@@ -616,13 +617,22 @@ def fast_mandelbrot(width=1920, height=1280, iterations=50,
 
     ones = core.std.BlankClip(format=vs.GRAYS, width=width, height=height, length=1, color=1)
 
-    z_real = core.std.ModifyFrame(
-        ones, ones, 
-        functools.partial(meshgrid_core, horizontal=True, low=real_range[0], high=real_range[1]))
+    if hasattr(core, "akarin"):
+        features = core.akarin.Version()["expr_features"]
 
-    z_imag = core.std.ModifyFrame(
-        ones, ones, 
-        functools.partial(meshgrid_core, horizontal=False, low=imag_range[0], high=imag_range[1]))
+        if b"X" in features and b"width" in features:
+            z_real = core.akarin.Expr([ones], f"{real_range[1] - real_range[0]} X * width 1 - / {real_range[0]} +")
+        else:
+            z_real = core.std.ModifyFrame(
+                ones, ones,
+                functools.partial(meshgrid_core, horizontal=True, low=real_range[0], high=real_range[1]))
+
+        if b"Y" in features and b"height" in features:
+            z_imag = core.akarin.Expr([ones], f"{imag_range[0] - imag_range[1]} Y * height 1 - / {imag_range[1]} +")
+        else:
+            z_imag = core.std.ModifyFrame(
+                ones, ones,
+                functools.partial(meshgrid_core, horizontal=False, low=imag_range[0], high=imag_range[1]))
 
     if julia_set:
         inner = (
@@ -648,4 +658,11 @@ def fast_mandelbrot(width=1920, height=1280, iterations=50,
 
         expr = f"{c.real} {c.imag} z {inner * iterations} 1 swap2 ? 1 swap2 ?"
 
-    return core.std.Expr([z_real, z_imag, ones], expr)
+    if backend is None:
+        if hasattr(core, "akarin"):
+            return core.akarin.Expr([z_real, z_imag, ones], expr)
+        else:
+            return core.std.Expr([z_real, z_imag, ones], expr)
+    else:
+        return backend([z_real, z_imag, ones], expr)
+

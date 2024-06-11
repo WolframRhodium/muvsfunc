@@ -176,8 +176,11 @@ def _build_repr() -> Callable[..., str]:
         elif isinstance(obj, collections.abc.Sequence) and not isinstance(obj, (str, bytes, bytearray)):
             return f"[{', '.join(closure(elem, default_prefix) for elem in obj)}]"
 
-        elif isinstance(obj, (vs.ColorFamily, vs.PresetFormat, vs.SampleType)):
-            return f"vs.{obj!s}"
+        elif isinstance(obj, (
+            vs.ColorFamily, vs.SampleType,
+            getattr(vs, "PresetFormat", getattr(vs, "PresetVideoFormat", None))
+        )):
+            return f"vs.{obj.name}"
 
         elif isinstance(obj, (vs.VideoFormat if _is_api4 else vs.Format)):
             arg_str = ', '.join(f"{k}={closure(v)}" for k, v in obj._as_dict().items())

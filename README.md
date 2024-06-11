@@ -5,8 +5,6 @@ Muonium's VapourSynth functions
 [VapourSynth](https://github.com/vapoursynth/vapoursynth) R39-R57
 
 ### Scripts
-- [havsfunc](https://github.com/HomeOfVapourSynthEvolution/havsfunc)
-
 - [mvsfunc](https://github.com/HomeOfVapourSynthEvolution/mvsfunc)
 
 - [nnedi3_resample](https://github.com/HomeOfVapourSynthEvolution/nnedi3_resample)
