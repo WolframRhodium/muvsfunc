@@ -6083,9 +6083,19 @@ class rescale:
         return rescale.Rescaler(kernel="spline64")
 
 
-def getnative(clip: vs.VideoNode, rescalers: Union[rescale.Rescaler, List[rescale.Rescaler]] = [rescale.Bicubic(0, 0.5)],
-    src_heights: Union[int, float, Sequence[int], Sequence[float]] = tuple(range(500, 1001)), base_height: int = None,
-    crop_size: int = 5, rt_eval: bool = True, dark: bool = True, ex_thr: float = 0.015, filename: str = None, vertical_only: bool = False) -> vs.VideoNode:
+def getnative(
+    clip: vs.VideoNode,
+    rescalers: Union[rescale.Rescaler, List[rescale.Rescaler]] = [rescale.Bicubic(0, 0.5)],
+    src_heights: Union[int, float, Sequence[int], Sequence[float]] = tuple(range(500, 1001)),
+    base_height: int = None,
+    crop_size: int = 5,
+    rt_eval: bool = True,
+    dark: bool = True,
+    ex_thr: float = 0.015,
+    filename: str = None,
+    vertical_only: bool = False,
+    norm_order: float = 1
+) -> vs.VideoNode:
     """Find the native resolution(s) of upscaled material (mostly anime)
 
     Modifyed from:
@@ -6127,6 +6137,12 @@ def getnative(clip: vs.VideoNode, rescalers: Union[rescale.Rescaler, List[rescal
 
         filename: (str) The filename of the output file.
             Default is None.
+
+        vertical_only: (bool)
+            Default is False
+
+        norm_order: (float) Order of the vector norm.
+            Default is 1.
 
     Examples:
         Assume that src is a one-plane GRAYS clip. You might get such a clip by
@@ -6208,6 +6224,14 @@ def getnative(clip: vs.VideoNode, rescalers: Union[rescale.Rescaler, List[rescal
     if base_height is not None:
         assert base_height > max(src_heights)
 
+    assert 0 < norm_order < float("inf")
+    if norm_order == 1:
+        norm_prolog = ""
+        norm_epilog = lambda x: x
+    else:
+        norm_prolog = f"{norm_order} pow"
+        norm_epilog = lambda x: x ** (1 / norm_order)
+
     if clip.num_frames > 1:
         mode = Mode.MULTI_FRAME
         assert len(src_heights) == 1 and len(rescalers) == 1, "1 src_height and 1 rescaler should be passed for verify mode."
@@ -6224,7 +6248,7 @@ def getnative(clip: vs.VideoNode, rescalers: Union[rescale.Rescaler, List[rescal
 
         def func_core(n: int, f: vs.VideoFrame, clip: vs.VideoNode) -> vs.VideoNode:
             # add eps to avoid getting 0 diff, which later messes up the graph.
-            data[n] = f.props.PlaneStatsAverage + 1e-9 # type: ignore
+            data[n] = norm_epilog(f.props.PlaneStatsAverage) + 1e-9 # type: ignore
 
             nonlocal remaining_frames
             remaining_frames[n] = 0
@@ -6360,7 +6384,7 @@ def getnative(clip: vs.VideoNode, rescalers: Union[rescale.Rescaler, List[rescal
                 rescaled = core.std.Splice([rescaler.rescale_pro(clip, src_height = src_height, base_height = base_height) for rescaler in rescalers])  # type: ignore
             clip = core.std.Loop(clip, len(rescalers))
 
-    diff = core.std.Expr([clip, rescaled], [f"x y - abs dup {ex_thr} > swap 0 ?"])
+    diff = core.std.Expr([clip, rescaled], [f"x y - abs dup {ex_thr} > swap {norm_prolog} 0 ?"])
 
     if crop_size > 0:
         diff = core.std.CropRel(diff, *([crop_size] * 4))
