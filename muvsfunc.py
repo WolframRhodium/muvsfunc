@@ -6083,6 +6083,11 @@ class rescale:
         return rescale.Rescaler(kernel="spline64")
 
 
+def getnative_diff(clip: vs.VideoNode, rescaled: vs.VideoNode, ex_thr: float = 0.015) -> vs.VideoNode:
+    return core.std.Expr([clip, rescaled], [f"x y - abs dup {ex_thr} > swap 0 ?"])
+
+
+
 def getnative(
     clip: vs.VideoNode,
     rescalers: Union[rescale.Rescaler, List[rescale.Rescaler]] = [rescale.Bicubic(0, 0.5)],
@@ -6094,7 +6099,8 @@ def getnative(
     ex_thr: float = 0.015,
     filename: str = None,
     vertical_only: bool = False,
-    norm_order: float = 1
+    diff_func: Optional[Callable[[vs.VideoNode, vs.VideoNode], vs.VideoNode]] = None,
+    diff_prop: str = "PlaneStatsAverage"
 ) -> vs.VideoNode:
     """Find the native resolution(s) of upscaled material (mostly anime)
 
@@ -6141,8 +6147,11 @@ def getnative(
         vertical_only: (bool)
             Default is False
 
-        norm_order: (float) Order of the vector norm.
-            Default is 1.
+        diff_func: (function) Function (clip: VideoNode, rescaled: VideoNode) -> VideoNode that calculates the diff map.
+            Default is None.
+
+        diff_prop: (str) Property name that diff_func writes to.
+            Default is "PlaneStatsAverage".
 
     Examples:
         Assume that src is a one-plane GRAYS clip. You might get such a clip by
@@ -6224,13 +6233,8 @@ def getnative(
     if base_height is not None:
         assert base_height > max(src_heights)
 
-    assert 0 < norm_order < float("inf")
-    if norm_order == 1:
-        norm_prolog = ""
-        norm_epilog = lambda x: x
-    else:
-        norm_prolog = f"{norm_order} pow"
-        norm_epilog = lambda x: x ** (1 / norm_order)
+    if diff_func is None:
+        diff_func = functools.partial(getnative_diff, ex_thr=ex_thr)
 
     if clip.num_frames > 1:
         mode = Mode.MULTI_FRAME
@@ -6248,7 +6252,7 @@ def getnative(
 
         def func_core(n: int, f: vs.VideoFrame, clip: vs.VideoNode) -> vs.VideoNode:
             # add eps to avoid getting 0 diff, which later messes up the graph.
-            data[n] = norm_epilog(f.props.PlaneStatsAverage) + 1e-9 # type: ignore
+            data[n] = f.props[diff_prop] + 1e-9 # type: ignore
 
             nonlocal remaining_frames
             remaining_frames[n] = 0
@@ -6384,7 +6388,7 @@ def getnative(
                 rescaled = core.std.Splice([rescaler.rescale_pro(clip, src_height = src_height, base_height = base_height) for rescaler in rescalers])  # type: ignore
             clip = core.std.Loop(clip, len(rescalers))
 
-    diff = core.std.Expr([clip, rescaled], [f"x y - abs dup {ex_thr} > swap {norm_prolog} 0 ?"])
+    diff = diff_func(clip, rescaled)
 
     if crop_size > 0:
         diff = core.std.CropRel(diff, *([crop_size] * 4))
