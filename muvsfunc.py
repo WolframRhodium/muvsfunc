@@ -6092,17 +6092,9 @@ def getnative_stats(clip: vs.VideoNode, rescaled: vs.VideoNode, ex_thr: float, c
     return core.std.PlaneStats(diff)
 
 
-def getnative(
-    clip: vs.VideoNode,
-    rescalers: Union[rescale.Rescaler, List[rescale.Rescaler]] = [rescale.Bicubic(0, 0.5)],
-    src_heights: Union[int, float, Sequence[int], Sequence[float]] = tuple(range(500, 1001)),
-    base_height: int = None,
-    crop_size: int = 5,
-    rt_eval: bool = True,
-    dark: bool = True,
-    ex_thr: float = 0.015,
-    filename: str = None,
-    vertical_only: bool = False,
+def getnative(clip: vs.VideoNode, rescalers: Union[rescale.Rescaler, List[rescale.Rescaler]] = [rescale.Bicubic(0, 0.5)],
+    src_heights: Union[int, float, Sequence[int], Sequence[float]] = tuple(range(500, 1001)), base_height: int = None,
+    crop_size: int = 5, rt_eval: bool = True, dark: bool = True, ex_thr: float = 0.015, filename: str = None, vertical_only: bool = False,
     stats_func: Optional[Callable[[vs.VideoNode, vs.VideoNode], vs.VideoNode]] = None,
     stats_prop: str = "PlaneStatsAverage"
 ) -> vs.VideoNode:
