@@ -6181,7 +6181,7 @@ def getnative(clip: vs.VideoNode, rescalers: Union[rescale.Rescaler, List[rescal
             Default is None.
 
         stats_prop: (str) Property name that "stats_func" writes to.
-            Default is "PlaneStatsAverage".
+            Default is "PlaneDiffMeasure".
 
     Examples:
         Assume that src is a one-plane GRAYS clip. You might get such a clip by
