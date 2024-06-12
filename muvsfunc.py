@@ -6256,6 +6256,17 @@ def getnative(
             res = muf.getnative(clip, rescalers=rescalers, src_heights=src_heights, stats_func=stats_func)
             res.set_output()
 
+        Customizing stats_func with SSIM (note that 1 means no diff):
+            from functools import partial
+            kwargs = dict(
+                rescalers=muf.rescale.Bicubic(1/3, 1/3),
+                src_heights=muf.arange(500, 1001, 1),
+                stats_func=muf.SSIM,
+                stats_prop="PlaneSSIM"
+            )
+            res = muf.getnative(clip, **kwargs)
+            res.set_output()
+
     Requirments:
         descale, matplotlib
     """
