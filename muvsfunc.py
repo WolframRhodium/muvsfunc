@@ -6112,7 +6112,8 @@ def measurediff(clip1: vs.VideoNode, clip2: vs.VideoNode, norm_order: int = 1, p
     diff_moment = core.std.PlaneStats(diff_moment)
 
     try:
-        return core.akarin.PropExpr(diff_moment, lambda: {propname: f"x.PlaneStatsAverage {1 / norm_order} pow"})
+        diff_moment = core.akarin.PropExpr(diff_moment, lambda: {propname: f"x.PlaneStatsAverage {1 / norm_order} pow"})
+        return core.std.RemoveFrameProps(diff_moment, [f"PlaneStats{s}" for s in ("Average", "Max", "Min")])
     except Exception:
         def calc_norm(n: int, f: vs.VideoFrame):
             fout = f.copy()
