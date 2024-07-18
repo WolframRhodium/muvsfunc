@@ -6275,6 +6275,7 @@ def getnative(
 
     import logging
     logging.getLogger('matplotlib').setLevel(logging.WARNING)
+    import numpy
     import matplotlib
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
