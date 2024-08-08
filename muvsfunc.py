@@ -6083,9 +6083,58 @@ class rescale:
         return rescale.Rescaler(kernel="spline64")
 
 
-def getnative_diff(clip: vs.VideoNode, rescaled: vs.VideoNode, ex_thr: float = 0.015) -> vs.VideoNode:
-    return core.std.Expr([clip, rescaled], [f"x y - abs dup {ex_thr} > swap 0 ?"])
+def measurediff(
+    clip1: vs.VideoNode,
+    clip2: vs.VideoNode,
+    norm_order: int = 1,
+    propname: str = "PlaneDiffMeasure",
+    ex_thr: float = 0.015,
+    crop_size: int = 5
+) -> vs.VideoNode:
+    '''
+    Calculate the p-norm for matrix of each frame of |clip1-clip2| and store the result in the frameprop.
+    The larger the index "norm_order" is, the more significantly the high-level errors play a role in the result.
 
+    Args:
+        clip1, clip2: Input clip, vs.GRAYS.
+
+        norm_order: (positive int) The index p of p-norm for matrix. Default is 1.
+
+        propname: (str) The name of Frameprop the result will be saved in.
+
+        crop_size: (int) Range of pixels around the border to be excluded in calculation.
+            Default is 5.
+
+        ex_thr: (float) Threshold for excluding little difference in calculation
+            Default is 0.015.
+    '''
+
+    assert isinstance(norm_order, int) and norm_order > 0
+    assert isinstance(clip1, vs.VideoNode) and clip1.format.id == vs.GRAYS
+    assert isinstance(clip2, vs.VideoNode) and clip2.format.id == vs.GRAYS
+
+    diff_moment = core.std.Expr([clip1, clip2], [f"x y - abs dup {ex_thr} > swap {norm_order} pow 0 ?"])
+
+    if crop_size > 0:
+        diff_moment = core.std.CropRel(diff_moment, *([crop_size] * 4))
+
+    diff_moment = core.std.PlaneStats(diff_moment)
+
+    unused_props = {f"PlaneStats{s}" for s in ("Average", "Max", "Min")}
+    unused_props.discard(propname)
+
+    try:
+        diff_moment = core.akarin.PropExpr(diff_moment, lambda: {propname: f"x.PlaneStatsAverage {1 / norm_order} pow"})
+        return core.std.RemoveFrameProps(diff_moment, list(unused_props))
+    except Exception:
+        def calc_norm(n: int, f: vs.VideoFrame):
+            fout = f.copy()
+            fout.props[propname] = f.props["PlaneStatsAverage"] ** (1 / norm_order)
+            for prop in unused_props:
+                del fout.props[prop]
+            return fout
+
+        return core.std.ModifyFrame(clip=diff_moment, clips=diff_moment, selector=calc_norm)
 
 
 def getnative(
@@ -6099,8 +6148,8 @@ def getnative(
     ex_thr: float = 0.015,
     filename: str = None,
     vertical_only: bool = False,
-    diff_func: Optional[Callable[[vs.VideoNode, vs.VideoNode], vs.VideoNode]] = None,
-    diff_prop: str = "PlaneStatsAverage"
+    stats_func: Optional[Callable[[vs.VideoNode, vs.VideoNode], vs.VideoNode]] = None,
+    stats_prop: str = "PlaneDiffMeasure"
 ) -> vs.VideoNode:
     """Find the native resolution(s) of upscaled material (mostly anime)
 
@@ -6144,15 +6193,15 @@ def getnative(
         filename: (str) The filename of the output file.
             Default is None.
 
-        vertical_only: (bool)
+        vertical_only: (bool) Only scale the frame in the vertical direction.
             Default is False
 
-        diff_func: (function) Function that computes the metric between the source image and the rescaled image.
-            The value is stored in a frame property specified by \`diff_prop\`.
+        stats_func: (function) Function that computes the metric between the source image and the rescaled image.
+            The value is stored in a frame property specified by "stats_prop".
             Default is None.
 
-        diff_prop: (str) Property name that diff_func writes to.
-            Default is "PlaneStatsAverage".
+        stats_prop: (str) Property name that "stats_func" writes to.
+            Default is "PlaneDiffMeasure".
 
     Examples:
         Assume that src is a one-plane GRAYS clip. You might get such a clip by
@@ -6201,6 +6250,24 @@ def getnative(
             res = muf.getnative(clip, rescalers=muf.rescale.Bicubic(1/3, 1/3), src_heights=714.7, base_height=720)
             res.set_output()
 
+        Customizing stats_func with measurediff:
+            from functools import partial
+            rescalers = muf.rescale.Bicubic(1/3, 1/3)
+            src_heights = muf.arange(500, 1001, 1)
+            stats_func = partial(muf.measurediff, norm_order=2)
+            res = muf.getnative(clip, rescalers=rescalers, src_heights=src_heights, stats_func=stats_func)
+            res.set_output()
+
+        Customizing stats_func with SSIM (note that 1 means no diff):
+            from functools import partial
+            kwargs = dict(
+                rescalers=muf.rescale.Bicubic(1/3, 1/3),
+                src_heights=muf.arange(500, 1001, 1),
+                stats_func=muf.SSIM,
+                stats_prop="PlaneSSIM"
+            )
+            res = muf.getnative(clip, **kwargs)
+            res.set_output()
 
     Requirments:
         descale, matplotlib
@@ -6208,6 +6275,7 @@ def getnative(
 
     import logging
     logging.getLogger('matplotlib').setLevel(logging.WARNING)
+    import numpy
     import matplotlib
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
@@ -6234,8 +6302,8 @@ def getnative(
     if base_height is not None:
         assert base_height > max(src_heights)
 
-    if diff_func is None:
-        diff_func = functools.partial(getnative_diff, ex_thr=ex_thr)
+    if stats_func is None:
+        stats_func = functools.partial(measurediff, ex_thr=ex_thr, crop_size=crop_size)
 
     if clip.num_frames > 1:
         mode = Mode.MULTI_FRAME
@@ -6253,7 +6321,7 @@ def getnative(
 
         def func_core(n: int, f: vs.VideoFrame, clip: vs.VideoNode) -> vs.VideoNode:
             # add eps to avoid getting 0 diff, which later messes up the graph.
-            data[n] = f.props[diff_prop] + 1e-9 # type: ignore
+            data[n] = f.props[stats_prop] + 1e-9 # type: ignore
 
             nonlocal remaining_frames
             remaining_frames[n] = 0
@@ -6389,12 +6457,7 @@ def getnative(
                 rescaled = core.std.Splice([rescaler.rescale_pro(clip, src_height = src_height, base_height = base_height) for rescaler in rescalers])  # type: ignore
             clip = core.std.Loop(clip, len(rescalers))
 
-    diff = diff_func(clip, rescaled)
-
-    if crop_size > 0:
-        diff = core.std.CropRel(diff, *([crop_size] * 4))
-
-    stats = core.std.PlaneStats(diff)
+    stats = stats_func(clip, rescaled)
 
     return output_statistics(stats, rescalers, src_heights, mode, dark)
 
