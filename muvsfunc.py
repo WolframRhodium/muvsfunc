@@ -6124,13 +6124,13 @@ def measurediff(
 
     try:
         diff_moment = core.akarin.PropExpr(diff_moment, lambda: {propname: f"x.PlaneStatsAverage {1 / norm_order} pow"})
-        return core.std.CopyFrameProps(clip1, diff_moment, "PlaneDiffMeasure")
+        return core.std.CopyFrameProps(clip1, diff_moment, propname)
     except Exception:
         def calc_norm(n: int, f: vs.VideoFrame):
             fout = f.copy()
             fout.props[propname] = f.props["PlaneStatsAverage"] ** (1 / norm_order)
             return fout
-        return core.std.CopyFrameProps(clip1, core.std.ModifyFrame(clip=diff_moment, clips=diff_moment, selector=calc_norm), "PlaneDiffMeasure")
+        return core.std.CopyFrameProps(clip1, core.std.ModifyFrame(clip=diff_moment, clips=diff_moment, selector=calc_norm), propname)
 
 
 def getnative(
