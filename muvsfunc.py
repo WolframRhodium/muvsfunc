@@ -434,7 +434,7 @@ def InDeflate(input: vs.VideoNode, msmooth: Union[int, Sequence[int]] = 0,
         planes = [planes]
 
     if isinstance(msmooth, int):
-        msmoooth = [msmooth]
+        msmooth = [msmooth]
 
     # internel function
     def InDeflate_process(input: vs.VideoNode, radius: int,
