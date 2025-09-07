@@ -6309,7 +6309,7 @@ def getnative(
         assert clip.num_frames == 1 and len(rescalers) == 1, "1-frame clip and 1 rescaler should be passed for multi heights mode."
     elif len(rescalers) > 1:
         mode = Mode.MULTI_KERNEL
-        assert clip.num_frames == 1 and len(src_heights) == 1, "1-frame clip and 1 src_height shoule be passed for multi kernels mode."
+        assert clip.num_frames == 1 and len(src_heights) == 1, "1-frame clip and 1 src_height should be passed for multi kernels mode."
 
     def output_statistics(clip: vs.VideoNode, rescalers: List[rescale.Rescaler], src_heights: Sequence[int], mode: Mode, dark: bool) -> vs.VideoNode:
         data = [0] * clip.num_frames
