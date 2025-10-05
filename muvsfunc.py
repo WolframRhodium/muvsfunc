@@ -6047,8 +6047,8 @@ class rescale:
         def upscale(self, clip: vs.VideoNode, width: int, height: int, upscaler: Optional[Callable] = None) -> vs.VideoNode:
             from inspect import signature
             kwargs = self.descale_args.copy()
-            kwargs.pop("width")
-            kwargs.pop("height")
+            kwargs.pop("width", None)
+            kwargs.pop("height", None)
             if upscaler is None:
                 return rescale.Upscale(clip, width, height, kernel=self.kernel, taps=self.taps, b=self.b, c=self.c, blur=self.blur, **kwargs)
             else:
