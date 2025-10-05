@@ -6278,7 +6278,10 @@ def getnative(
     import logging
     logging.getLogger('matplotlib').setLevel(logging.WARNING)
     import numpy
-    import matplotlib
+    import warnings
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore", module="numpy")
+        import matplotlib
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
     from enum import Enum
