@@ -8327,7 +8327,7 @@ def temporal_idft(clips: typing.Sequence[vs.VideoNode]) -> typing.List[vs.VideoN
 def srestore(
     source: vs.VideoNode,
     frate: Optional[numbers.Real] = None,
-    omode: int = 6,
+    omode: typing.Union[int, str] = 6,
     speed: Optional[int] = None,
     mode: int = 2,
     thresh: int = 16,
