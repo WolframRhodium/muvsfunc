@@ -6002,9 +6002,9 @@ class rescale:
             self.kernel = kernel
             self.taps, self.b, self.c, self.blur = taps, b, c, blur
             self.upscaler = upscaler
-            bc_name = f"_{float(b):.3}_{float(c):.3}" if kernel == "bicubic" else ""
+            bc_name = f"_{float(b):.3f}_{float(c):.3f}" if kernel == "bicubic" else ""
             taps_name = f"{taps}" if kernel == "lanczos" else ""
-            blur_name = f"_x{float(blur):.2}" if blur is not None and blur != 1.0 else ""
+            blur_name = f"_x{float(blur):.2f}" if blur is not None and blur != 1.0 else ""
             self.name = f"{kernel}{bc_name}{taps_name}{blur_name}"
             self.descale_args = {}
             assert blur >= 0.75 if blur is not None else True, "blur < 0.75 is not supported"
