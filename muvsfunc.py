@@ -8331,7 +8331,9 @@ def srestore(
     speed: Optional[int] = None,
     mode: int = 2,
     thresh: int = 16,
-    dclip: Optional[vs.VideoNode] = None
+    dclip: Optional[vs.VideoNode] = None,
+    frame_props_log_path: str = None,
+    read_frame_props_log: bool = False
 ) -> vs.VideoNode:
 
     """ srestore v2.7e
@@ -8339,6 +8341,13 @@ def srestore(
 
     modified from havsfunc's srestore function
     https://github.com/HomeOfVapourSynthEvolution/havsfunc/blob/e236281cd8c1dd6b1b0cc906844944b79b1b52fa/havsfunc.py#L1899-L2227
+
+    New Args:
+        frame_props_log_path: Cache the calculated frame props to the specified file.
+                              Default is None.
+
+        read_frame_props_log: Read previously calculated results from frame props log, skip the slow frame props calculation.
+                              Default is False.
     """
 
     if not isinstance(source, vs.VideoNode):
@@ -8822,7 +8831,7 @@ def srestore(
             else:
                 ret = oclp.std.Trim(first=opos)
 
-        ret = ret[n]
+        ret = ret[n] if n < ret.num_frames else ret[-1]
 
         temp_kwargs = dict(
             lfr=lfr, offs=offs, ldet=ldet, lpos=lpos,
@@ -8840,7 +8849,7 @@ def srestore(
                 ret = core.std.SetFrameProp(ret, prop=k, intval=v)
             return ret
 
-    ###### evaluation call & output calculation ######
+    ###### frame_props calculation ######
     bclpYStats = bclp.std.PlaneStats()
     dclpYStats = dclp.std.PlaneStats()
     dclipYStats = core.std.PlaneStats(dclip, dclip.std.Trim(first=2))
@@ -8849,6 +8858,103 @@ def srestore(
     def get_frame(clip: vs.VideoNode, n: int) -> vs.VideoNode:
         return clip[min(n, clip.num_frames - 1)]
 
+    frame_props_list = [
+        "lfr", "offs", "ldet", "lpos",
+        "d32", "d21", "d10", "d01", "d12", "d23", "d34",
+        "m42", "m31", "m20", "m11", "m02", "m13", "m24",
+        "bp2", "bp1", "bn0", "bn1", "bn2", "bn3",
+        "cp2", "cp1", "cn0", "cn1", "cn2", "cn3"
+    ]
+
+    def generate_frame_props(log_path: str, write_log: bool) -> List[dict]:
+        result_fprops_list: List[dict] = []
+        state: vs.VideoNode
+
+        if write_log:
+            with open(log_path, "w", encoding="utf-8") as f:
+                pass
+
+        for n in range(source.num_frames):
+            prop_src = [
+                get_frame(bclpYStats, n),
+                get_frame(dclpYStats, n),
+                get_frame(dclipYStats, n)
+            ]
+
+            if n > 0:
+                prop_src.append(state)
+
+            state = source[n].std.FrameEval(
+                eval=functools.partial(srestore_inside, real_n=n),
+                prop_src=prop_src
+            )
+
+            state_frame = state.get_frame(0)
+            state_dict = {f"_{p}": state_frame.props[f"_{p}"] for p in frame_props_list if state_frame.props[f"_{p}"] is not None}
+
+            if n != source.num_frames-1:
+                result_fprops_list.append(state_dict)
+
+            if write_log:
+                with open(log_path, "a", encoding="utf-8") as f:
+                    f.write(f'{n} {state_dict}\n')
+
+        return result_fprops_list
+
+    def read_frame_props(log_path: str) -> List[dict]:
+        import re
+        import ast
+
+        result_fprops_list: List[dict] = []
+        last_line_num = -1
+        log_error = False
+
+        with open(log_path, "r", encoding="utf-8") as f:
+            for line in f:
+                m = re.match(r"(?P<line_num>\d+)\s+(?P<props>\{.*?\})", line)
+                if not m:
+                    log_error = True
+                    break
+                line_num = int(m.group("line_num"))
+                props = m.group("props")
+
+                try:
+                    parsed_dict = ast.literal_eval(props)
+                except (SyntaxError, ValueError) as e:
+                    log_error = True
+                    break
+
+                if (last_line_num + 1 != line_num) or not isinstance(parsed_dict, dict):
+                    log_error = True
+                    break
+
+                last_line_num = line_num
+                result_fprops_list.append(parsed_dict)
+
+        if log_error:
+            raise vs.Error("srestore: the log is corrupted; please manually delete and regenerate it")
+
+        return result_fprops_list
+
+    ###### get frame_props ######
+    fprops_list: List[dict] = []
+
+    if frame_props_log_path is None and read_frame_props_log:
+        raise vs.Error("srestore: prefer to read frame_props from log but do not specify the log path")
+    elif frame_props_log_path and read_frame_props_log:
+        if os.path.exists(frame_props_log_path):
+            fprops_list = read_frame_props(frame_props_log_path)
+            if len(fprops_list) != source.num_frames:
+                raise vs.Error("srestore: the log is corrupted; please manually delete and regenerate it")
+            fprops_list = fprops_list[:len(fprops_list)-1]
+        else:
+            fprops_list = generate_frame_props(frame_props_log_path, True)
+    else:
+        fprops_list = generate_frame_props(frame_props_log_path, frame_props_log_path != None)
+
+    fprops_clip = source[0] + core.std.Splice([core.std.SetFrameProps(source[0], **fprops_dict) for fprops_dict in fprops_list])
+
+    ###### output calculation ######
     last_frames: List[vs.VideoNode] = []
     state: vs.VideoNode
 
@@ -8856,11 +8962,9 @@ def srestore(
         prop_src = [
             get_frame(bclpYStats, n),
             get_frame(dclpYStats, n),
-            get_frame(dclipYStats, n)
+            get_frame(dclipYStats, n),
+            get_frame(fprops_clip, n)
         ]
-
-        if n > 0:
-            prop_src.append(state)
 
         state = source[n].std.FrameEval(
             eval=functools.partial(srestore_inside, real_n=n),
