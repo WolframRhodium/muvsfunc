@@ -8333,7 +8333,8 @@ def srestore(
     thresh: int = 16,
     dclip: Optional[vs.VideoNode] = None,
     frame_props_log_path: str = None,
-    read_frame_props_log: bool = False
+    read_frame_props_log: bool = False,
+    show_progress: bool = False
 ) -> vs.VideoNode:
 
     """ srestore v2.7e
@@ -8347,6 +8348,9 @@ def srestore(
                               Default is None.
 
         read_frame_props_log: Read previously calculated results from frame props log, skip the slow frame props calculation.
+                              Default is False.
+
+        show_progress:        show frame props calculation progress.
                               Default is False.
     """
 
@@ -8612,25 +8616,26 @@ def srestore(
         cn3 = c_v
 
         ### used detection values ###
-        bb = [bp3, bp2, bp1, bn0, bn1][pos + 2]
-        bc = [bp2, bp1, bn0, bn1, bn2][pos + 2]
-        bn = [bp1, bn0, bn1, bn2, bn3][pos + 2]
+        pos_clamp = min(max(pos, -2), 2)
+        bb = [bp3, bp2, bp1, bn0, bn1][pos_clamp + 2]
+        bc = [bp2, bp1, bn0, bn1, bn2][pos_clamp + 2]
+        bn = [bp1, bn0, bn1, bn2, bn3][pos_clamp + 2]
 
-        cb = [cp3, cp2, cp1, cn0, cn1][pos + 2]
-        cc = [cp2, cp1, cn0, cn1, cn2][pos + 2]
-        cn = [cp1, cn0, cn1, cn2, cn3][pos + 2]
+        cb = [cp3, cp2, cp1, cn0, cn1][pos_clamp + 2]
+        cc = [cp2, cp1, cn0, cn1, cn2][pos_clamp + 2]
+        cn = [cp1, cn0, cn1, cn2, cn3][pos_clamp + 2]
 
-        dbb = [d43, d32, d21, d10, d01][pos + 2]
-        dbc = [d32, d21, d10, d01, d12][pos + 2]
-        dcn = [d21, d10, d01, d12, d23][pos + 2]
-        dnn = [d10, d01, d12, d23, d34][pos + 2]
-        dn2 = [d01, d12, d23, d34, d34][pos + 2]
+        dbb = [d43, d32, d21, d10, d01][pos_clamp + 2]
+        dbc = [d32, d21, d10, d01, d12][pos_clamp + 2]
+        dcn = [d21, d10, d01, d12, d23][pos_clamp + 2]
+        dnn = [d10, d01, d12, d23, d34][pos_clamp + 2]
+        dn2 = [d01, d12, d23, d34, d34][pos_clamp + 2]
 
-        mb1 = [m53, m42, m31, m20, m11][pos + 2]
-        mb = [m42, m31, m20, m11, m02][pos + 2]
-        mc = [m31, m20, m11, m02, m13][pos + 2]
-        mn = [m20, m11, m02, m13, m24][pos + 2]
-        mn1 = [m11, m02, m13, m24, 0.01][pos + 2]
+        mb1 = [m53, m42, m31, m20, m11][pos_clamp+ 2]
+        mb = [m42, m31, m20, m11, m02][pos_clamp + 2]
+        mc = [m31, m20, m11, m02, m13][pos_clamp + 2]
+        mn = [m20, m11, m02, m13, m24][pos_clamp + 2]
+        mn1 = [m11, m02, m13, m24, 0.01][pos_clamp + 2]
 
         ### basic calculation ###
         bbool = 0.8 * bc * cb > bb * cc and 0.8 * bc * cn > bn * cc and bc * bc > cc
@@ -8867,6 +8872,8 @@ def srestore(
     ]
 
     def generate_frame_props(log_path: str, write_log: bool) -> List[dict]:
+        import sys
+
         result_fprops_list: List[dict] = []
         state: vs.VideoNode
 
@@ -8898,6 +8905,11 @@ def srestore(
             if write_log:
                 with open(log_path, "a", encoding="utf-8") as f:
                     f.write(f'{n} {state_dict}\n')
+
+            if show_progress:
+                print(f'\rframeprops progress: {n+1}/{source.num_frames}', end='', flush=True, file=sys.stderr)
+                if n == source.num_frames-1:
+                    print("", flush=True, file=sys.stderr)
 
         return result_fprops_list
 
