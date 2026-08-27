@@ -6061,12 +6061,8 @@ class rescale:
             """Run the selected descale implementation with compatible args."""
             descale = getattr(getattr(core, self.backend), "Descale")
             if self.backend == "dsmvc":
-                # dsmvc implements the same inverse kernels but does not expose
-                # the legacy descale plugin's blur parameter.
-                if self.blur is not None and self.blur != 1.0:
-                    raise ValueError("blur is not supported by the dsmvc backend")
                 return descale(clip, kernel=self.kernel, taps=self.taps, b=self.b, c=self.c,
-                               backend=self.dsmvc_backend, **kwargs)
+                               blur=self.blur, backend=self.dsmvc_backend, **kwargs)
             return descale(clip, kernel=self.kernel, taps=self.taps, b=self.b, c=self.c, blur=self.blur, **kwargs)
 
         def upscale(self, clip: vs.VideoNode, width: int, height: int, upscaler: Optional[Callable] = None) -> vs.VideoNode:
