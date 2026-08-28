@@ -6017,8 +6017,7 @@ class rescale:
             bc_name = f"_{float(b):.3f}_{float(c):.3f}" if kernel == "bicubic" else ""
             taps_name = f"{taps}" if kernel == "lanczos" else ""
             blur_name = f"_x{float(blur):.2f}" if blur is not None and blur != 1.0 else ""
-            backend_name = "" if backend == "descale" else f"_{backend}_{dsmvc_backend}"
-            self.name = f"{kernel}{bc_name}{taps_name}{blur_name}{backend_name}"
+            self.name = f"{kernel}{bc_name}{taps_name}{blur_name}"
             self.descale_args = {}
             assert blur >= 0.75 if blur is not None else True, "blur < 0.75 is not supported"
 
